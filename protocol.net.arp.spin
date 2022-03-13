@@ -9,12 +9,9 @@
     See end of file for terms of use.
     --------------------------------------------
 }
+#include "net-common.spinh"
 
 CON
-
-{ Limits }
-    MACADDR_LEN     = 6                         ' xx:xx:xx:xx:xx:xx
-    IPV4ADDR_LEN    = 4                         ' ddd.ddd.ddd.ddd
 
 { ARP message indices }
     ARP_LEN         = 28                        ' message length
@@ -40,9 +37,6 @@ CON
     HRD_FIBRECH     = 18
     HRD_ATM2        = 19
     HRD_SERIAL      = 20
-
-{ protocol types }
-    PRO_IPV4        = $0800
 
 { opcodes }
     ARP_REQ         = 1

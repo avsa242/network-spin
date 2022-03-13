@@ -4,20 +4,12 @@
     Author: Jesse Burt
     Description: Ethernet II protocol
     Started Mar 1, 2022
-    Updated Mar 1, 2022
+    Updated Mar 13, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
 }
 #include "net-common.spinh"
-
-CON
-
-{ Ethertypes }
-    IPV4    = $0800
-    ARP     = $0806
-    IPV6    = $86DD
-    LLDP    = $88CC
 
 VAR
 
