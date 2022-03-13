@@ -1,0 +1,25 @@
+{
+    --------------------------------------------
+    Filename: services.spinh
+    Author: Jesse Burt
+    Description: Network service to port number mapping
+    Started Mar 12, 2022
+    Updated Mar 12, 2022
+    Copyright 2022
+    See end of file for terms of use.
+    --------------------------------------------
+}
+
+CON
+
+    FTP_DATA= 20    'tcp
+    FTP     = 21    'tcp
+    SSH     = 22    'tcp
+    TELNET  = 23    'tcp
+    SMTP    = 25    'tcp
+    DNS     = 53    'tcp/udp
+    BOOTP_S = 67    'udp
+    BOOTP_C = 68    'udp
+    TFTP    = 69    'udp
+    HTTP    = 80    'tcp
+
