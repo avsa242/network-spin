@@ -1,0 +1,21 @@
+{
+    --------------------------------------------
+    Filename: net-common.spinh
+    Author: Jesse Burt
+    Description: Constants common to multiple networking objects
+    Started Mar 12, 2022
+    Updated Mar 13, 2022
+    Copyright 2022
+    See end of file for terms of use.
+    --------------------------------------------
+}
+CON
+
+{ Limits }
+    MACADDR_LEN             = 6                 ' xx:xx:xx:xx:xx:xx
+    IPV4ADDR_LEN            = 4                 ' ddd.ddd.ddd.ddd
+
+{ Ethertypes }
+    ETYP_IPV4               = $0800
+    ETYP_ARP                = $0806
+
