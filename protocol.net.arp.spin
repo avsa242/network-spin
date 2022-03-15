@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Address Resolution Protocol
     Started Feb 27, 2022
-    Updated Feb 27, 2022
+    Updated Mar 15, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -51,15 +51,16 @@ CON
 
 VAR
 
+    long _arp_spa
+    long _arp_tpa
+
     word _arp_hrd
     word _arp_pro
+    word _arp_op
     byte _arp_hln
     byte _arp_pln
-    byte _arp_op
     byte _arp_sha[MACADDR_LEN]
-    byte _arp_spa[IPV4ADDR_LEN]
     byte _arp_tha[MACADDR_LEN]
-    byte _arp_tpa[IPV4ADDR_LEN]
 
 PUB HWAddrLen{}: len
 ' Get hardware address length
@@ -97,12 +98,12 @@ PUB ReadARP(ptr_buff) | i, ptr
 
     repeat i from _arp_hln-1 to 0
         _arp_sha[i] := byte[ptr_buff][ptr++]
-    repeat i from _arp_pln-1 to 0
-        _arp_spa[i] := byte[ptr_buff][ptr++]
+    bytemove(@_arp_spa, ptr_buff+ptr, IPV4ADDR_LEN)
+    ptr += IPV4ADDR_LEN
     repeat i from _arp_hln-1 to 0
         _arp_tha[i] := byte[ptr_buff][ptr++]
-    repeat i from _arp_pln-1 to 0
-        _arp_tpa[i] := byte[ptr_buff][ptr++]
+    bytemove(@_arp_tpa, ptr_buff+ptr, IPV4ADDR_LEN)
+    ptr += IPV4ADDR_LEN
 
 PUB SenderHWAddr{}: ptr_addr
 ' Get sender hardware address
@@ -112,7 +113,7 @@ PUB SenderHWAddr{}: ptr_addr
 PUB SenderProtoAddr{}: addr
 ' Get sender protocol address
 '   Returns: 4-byte IPv4 address, packed into long
-    bytemove(@addr, @_arp_spa, IPV4ADDR_LEN)
+    return _arp_spa
 
 PUB SetHWAddrLen(len)
 ' Set hardware address length
@@ -158,7 +159,7 @@ PUB TargetHWAddr{}: ptr_addr
 PUB TargetProtoAddr{}: addr
 ' Get target protocol address
 '   Returns: 4-byte IPv4 address, packed into long
-    bytemove(@addr, @_arp_tpa, IPV4ADDR_LEN)
+    return _arp_tpa
 
 PUB WriteARP(ptr_buff): ptr | i
 ' Write ARP message
@@ -174,10 +175,10 @@ PUB WriteARP(ptr_buff): ptr | i
 
     repeat i from _arp_hln-1 to 0
         byte[ptr_buff][ptr++] := _arp_sha[i]
-    repeat i from _arp_pln-1 to 0
-        byte[ptr_buff][ptr++] := _arp_spa[i]
+    bytemove(ptr_buff+ptr, @_arp_spa, IPV4ADDR_LEN)
+    ptr += IPV4ADDR_LEN
     repeat i from _arp_hln-1 to 0
         byte[ptr_buff][ptr++] := _arp_tha[i]
-    repeat i from _arp_pln-1 to 0
-        byte[ptr_buff][ptr++] := _arp_tpa[i]
+    bytemove(ptr_buff+ptr, @_arp_tpa, IPV4ADDR_LEN)
+    ptr += IPV4ADDR_LEN
 

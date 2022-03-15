@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Boot Protocol/Dynamic Host Configuration Protocol
     Started Feb 28, 2022
-    Updated Mar 13, 2022
+    Updated Mar 15, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -66,6 +66,17 @@ VAR
     long _dhcp_renewal_tm
     long _dhcp_rebind_tm
 
+    long _dhcp_srv_ip
+    long _subnet_mask
+    long _bcast_ip
+    long _router_ip
+    long _dns_ip
+
+    long _client_ip
+    long _your_ip
+    long _srv_ip
+    long _gwy_ip
+
     word _lstime_elapsed
     word _flags
     word _ptr
@@ -74,10 +85,6 @@ VAR
     byte _bootp_opcode
     byte _hdw_addr_len
     byte _hops
-    byte _client_ip[IPV4ADDR_LEN]
-    byte _your_ip[IPV4ADDR_LEN]
-    byte _srv_ip[IPV4ADDR_LEN]
-    byte _gwy_ip[IPV4ADDR_LEN]
     byte _client_hw_t
     byte _client_mac[MACADDR_LEN+1]             ' accomodate cli. hw type, too
     byte _client_hdw_addr_pad
@@ -87,11 +94,6 @@ VAR
     byte _dhcp_optsz
     byte _dhcp_param_req[5]
     byte _dhcp_msg_t
-    byte _dhcp_srv_ip[IPV4ADDR_LEN]
-    byte _subnet_mask[IPV4ADDR_LEN]
-    byte _bcast_ip[IPV4ADDR_LEN]
-    byte _router_ip[IPV4ADDR_LEN]
-    byte _dns_ip[IPV4ADDR_LEN]
 
 OBJ
 
@@ -99,7 +101,7 @@ OBJ
 
 PUB GetBroadcastIP{}: addr
 ' Get broadcast IP address
-    bytemove(@addr, @_bcast_ip, IPV4ADDR_LEN)
+    return _bcast_ip
 
 PUB GetBootFName{}: ptr_str
 ' Get boot filename
@@ -115,7 +117,7 @@ PUB GetCliHdwAddrPadLen{}: len
 
 PUB GetClientIP{}: addr
 ' Get client IP address
-    bytemove(@addr, @_client_ip, IPV4ADDR_LEN)
+    return _client_ip
 
 PUB GetClientMAC{}: ptr_addr
 ' Get client MAC address
@@ -127,15 +129,15 @@ PUB GetDHCPMsgType{}: t
 
 PUB GetDHCPSrvIP{}: addr
 ' Get DHCP server IP address
-    bytemove(@addr, @_dhcp_srv_ip, IPV4ADDR_LEN)
+    return _dhcp_srv_ip
 
 PUB GetDNSIP{}: addr
 ' Get domain name server IP address
-    bytemove(@addr, @_dns_ip, IPV4ADDR_LEN)
+    return _dns_ip
 
 PUB GetGatewayIP{}: addr
 ' Get relay agent IP address
-    bytemove(@addr, @_gwy_ip, IPV4ADDR_LEN)
+    return _gwy_ip
 
 PUB GetHdwAddrLen{}: len
 ' Set hardware address length
@@ -171,7 +173,7 @@ PUB GetOpCode{}: c
 
 PUB GetRouterIP{}: addr
 ' Get router IP address
-    bytemove(@addr, @_router_ip, IPV4ADDR_LEN)
+    return _router_ip
 
 PUB GetRsvdFlags{}: flags
 ' Get BOOTP reserved flags
@@ -183,11 +185,11 @@ PUB GetServerHostname{}: ptr_str
 
 PUB GetServerIP{}: addr
 ' Get next server IP address
-    bytemove(@addr, @_srv_ip, IPV4ADDR_LEN)
+    return _srv_ip
 
 PUB GetSubnetMask{}: mask
 ' Get subnet mask
-    bytemove(@mask, @_subnet_mask, IPV4ADDR_LEN)
+    return _subnet_mask
 
 PUB GetTransID{}: id
 ' Get transaction ID
@@ -195,9 +197,7 @@ PUB GetTransID{}: id
 
 PUB GetYourIP{}: addr | i
 ' Get your IP address
-'    bytemove(@addr, @_your_ip, IPV4ADDR_LEN)
-    repeat i from 3 to 0
-        addr.byte[i] := _your_ip[i]
+    return _your_ip
 
 PUB BootFName(ptr_str)
 ' Set boot filename
@@ -209,7 +209,7 @@ PUB BroadcastFlag(flag)
 
 PUB ClientIP(addr)
 ' Set client IP address
-    bytemove(@_client_ip, @addr, IPV4ADDR_LEN)
+    _client_ip := addr
 
 PUB ClientMAC(ptr_addr) | i, ptr
 ' Set client MAC address
@@ -231,7 +231,7 @@ PUB DHCPMsgType(type)
 
 PUB GatewayIP(addr)
 ' Set relay agent IP address
-    bytemove(@_gwy_ip, @addr, IPV4ADDR_LEN)
+    _gwy_ip := addr
 
 PUB HdwAddrLen(len)
 ' Set hardware address length
@@ -239,7 +239,6 @@ PUB HdwAddrLen(len)
 
 PUB HdwType(t)
 ' Set hardware type
-'    _hdw_t := t
     _client_mac.byte[6] := t
 
 PUB Hops(h)
@@ -283,18 +282,18 @@ PUB Rd_BOOTP_Msg(ptr_buff): ptr | i
     _lstime_elapsed.byte[0] := byte[ptr_buff][_ptr++]
     _flags.byte[1] := byte[ptr_buff][_ptr++]
     _flags.byte[0] := byte[ptr_buff][_ptr++]
-    repeat i from 3 to 0
-        _client_ip.byte[i] := byte[ptr_buff][_ptr++]
-    repeat i from 3 to 0
-        _your_ip[i] := byte[ptr_buff][_ptr++]
-    repeat i from 3 to 0
-        _srv_ip[i] := byte[ptr_buff][_ptr++]
-    repeat i from 3 to 0
-        _gwy_ip[i] := byte[ptr_buff][_ptr++]
+    bytemove(@_client_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
+    _ptr += IPV4ADDR_LEN
+    bytemove(@_your_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
+    _ptr += IPV4ADDR_LEN
+    bytemove(@_srv_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
+    _ptr += IPV4ADDR_LEN
+    bytemove(@_gwy_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
+    _ptr += IPV4ADDR_LEN
     repeat i from 0 to 5
         _client_mac[i] := byte[ptr_buff][_ptr++]
     repeat (HDWADDRLEN_MAX-MACADDR_LEN)
-        _ptr++  ' skip over hdw addr zero-padding
+        _ptr++                                  ' skip over hdw addr padding
     _client_hdw_addr_pad := (HDWADDRLEN_MAX-MACADDR_LEN)
 
     bytemove(@_srv_hostname, ptr_buff+_ptr, SRV_HOSTN_LEN)
@@ -359,7 +358,8 @@ PUB Rd_DHCP_Msg(ptr_buff): ptr | i, t, v
 
 PUB ServerIP(addr)
 ' Set server IP address
-    bytemove(@_srv_ip, @addr, IPV4ADDR_LEN)
+'    bytemove(@_srv_ip, @addr, IPV4ADDR_LEN)
+    _srv_ip := addr
 
 PUB Wr_BOOTP_Msg(ptr_buff): ptr | i
 ' Write BOOTP message
@@ -374,14 +374,14 @@ PUB Wr_BOOTP_Msg(ptr_buff): ptr | i
     byte[ptr_buff][_ptr++] := _lstime_elapsed.byte[0]
     byte[ptr_buff][_ptr++] := _flags.byte[1]
     byte[ptr_buff][_ptr++] := _flags.byte[0]
-    repeat i from 3 to 0
-        byte[ptr_buff][_ptr++] := _client_ip[i]
-    repeat i from 3 to 0
-        byte[ptr_buff][_ptr++] := _your_ip[i]
-    repeat i from 3 to 0
-        byte[ptr_buff][_ptr++] := _srv_ip[i]
-    repeat i from 3 to 0
-        byte[ptr_buff][_ptr++] := _gwy_ip[i]
+    bytemove(ptr_buff+_ptr, @_client_ip, IPV4ADDR_LEN)
+    _ptr += IPV4ADDR_LEN
+    bytemove(ptr_buff+_ptr, @_your_ip, IPV4ADDR_LEN)
+    _ptr += IPV4ADDR_LEN
+    bytemove(ptr_buff+_ptr, @_srv_ip, IPV4ADDR_LEN)
+    _ptr += IPV4ADDR_LEN
+    bytemove(ptr_buff+_ptr, @_gwy_ip, IPV4ADDR_LEN)
+    _ptr += IPV4ADDR_LEN
     repeat i from 0 to 5
         byte[ptr_buff][_ptr++] := _client_mac[i]
     repeat (HDWADDRLEN_MAX-MACADDR_LEN)
@@ -430,7 +430,7 @@ PUB ResetPtr{}  ' XXX tentative
 
 PUB ServerHostname(ptr_str)
 ' Set server hostname
-    bytemove(@_srv_hostname, ptr_str, strsize(ptr_str))
+    bytemove(@_srv_hostname, ptr_str, strsize(ptr_str) <# SRV_HOSTN_LEN)
 
 PUB TransID(id)
 ' Set transaction ID
@@ -452,17 +452,17 @@ PUB WriteTLV(ptr_buff, type, len, val): ptr | i 'XXX rewrite using underlying me
                 byte[ptr_buff][ptr++] := val.byte[i]
         3..255:                                 ' value pointed to
             byte[ptr_buff][ptr++] := len
-            repeat i from len-1 to 0
-                byte[ptr_buff][ptr++] := byte[val][i]
+            if (type == REQD_IPADDR or type == DHCP_SRV_ID) 'XXX temp hack - add byte order param?
+                repeat i from 0 to len-1
+                    byte[ptr_buff][ptr++] := byte[val][i]
+            else
+                repeat i from len-1 to 0
+                    byte[ptr_buff][ptr++] := byte[val][i]
         other:                                  ' type only
 
-    { keep track of how many bytes are being added to the options;
-        it'll be needed later }
-    if (type == OPT_END)                        ' except the end marker;
-        ptr--                                   '   it doesn't count
     _dhcp_optsz += ptr
 
 PUB YourIP(addr)
-' Set your IP address
-    bytemove(@_your_ip, @addr, IPV4ADDR_LEN)
+' Set 'your' IP address
+    _your_ip := addr
 

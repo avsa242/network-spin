@@ -30,6 +30,8 @@ CON
 
 VAR
 
+    long _src_addr, _dest_addr
+
     byte _ver                                   ' version[7..4]:IHL[3..0]
     byte _hdr_len                               ' in 32-bit words; bytes = *4
     byte _dsvc                                  ' dsc[7..2]:ecn[1..0]
@@ -41,13 +43,11 @@ VAR
     byte _ttl
     byte _proto
     word _hdr_chk
-    byte _src_addr[IPV4ADDR_LEN]
-    byte _dest_addr[IPV4ADDR_LEN]
 
 PUB DestAddr{}: addr
 ' Get destination address of IP datagram
 '   Returns: 4 IPv4 address bytes packed into long
-    bytemove(@addr, @_dest_addr, IPV4ADDR_LEN)
+    return _dest_addr
 
 PUB DSCP{}: cp
 ' Differentiated services code point
@@ -103,10 +103,10 @@ PUB ReadDgram(ptr_buff): ptr | i
     _ttl := byte[ptr_buff][ptr++]
     _proto := byte[ptr_buff][ptr++]
     _hdr_chk := ((byte[ptr_buff][ptr++] << 8) | byte[ptr_buff][ptr++])
-    repeat i from 3 to 0
-        _src_addr[i] := byte[ptr_buff][ptr++]
-    repeat i from 3 to 0
-        _dest_addr[i] := byte[ptr_buff][ptr++]
+    bytemove(@_src_addr, ptr_buff+ptr, IPV4ADDR_LEN)
+    ptr += IPV4ADDR_LEN
+    bytemove(@_dest_addr, ptr_buff+ptr, IPV4ADDR_LEN)
+    ptr += IPV4ADDR_LEN
 
 CON
 
@@ -128,15 +128,15 @@ PUB WriteDgram(ptr_buff): ptr | i   ' TODO: move the shifting/masking to the Set
     byte[ptr_buff][ptr++] := _proto
     byte[ptr_buff][ptr++] := _hdr_chk.byte[1]
     byte[ptr_buff][ptr++] := _hdr_chk.byte[0]
-    repeat i from 3 to 0
-        byte[ptr_buff][ptr++] := _src_addr[i]
-    repeat i from 3 to 0
-        byte[ptr_buff][ptr++] := _dest_addr[i]
+    bytemove(ptr_buff+ptr, @_src_addr, IPV4ADDR_LEN)
+    ptr += IPV4ADDR_LEN
+    bytemove(ptr_buff+ptr, @_dest_addr, IPV4ADDR_LEN)
+    ptr += IPV4ADDR_LEN
 
 PUB SetDestAddr(addr)
 ' Get destination address of IP datagram
 '   Returns: 4 IPv4 address bytes packed into long
-    bytemove(@_dest_addr, @addr, IPV4ADDR_LEN)
+    _dest_addr := addr
 
 PUB SetDSCP(cp)
 ' Differentiated services code point
@@ -181,7 +181,7 @@ PUB SetLayer4Proto(proto)
 PUB SetSourceAddr(addr)
 ' Get source/originator of IP datagram
 '   Returns: 4 IPv4 address bytes packed into long
-    bytemove(@_src_addr, @addr, IPV4ADDR_LEN)
+    _src_addr := addr
 
 PUB SetTimeToLive(ttl)
 ' Get number of router hops datagram is allowed to traverse
@@ -198,11 +198,10 @@ PUB SetVersion(ver)
 '   Returns: byte
     _ver := ver
 
-'--
 PUB SourceAddr{}: addr
 ' Get source/originator of IP datagram
 '   Returns: 4 IPv4 address bytes packed into long
-    bytemove(@addr, @_src_addr, IPV4ADDR_LEN)
+    return _src_addr
 
 PUB TimeToLive{}: ttl
 ' Get number of router hops datagram is allowed to traverse
