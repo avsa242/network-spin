@@ -365,7 +365,7 @@ PUB Wr_BOOTP_Msg(ptr_buff): ptr | i
 ' Write BOOTP message
 '   Returns: number of bytes written to buffer
     byte[ptr_buff][_ptr++] := _bootp_opcode
-    byte[ptr_buff][_ptr++] := _client_mac[6]
+    byte[ptr_buff][_ptr++] := _client_mac[HDWADDRLEN_IDX]
     byte[ptr_buff][_ptr++] := _hdw_addr_len
     byte[ptr_buff][_ptr++] := _hops
     repeat i from 3 to 0
