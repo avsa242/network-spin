@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Address Resolution Protocol
     Started Feb 27, 2022
-    Updated Mar 15, 2022
+    Updated Mar 17, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -96,12 +96,15 @@ PUB ReadARP(ptr_buff) | i, ptr
     setprotoaddrlen(byte[ptr_buff][ptr++])
     setopcode((byte[ptr_buff][ptr++] << 8) | byte[ptr_buff][ptr++])
 
-    repeat i from _arp_hln-1 to 0
-        _arp_sha[i] := byte[ptr_buff][ptr++]
+    bytemove(@_arp_sha, ptr_buff+ptr, MACADDR_LEN)
+    ptr += MACADDR_LEN
+
     bytemove(@_arp_spa, ptr_buff+ptr, IPV4ADDR_LEN)
     ptr += IPV4ADDR_LEN
-    repeat i from _arp_hln-1 to 0
-        _arp_tha[i] := byte[ptr_buff][ptr++]
+
+    bytemove(@_arp_tha, ptr_buff+ptr, MACADDR_LEN)
+    ptr += MACADDR_LEN
+
     bytemove(@_arp_tpa, ptr_buff+ptr, IPV4ADDR_LEN)
     ptr += IPV4ADDR_LEN
 
@@ -137,7 +140,7 @@ PUB SetProtoType(pro)
 
 PUB SetSenderHWAddr(ptr_addr)
 ' Set sender hardware address
-    bytemove(@_arp_sha, ptr_addr, 6)
+    bytemove(@_arp_sha, ptr_addr, MACADDR_LEN)
 
 PUB SetSenderProtoAddr(addr)
 ' Set sender protocol address
@@ -145,7 +148,7 @@ PUB SetSenderProtoAddr(addr)
 
 PUB SetTargetHWAddr(ptr_addr)
 ' Set target hardware address
-    bytemove(@_arp_tha, ptr_addr, 6)
+    bytemove(@_arp_tha, ptr_addr, MACADDR_LEN)
 
 PUB SetTargetProtoAddr(addr)
 ' Set target protocol address
@@ -173,12 +176,15 @@ PUB WriteARP(ptr_buff): ptr | i
     byte[ptr_buff][ptr++] := _arp_op.byte[1]
     byte[ptr_buff][ptr++] := _arp_op.byte[0]
 
-    repeat i from _arp_hln-1 to 0
-        byte[ptr_buff][ptr++] := _arp_sha[i]
+    bytemove(ptr_buff+ptr, @_arp_sha, MACADDR_LEN)
+    ptr += MACADDR_LEN
+
     bytemove(ptr_buff+ptr, @_arp_spa, IPV4ADDR_LEN)
     ptr += IPV4ADDR_LEN
-    repeat i from _arp_hln-1 to 0
-        byte[ptr_buff][ptr++] := _arp_tha[i]
+
+    bytemove(ptr_buff+ptr, @_arp_tha, MACADDR_LEN)
+    ptr += MACADDR_LEN
+
     bytemove(ptr_buff+ptr, @_arp_tpa, IPV4ADDR_LEN)
     ptr += IPV4ADDR_LEN
 

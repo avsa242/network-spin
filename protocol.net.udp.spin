@@ -17,6 +17,12 @@ CON
 { Limits }
     UDP_MSG_LEN = 8
 
+{ offsets }
+    SRC_PORT    = 0
+    DEST_PORT   = 2
+    DGRAMLEN    = 4
+    CKSUM       = 6
+
 VAR
 
     word _src_port, _dest_port

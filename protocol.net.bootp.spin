@@ -16,7 +16,6 @@ CON
     DHCP_MAGIC_COOKIE   = $63_82_53_63
     FLAG_B              = 15
 
-    HDWADDRLEN_IDX      = 6                     ' byte #6 of client MAC addr
     HDWADDRLEN_MAX      = 16
     LSE_90DAYS          = (90 * time#DAY)
 
@@ -86,7 +85,7 @@ VAR
     byte _hdw_addr_len
     byte _hops
     byte _client_hw_t
-    byte _client_mac[MACADDR_LEN+1]             ' accomodate cli. hw type, too
+    byte _client_mac[MACADDR_LEN]
     byte _client_hdw_addr_pad
     byte _srv_hostname[SRV_HOSTN_LEN+1]         ' str + 0
     byte _boot_fname[BOOT_FN_LEN+1]             ' str + 0
@@ -117,7 +116,7 @@ PUB GetCliHdwAddrPadLen{}: len
 
 PUB GetClientIP{}: addr
 ' Get client IP address
-    return _client_ip
+    bytemove(@addr, @_client_ip, IPV4ADDR_LEN)
 
 PUB GetClientMAC{}: ptr_addr
 ' Get client MAC address
@@ -129,7 +128,7 @@ PUB GetDHCPMsgType{}: t
 
 PUB GetDHCPSrvIP{}: addr
 ' Get DHCP server IP address
-    return _dhcp_srv_ip
+    bytemove(@addr, @_dhcp_srv_ip, IPV4ADDR_LEN)
 
 PUB GetDNSIP{}: addr
 ' Get domain name server IP address
@@ -145,7 +144,7 @@ PUB GetHdwAddrLen{}: len
 
 PUB GetHdwType{}: t
 ' Get hardware type
-    return _client_hw_t.byte[HDWADDRLEN_IDX]
+    return _client_hw_t
 
 PUB GetHops{}: h
 ' Get number of hops
@@ -209,13 +208,11 @@ PUB BroadcastFlag(flag)
 
 PUB ClientIP(addr)
 ' Set client IP address
-    _client_ip := addr
+    bytemove(@_client_ip, @addr, IPV4ADDR_LEN)
 
-PUB ClientMAC(ptr_addr) | i, ptr
+PUB ClientMAC(ptr_addr)
 ' Set client MAC address
-    ptr := 0
-    repeat i from 5 to 0
-        _client_mac.byte[i] := byte[ptr_addr][ptr++]
+    bytemove(@_client_mac, ptr_addr, MACADDR_LEN)
 
 PUB DHCPMaxMsgLen(len)
 ' Set maximum accepted DHCP message length
@@ -239,7 +236,7 @@ PUB HdwAddrLen(len)
 
 PUB HdwType(t)
 ' Set hardware type
-    _client_mac.byte[6] := t
+    _client_hw_t := t
 
 PUB Hops(h)
 ' Set number of hops
@@ -270,10 +267,10 @@ PUB ParamsReqd(ptr_buff, len)
     bytemove(@_dhcp_param_req, ptr_buff, (len <# 5))
 
 PUB Rd_BOOTP_Msg(ptr_buff): ptr | i
-' Read DHCP message
+' Read BOOTP message, as well as DHCP message, if it exists
     _ptr := ptr := 0
     _bootp_opcode := byte[ptr_buff][_ptr++]
-    _client_mac.byte[HDWADDRLEN_IDX] := byte[ptr_buff][_ptr++]
+    _client_hw_t := byte[ptr_buff][_ptr++]
     _hdw_addr_len := byte[ptr_buff][_ptr++]
     _hops := byte[ptr_buff][_ptr++]
     repeat i from 3 to 0
@@ -290,8 +287,9 @@ PUB Rd_BOOTP_Msg(ptr_buff): ptr | i
     _ptr += IPV4ADDR_LEN
     bytemove(@_gwy_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
     _ptr += IPV4ADDR_LEN
-    repeat i from 0 to 5
-        _client_mac[i] := byte[ptr_buff][_ptr++]
+    bytemove(@_client_mac, ptr_buff+_ptr, MACADDR_LEN)
+    _ptr += MACADDR_LEN
+
     repeat (HDWADDRLEN_MAX-MACADDR_LEN)
         _ptr++                                  ' skip over hdw addr padding
     _client_hdw_addr_pad := (HDWADDRLEN_MAX-MACADDR_LEN)
@@ -313,16 +311,17 @@ PUB Rd_BOOTP_Msg(ptr_buff): ptr | i
 
 PUB Rd_DHCP_Msg(ptr_buff): ptr | i, t, v
 
+    { read through all TLVs }
     repeat
         t := byte[ptr_buff][_ptr++]
         case t
             MSG_TYPE:
-                _ptr++
+                _ptr++                          ' skip over the length byte
                 _dhcp_msg_t := byte[ptr_buff][_ptr++]
             DHCP_SRV_ID:
                 _ptr++
-                repeat i from 3 to 0
-                    _dhcp_srv_ip[i] := byte[ptr_buff][_ptr++]
+                bytemove(@_dhcp_srv_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
+                _ptr += IPV4ADDR_LEN
             IP_LEASE_TM:
                 _ptr++
                 repeat i from 3 to 0
@@ -337,20 +336,20 @@ PUB Rd_DHCP_Msg(ptr_buff): ptr | i, t, v
                     _dhcp_rebind_tm.byte[i] := byte[ptr_buff][_ptr++]
             SUBNET_MASK:
                 _ptr++
-                repeat i from 3 to 0
-                    _subnet_mask[i] := byte[ptr_buff][_ptr++]
+                bytemove(@_subnet_mask, ptr_buff+_ptr, IPV4ADDR_LEN)
+                _ptr += IPV4ADDR_LEN
             BCAST_ADDR:
                 _ptr++
-                repeat i from 3 to 0
-                    _bcast_ip[i] := byte[ptr_buff][_ptr++]
+                bytemove(@_bcast_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
+                _ptr += IPV4ADDR_LEN
             ROUTER:
                 _ptr++
-                repeat i from 3 to 0
-                    _router_ip[i] := byte[ptr_buff][_ptr++]
+                bytemove(@_router_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
+                _ptr += IPV4ADDR_LEN
             DNS:
                 _ptr++
-                repeat i from 3 to 0
-                    _dns_ip[i] := byte[ptr_buff][_ptr++]
+                bytemove(@_dns_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
+                _ptr += IPV4ADDR_LEN
             OPT_END:
                 _ptr++
     until (t == OPT_END)    'XXX not safeguarded against bad messages missing the OPT_END ($FF) byte
@@ -358,14 +357,13 @@ PUB Rd_DHCP_Msg(ptr_buff): ptr | i, t, v
 
 PUB ServerIP(addr)
 ' Set server IP address
-'    bytemove(@_srv_ip, @addr, IPV4ADDR_LEN)
-    _srv_ip := addr
+    bytemove(@_srv_ip, @addr, IPV4ADDR_LEN)
 
 PUB Wr_BOOTP_Msg(ptr_buff): ptr | i
 ' Write BOOTP message
 '   Returns: number of bytes written to buffer
     byte[ptr_buff][_ptr++] := _bootp_opcode
-    byte[ptr_buff][_ptr++] := _client_mac[HDWADDRLEN_IDX]
+    byte[ptr_buff][_ptr++] := _client_hw_t
     byte[ptr_buff][_ptr++] := _hdw_addr_len
     byte[ptr_buff][_ptr++] := _hops
     repeat i from 3 to 0
@@ -382,8 +380,9 @@ PUB Wr_BOOTP_Msg(ptr_buff): ptr | i
     _ptr += IPV4ADDR_LEN
     bytemove(ptr_buff+_ptr, @_gwy_ip, IPV4ADDR_LEN)
     _ptr += IPV4ADDR_LEN
-    repeat i from 0 to 5
-        byte[ptr_buff][_ptr++] := _client_mac[i]
+    bytemove(ptr_buff+_ptr, @_client_mac, MACADDR_LEN)
+    _ptr += MACADDR_LEN
+
     repeat (HDWADDRLEN_MAX-MACADDR_LEN)
         byte[ptr_buff][_ptr++] := $00
     bytemove(ptr_buff+_ptr, @_srv_hostname, SRV_HOSTN_LEN)
@@ -410,7 +409,7 @@ PUB Wr_DHCP_Msg(ptr_buff, msg_t): ptr
     _dhcp_optsz := 0
     _ptr += writetlv(ptr_buff+_ptr, MSG_TYPE, 1, msg_t)
     _ptr += writetlv(ptr_buff+_ptr, PARAM_REQLST, 5, @_dhcp_param_req)
-    _ptr += writetlv(ptr_buff+_ptr, CLIENT_ID, 7, @_client_mac)
+    _ptr += writetlv(ptr_buff+_ptr, CLIENT_ID, 7, @_client_hw_t)    ' HW type, then HW addr
     if (msg_t == DHCPDISCOVER)
         _ptr += writetlv(ptr_buff+_ptr, MAX_DHCP_MSGSZ, 2, _dhcp_max_msg_len)
     if (msg_t == DHCPREQUEST)
@@ -452,7 +451,7 @@ PUB WriteTLV(ptr_buff, type, len, val): ptr | i 'XXX rewrite using underlying me
                 byte[ptr_buff][ptr++] := val.byte[i]
         3..255:                                 ' value pointed to
             byte[ptr_buff][ptr++] := len
-            if (type == REQD_IPADDR or type == DHCP_SRV_ID) 'XXX temp hack - add byte order param?
+            if (type == REQD_IPADDR or type == DHCP_SRV_ID or type == CLIENT_ID) 'XXX temp hack - add byte order param?
                 repeat i from 0 to len-1
                     byte[ptr_buff][ptr++] := byte[val][i]
             else
@@ -464,5 +463,5 @@ PUB WriteTLV(ptr_buff, type, len, val): ptr | i 'XXX rewrite using underlying me
 
 PUB YourIP(addr)
 ' Set 'your' IP address
-    _your_ip := addr
+    bytemove(@addr, @_your_ip, IPV4ADDR_LEN)
 

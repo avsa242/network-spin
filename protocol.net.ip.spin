@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Protocol
     Started Feb 27, 2022
-    Updated Feb 28, 2022
+    Updated Mar 17, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -12,6 +12,20 @@
 #include "net-common.spinh"
 
 CON
+
+{ offsets within header}
+    VER             = 0
+    HDRLEN          = 0
+    DSCP_ECN        = 1
+    TLEN            = 2
+    IDENT           = 4'..5
+    FLAGS_FRGH      = 6
+    FRGL            = 7
+    T2L             = 8
+    PRTCL           = 9
+    IPCKSUM         = 10'..11
+    SRCIP           = 12'..15
+    DSTIP           = 16'..19
 
 { layer 4 protocols }
     RSVD            = $00

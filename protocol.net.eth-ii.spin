@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Ethernet II protocol
     Started Mar 1, 2022
-    Updated Mar 13, 2022
+    Updated Mar 17, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -36,37 +36,32 @@ PUB Ethertype(eth_t)
 ' Set ethertype of ethernet frame
     _eth_t := eth_t
 
-PUB DestAddr(ptr_addr) | i, ptr
+PUB DestAddr(ptr_addr)
 ' Set destination address of ethernet frame
-    ptr := 0
-    repeat i from 0 to 5
-        _dest_addr.byte[i] := byte[ptr_addr][ptr++]
+    bytemove(@_dest_addr, ptr_addr, MACADDR_LEN)
 
-PUB SrcAddr(ptr_addr) | i, ptr
+PUB SrcAddr(ptr_addr)
 ' Set source address of ethernet frame
-'    bytemove(@_src_addr, ptr_addr, MACADDR_LEN)
-    ptr := 0
-    repeat i from 0 to 5
-        _src_addr.byte[i] := byte[ptr_addr][ptr++]
+    bytemove(@_src_addr, ptr_addr, MACADDR_LEN)
 
 PUB ReadFrame(ptr_buff): ptr | i
 ' Read ethernet-II frame
 '   Returns: number of bytes read
     ptr := 0
-    repeat i from 5 to 0
-        _dest_addr.byte[i] := byte[ptr_buff][ptr++]
-    repeat i from 5 to 0
-        _src_addr.byte[i] := byte[ptr_buff][ptr++]
+    bytemove(@_dest_addr, ptr_buff+ptr, MACADDR_LEN)
+    ptr += MACADDR_LEN
+    bytemove(@_src_addr, ptr_buff+ptr, MACADDR_LEN)
+    ptr += MACADDR_LEN
     _eth_t.byte[1] := byte[ptr_buff][ptr++]
     _eth_t.byte[0] := byte[ptr_buff][ptr++]
 
 PUB WriteFrame(ptr_buff): ptr | i
 ' Write ethernet-II frame
     ptr := 0
-    repeat i from 5 to 0
-        byte[ptr_buff][ptr++] := _dest_addr.byte[i]
-    repeat i from 5 to 0
-        byte[ptr_buff][ptr++] := _src_addr.byte[i]
+    bytemove(ptr_buff+ptr, @_dest_addr, MACADDR_LEN)
+    ptr += MACADDR_LEN
+    bytemove(ptr_buff+ptr, @_src_addr, MACADDR_LEN)
+    ptr += MACADDR_LEN
     byte[ptr_buff][ptr++] := _eth_t.byte[1]
     byte[ptr_buff][ptr++] := _eth_t.byte[0]
 
