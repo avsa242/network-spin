@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Boot Protocol/Dynamic Host Configuration Protocol
     Started Feb 28, 2022
-    Updated Mar 15, 2022
+    Updated Mar 19, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -463,5 +463,5 @@ PUB WriteTLV(ptr_buff, type, len, val): ptr | i 'XXX rewrite using underlying me
 
 PUB YourIP(addr)
 ' Set 'your' IP address
-    bytemove(@addr, @_your_ip, IPV4ADDR_LEN)
+    bytemove(@_your_ip, @addr, IPV4ADDR_LEN)
 

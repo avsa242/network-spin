@@ -17,7 +17,7 @@ CON
 { Limits }
     UDP_MSG_LEN = 8
 
-{ offsets }
+{ offsets within header }
     SRC_PORT    = 0
     DEST_PORT   = 2
     DGRAMLEN    = 4

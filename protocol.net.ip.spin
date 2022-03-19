@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Protocol
     Started Feb 27, 2022
-    Updated Mar 17, 2022
+    Updated Mar 19, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -14,7 +14,7 @@
 CON
 
 { offsets within header}
-    VER             = 0
+    VERS            = 0
     HDRLEN          = 0
     DSCP_ECN        = 1
     TLEN            = 2
