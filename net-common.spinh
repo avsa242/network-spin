@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Constants common to multiple networking objects
     Started Mar 12, 2022
-    Updated Mar 13, 2022
+    Updated Mar 20, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -18,4 +18,8 @@ CON
 { Ethertypes }
     ETYP_IPV4               = $0800
     ETYP_ARP                = $0806
+
+DAT
+
+    _mac_bcast  byte $FF, $FF, $FF, $FF, $FF, $FF
 
