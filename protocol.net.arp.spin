@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Address Resolution Protocol
     Started Feb 27, 2022
-    Updated Mar 17, 2022
+    Updated Mar 20, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -87,7 +87,7 @@ PUB ProtoType{}: pro
 '   Returns: word
     return _arp_pro
 
-PUB ReadARP(ptr_buff) | i, ptr
+PUB Rd_ARP_Msg(ptr_buff) | i, ptr
 ' Read ARP message
     ptr := 0
     sethwtype((byte[ptr_buff][ptr++] << 8) | byte[ptr_buff][ptr++])
@@ -164,7 +164,7 @@ PUB TargetProtoAddr{}: addr
 '   Returns: 4-byte IPv4 address, packed into long
     return _arp_tpa
 
-PUB WriteARP(ptr_buff): ptr | i
+PUB Wr_ARP_Msg(ptr_buff): ptr | i
 ' Write ARP message
     ptr := 0
     byte[ptr_buff][ptr++] := _arp_hrd.byte[1]
@@ -189,7 +189,6 @@ PUB WriteARP(ptr_buff): ptr | i
     ptr += IPV4ADDR_LEN
 
 DAT
-
 {
 TERMS OF USE: MIT License
 
