@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Protocol
     Started Feb 27, 2022
-    Updated Mar 19, 2022
+    Updated Mar 20, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -46,17 +46,18 @@ VAR
 
     long _src_addr, _dest_addr
 
+    word _tot_len
+    word _ident
+    word _frag_offs                             ' flags[15..13]:frag[12..0]
+    word _hdr_chk
+
     byte _ver                                   ' version[7..4]:IHL[3..0]
     byte _hdr_len                               ' in 32-bit words; bytes = *4
     byte _dsvc                                  ' dsc[7..2]:ecn[1..0]
     byte _ecn
-    word _tot_len
-    word _ident
     byte _flags
-    word _frag_offs                             ' flags[15..13]:frag[12..0]
     byte _ttl
     byte _proto
-    word _hdr_chk
 
 PUB DestAddr{}: addr
 ' Get destination address of IP datagram
@@ -103,7 +104,7 @@ PUB Layer4Proto{}: proto
 '   Returns: byte
     return _proto
 
-PUB ReadDgram(ptr_buff): ptr | i
+PUB Rd_IP_Header(ptr_buff): ptr | i
 ' Read IP datagram from buffer
     ptr := 0
     _ver := ((byte[ptr_buff][ptr] >> 4) & $0f)
@@ -120,31 +121,6 @@ PUB ReadDgram(ptr_buff): ptr | i
     bytemove(@_src_addr, ptr_buff+ptr, IPV4ADDR_LEN)
     ptr += IPV4ADDR_LEN
     bytemove(@_dest_addr, ptr_buff+ptr, IPV4ADDR_LEN)
-    ptr += IPV4ADDR_LEN
-
-CON
-
-    CS6     = $30
-
-PUB WriteDgram(ptr_buff): ptr | i   ' TODO: move the shifting/masking to the Set*() methods
-' Read IP datagram from buffer
-'   Returns: length of assembled datagram, in bytes
-    ptr := 0
-    byte[ptr_buff][ptr++] := (_ver << 4) | _hdr_len
-    byte[ptr_buff][ptr++] := (_dsvc << 2) | _ecn
-    byte[ptr_buff][ptr++] := _tot_len.byte[1]
-    byte[ptr_buff][ptr++] := _tot_len.byte[0]
-    byte[ptr_buff][ptr++] := _ident.byte[1]
-    byte[ptr_buff][ptr++] := _ident.byte[0]
-    byte[ptr_buff][ptr++] := (_flags << 5) | (_frag_offs >> 8) & $1f ' _flags | upper 5 bits of _frag_offs
-    byte[ptr_buff][ptr++] := _frag_offs & $ff   ' lower 8 bits
-    byte[ptr_buff][ptr++] := _ttl
-    byte[ptr_buff][ptr++] := _proto
-    byte[ptr_buff][ptr++] := _hdr_chk.byte[1]
-    byte[ptr_buff][ptr++] := _hdr_chk.byte[0]
-    bytemove(ptr_buff+ptr, @_src_addr, IPV4ADDR_LEN)
-    ptr += IPV4ADDR_LEN
-    bytemove(ptr_buff+ptr, @_dest_addr, IPV4ADDR_LEN)
     ptr += IPV4ADDR_LEN
 
 PUB SetDestAddr(addr)
@@ -230,6 +206,27 @@ PUB Version{}: ver
 ' Get IP version
 '   Returns: byte
     return _ver
+
+PUB Wr_IP_Header(ptr_buff): ptr | i   ' TODO: move the shifting/masking to the Set*() methods
+' Read IP datagram from buffer
+'   Returns: length of assembled datagram, in bytes
+    ptr := 0
+    byte[ptr_buff][ptr++] := (_ver << 4) | _hdr_len
+    byte[ptr_buff][ptr++] := (_dsvc << 2) | _ecn
+    byte[ptr_buff][ptr++] := _tot_len.byte[1]
+    byte[ptr_buff][ptr++] := _tot_len.byte[0]
+    byte[ptr_buff][ptr++] := _ident.byte[1]
+    byte[ptr_buff][ptr++] := _ident.byte[0]
+    byte[ptr_buff][ptr++] := (_flags << 5) | (_frag_offs >> 8) & $1f ' _flags | upper 5 bits of _frag_offs
+    byte[ptr_buff][ptr++] := _frag_offs & $ff   ' lower 8 bits
+    byte[ptr_buff][ptr++] := _ttl
+    byte[ptr_buff][ptr++] := _proto
+    byte[ptr_buff][ptr++] := _hdr_chk.byte[1]
+    byte[ptr_buff][ptr++] := _hdr_chk.byte[0]
+    bytemove(ptr_buff+ptr, @_src_addr, IPV4ADDR_LEN)
+    ptr += IPV4ADDR_LEN
+    bytemove(ptr_buff+ptr, @_dest_addr, IPV4ADDR_LEN)
+    ptr += IPV4ADDR_LEN
 
 DAT
 
