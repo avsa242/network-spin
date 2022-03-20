@@ -66,8 +66,9 @@ PUB HeaderLen{}: len
 ' Get current header length
     return _ptr
 
-PUB ReadDgram(ptr_buff)
-' Read UDP datagram from ptr_buff
+PUB Rd_UDP_Header(ptr_buff)
+' Read UDP header from ptr_buff
+'   Returns: length of read header, in bytes
     _ptr := 0
     _src_port := (byte[ptr_buff][_ptr++] << 8) | byte[ptr_buff][_ptr++]
     _dest_port := (byte[ptr_buff][_ptr++] << 8) | byte[ptr_buff][_ptr++]
@@ -79,9 +80,9 @@ PUB ResetPtr{}  'XXX tentative
 ' Reset buffer pointer
     _ptr := 0
 
-PUB WriteDgram(ptr_buff): ptr | chksum, chkbuff[5], i
-' Write assembled UDP datagram to ptr_buff
-'   Returns: length of assembled datagram, in bytes
+PUB Wr_UDP_Header(ptr_buff): ptr
+' Write assembled UDP header to ptr_buff
+'   Returns: length of assembled header, in bytes
     _ptr := 0
     byte[ptr_buff][_ptr++] := _src_port.byte[1]
     byte[ptr_buff][_ptr++] := _src_port.byte[0]
