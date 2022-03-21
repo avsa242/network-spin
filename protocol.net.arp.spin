@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Address Resolution Protocol
     Started Feb 27, 2022
-    Updated Mar 20, 2022
+    Updated Mar 21, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -89,36 +89,18 @@ PUB ProtoType{}: pro
 '   Returns: word
     return _arp_pro
 
-PUB Rd_ARP_Msg{} | i, ptr
+PUB Rd_ARP_Msg{}: ptr
 ' Read ARP message
-{    ptr := 0
-    sethwtype((byte[ptr_buff][ptr++] << 8) | byte[ptr_buff][ptr++])
-    setprototype((byte[ptr_buff][ptr++] << 8) | byte[ptr_buff][ptr++])
-    sethwaddrlen(byte[ptr_buff][ptr++])
-    setprotoaddrlen(byte[ptr_buff][ptr++])
-    setopcode((byte[ptr_buff][ptr++] << 8) | byte[ptr_buff][ptr++])
-
-    bytemove(@_arp_sha, ptr_buff+ptr, MACADDR_LEN)
-    ptr += MACADDR_LEN
-
-    bytemove(@_arp_spa, ptr_buff+ptr, IPV4ADDR_LEN)
-    ptr += IPV4ADDR_LEN
-
-    bytemove(@_arp_tha, ptr_buff+ptr, MACADDR_LEN)
-    ptr += MACADDR_LEN
-
-    bytemove(@_arp_tpa, ptr_buff+ptr, IPV4ADDR_LEN)
-    ptr += IPV4ADDR_LEN
-}
-    rdblk_msbf(@_arp_hrd, 2)
-    rdblk_msbf(@_arp_pro, 2)
+    _arp_hrd := rdword_msbf{}
+    _arp_pro := rdword_msbf{}
     _arp_hln := rd_byte{}
     _arp_pln := rd_byte{}
-    rdblk_msbf(@_arp_op, 2)
+    _arp_op := rdword_msbf{}
     rdblk_lsbf(@_arp_sha, MACADDR_LEN)
     rdblk_lsbf(@_arp_spa, IPV4ADDR_LEN)
     rdblk_lsbf(@_arp_tha, MACADDR_LEN)
     rdblk_lsbf(@_arp_tpa, IPV4ADDR_LEN)
+    return curr_ptr{}
 
 PUB SenderHWAddr{}: ptr_addr
 ' Get sender hardware address
@@ -176,39 +158,18 @@ PUB TargetProtoAddr{}: addr
 '   Returns: 4-byte IPv4 address, packed into long
     return _arp_tpa
 
-PUB Wr_ARP_Msg{}: ptr | i
+PUB Wr_ARP_Msg{}: ptr
 ' Write ARP message
-{    ptr := 0
-    byte[ptr_buff][ptr++] := _arp_hrd.byte[1]
-    byte[ptr_buff][ptr++] := _arp_hrd.byte[0]
-    byte[ptr_buff][ptr++] := _arp_pro.byte[1]
-    byte[ptr_buff][ptr++] := _arp_pro.byte[0]
-    byte[ptr_buff][ptr++] := _arp_hln
-    byte[ptr_buff][ptr++] := _arp_pln
-    byte[ptr_buff][ptr++] := _arp_op.byte[1]
-    byte[ptr_buff][ptr++] := _arp_op.byte[0]
-
-    bytemove(ptr_buff+ptr, @_arp_sha, MACADDR_LEN)
-    ptr += MACADDR_LEN
-
-    bytemove(ptr_buff+ptr, @_arp_spa, IPV4ADDR_LEN)
-    ptr += IPV4ADDR_LEN
-
-    bytemove(ptr_buff+ptr, @_arp_tha, MACADDR_LEN)
-    ptr += MACADDR_LEN
-
-    bytemove(ptr_buff+ptr, @_arp_tpa, IPV4ADDR_LEN)
-    ptr += IPV4ADDR_LEN
-}
-    wrblk_msbf(@_arp_hrd, 2)
-    wrblk_msbf(@_arp_pro, 2)
+    wrword_msbf(_arp_hrd)
+    wrword_msbf(_arp_pro)
     wr_byte(_arp_hln)
     wr_byte(_arp_pln)
-    wrblk_msbf(@_arp_op, 2)
+    wrword_msbf(_arp_op)
     wrblk_lsbf(@_arp_sha, MACADDR_LEN)
     wrblk_lsbf(@_arp_spa, IPV4ADDR_LEN)
     wrblk_lsbf(@_arp_tha, MACADDR_LEN)
     wrblk_lsbf(@_arp_tpa, IPV4ADDR_LEN)
+    return curr_ptr{}
 
 DAT
 {

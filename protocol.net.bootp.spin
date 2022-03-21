@@ -277,128 +277,69 @@ PUB SetParamsReqd(ptr_buff, len)
 
 PUB Rd_BOOTP_Msg{}: ptr | i, tmp
 ' Read BOOTP message, as well as DHCP message, if it exists
-{    _ptr := ptr := 0
-    _bootp_opcode := byte[ptr_buff][_ptr++]
-    _client_hw_t := byte[ptr_buff][_ptr++]
-    _hdw_addr_len := byte[ptr_buff][_ptr++]
-    _hops := byte[ptr_buff][_ptr++]
-    repeat i from 3 to 0
-        _trans_id.byte[i] := byte[ptr_buff][_ptr++]
-    _lstime_elapsed.byte[1] := byte[ptr_buff][_ptr++]
-    _lstime_elapsed.byte[0] := byte[ptr_buff][_ptr++]
-    _flags.byte[1] := byte[ptr_buff][_ptr++]
-    _flags.byte[0] := byte[ptr_buff][_ptr++]
-    bytemove(@_client_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
-    _ptr += IPV4ADDR_LEN
-    bytemove(@_your_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
-    _ptr += IPV4ADDR_LEN
-    bytemove(@_srv_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
-    _ptr += IPV4ADDR_LEN
-    bytemove(@_gwy_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
-    _ptr += IPV4ADDR_LEN
-    bytemove(@_client_mac, ptr_buff+_ptr, MACADDR_LEN)
-    _ptr += MACADDR_LEN
-
-    repeat (HDWADDRLEN_MAX-MACADDR_LEN)
-        _ptr++                                  ' skip over hdw addr padding
-    _client_hdw_addr_pad := (HDWADDRLEN_MAX-MACADDR_LEN)
-
-    bytemove(@_srv_hostname, ptr_buff+_ptr, SRV_HOSTN_LEN)
-    _ptr += SRV_HOSTN_LEN
-    bytemove(@_boot_fname, ptr_buff+_ptr, BOOT_FN_LEN)
-    _ptr += BOOT_FN_LEN
-
-    { DHCP message? Check it without advancing the pointer, in case it's not }
-'    if (byte[ptr_buff][_ptr] == ((DHCP_MAGIC_COOKIE >> 24) & $ff)) and {
-'}   (byte[ptr_buff][_ptr+1] == ((DHCP_MAGIC_COOKIE >> 16) & $ff)) and {
-'}   (byte[ptr_buff][_ptr+2] == ((DHCP_MAGIC_COOKIE >> 8) & $ff)) and {
-'}   (byte[ptr_buff][_ptr+3] == (DHCP_MAGIC_COOKIE & $ff))
-    if (rdlong_msbf(@tmp, 4) == DHCP_MAGIC_COOKIE
-        rd_DHCP_msg(ptr_buff)
-    else
-        setptr(currptr{}-4)                     ' rewind if it's not DHCP
-    return currptr{}
-}
     _bootp_opcode := rd_byte{}
     _client_hw_t := rd_byte{}
     _hdw_addr_len := rd_byte{}
     _hops := rd_byte
-    rdblk_lsbf(@_trans_id, 4)
-    rdblk_lsbf(@_lstime_elapsed, 2)
-    rdblk_lsbf(@_flags, 2)
+    _trans_id := rdlong_lsbf{}
+    _lstime_elapsed := rdword_lsbf{}
+    _flags := rdword_lsbf{}
     rdblk_lsbf(@_client_ip, IPV4ADDR_LEN)
     rdblk_lsbf(@_your_ip, IPV4ADDR_LEN)
     rdblk_lsbf(@_srv_ip, IPV4ADDR_LEN)
     rdblk_lsbf(@_gwy_ip, IPV4ADDR_LEN)
     rdblk_lsbf(@_client_mac, MACADDR_LEN)
 
+    { skip over the hardware address padding }
     incptr(HDWADDRLEN_MAX-MACADDR_LEN)
 
+    { and record its length }
     _client_hdw_addr_pad := (HDWADDRLEN_MAX-MACADDR_LEN)
 
     rdblk_lsbf(@_srv_hostname, SRV_HOSTN_LEN)
     rdblk_lsbf(@_boot_fname, BOOT_FN_LEN)
 
-PUB Rd_DHCP_Msg{}: ptr | i, t, v
+    { does the message contain a DHCP message? }
+    if (rdlong_msbf{} == DHCP_MAGIC_COOKIE)
+        rd_dhcp_msg{}
+    else
+        setptr(currptr{}-4)                     ' rewind if it's not DHCP
+    return currptr{}
+
+PUB Rd_DHCP_Msg{}: ptr | t
 ' Read DHCP message
     { read through all TLVs }
     repeat
-'        t := byte[ptr_buff][_ptr++]
         t := rd_byte{}
         case t
             MSG_TYPE:
-                rd_byte{}'_ptr++                          ' skip over the length byte
-                _dhcp_msg_t := rd_byte{}'byte[ptr_buff][_ptr++]
+                rd_byte{}                       ' skip over the length byte
+                _dhcp_msg_t := rd_byte{}
             DHCP_SRV_ID:
-                '_ptr++
-                'bytemove(@_dhcp_srv_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
-                '_ptr += IPV4ADDR_LEN
                 rd_byte{}
                 rdblk_lsbf(@_dhcp_srv_ip, IPV4ADDR_LEN)
             IP_LEASE_TM:
-'                _ptr++
-'                repeat i from 3 to 0
-'                    _dhcp_lease_tm.byte[i] := byte[ptr_buff][_ptr++]
                 rd_byte{}
                 rdblk_msbf(@_dhcp_lease_tm, 4)
             RENEWAL_TM:
-                '_ptr++
-                'repeat i from 3 to 0
-                '    _dhcp_renewal_tm.byte[i] := byte[ptr_buff][_ptr++]
                 rd_byte{}
                 rdblk_msbf(@_dhcp_renewal_tm, 4)
             REBIND_TM:
-                '_ptr++
-                'repeat i from 3 to 0
-                '    _dhcp_rebind_tm.byte[i] := byte[ptr_buff][_ptr++]
                 rd_byte{}
                 rdblk_msbf(@_dhcp_rebind_tm, 4)
             SUBNET_MASK:
-                '_ptr++
-                'bytemove(@_subnet_mask, ptr_buff+_ptr, IPV4ADDR_LEN)
-                '_ptr += IPV4ADDR_LEN
                 rd_byte{}
                 rdblk_lsbf(@_subnet_mask, IPV4ADDR_LEN)
             BCAST_ADDR:
-                '_ptr++
-                'bytemove(@_bcast_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
-                '_ptr += IPV4ADDR_LEN
                 rd_byte{}
                 rdblk_lsbf(@_bcast_ip, IPV4ADDR_LEN)
             ROUTER:
-                '_ptr++
-                'bytemove(@_router_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
-                '_ptr += IPV4ADDR_LEN
                 rd_byte{}
                 rdblk_lsbf(@_router_ip, IPV4ADDR_LEN)
             DNS:
-                '_ptr++
-                'bytemove(@_dns_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
-                '_ptr += IPV4ADDR_LEN
                 rd_byte{}
                 rdblk_lsbf(@_dns_ip, IPV4ADDR_LEN)
             OPT_END:
-                '_ptr++
                 rd_byte{}
     until (t == OPT_END)    'XXX not safeguarded against bad messages missing the OPT_END ($FF) byte
     return curr_pos{}

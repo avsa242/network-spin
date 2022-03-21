@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Protocol
     Started Feb 27, 2022
-    Updated Mar 20, 2022
+    Updated Mar 21, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -108,38 +108,20 @@ PUB Layer4Proto{}: proto
 
 PUB Rd_IP_Header{}: ptr | tmp
 ' Read IP datagram from buffer
-{
-    ptr := 0
-    _ver := ((byte[ptr_buff][ptr] >> 4) & $0f)
-    _hdr_len := (byte[ptr_buff][ptr++] & $0f)
-    _dsvc := ((byte[ptr_buff][ptr] >> 2) & $3f)
-    _ecn := (byte[ptr_buff][ptr++] & $03)
-    _tot_len := ((byte[ptr_buff][ptr++] << 8) | byte[ptr_buff][ptr++])
-    _ident := ((byte[ptr_buff][ptr++] << 8) | byte[ptr_buff][ptr++])
-    _ip_flags := (byte[ptr_buff][ptr] >> 5) & $03
-    _frag_offs := (((byte[ptr_buff][ptr++] & $1f) << 8) | byte[ptr_buff][ptr++])
-    _ttl := byte[ptr_buff][ptr++]
-    _proto := byte[ptr_buff][ptr++]
-    _hdr_chk := ((byte[ptr_buff][ptr++] << 8) | byte[ptr_buff][ptr++])
-    bytemove(@_ip_src_addr, ptr_buff+ptr, IPV4ADDR_LEN)
-    ptr += IPV4ADDR_LEN
-    bytemove(@_ip_dest_addr, ptr_buff+ptr, IPV4ADDR_LEN)
-    ptr += IPV4ADDR_LEN
-}
     tmp := rd_byte{}
-    _ver := ((tmp >> 4) & $0f)
-    _hdr_len := (tmp & $0f)
+        _ver := ((tmp >> 4) & $0f)
+        _hdr_len := (tmp & $0f)
     tmp := rd_byte{}
-    _dsvc := ((tmp >> 2) & $3f)
-    _ecn := (tmp & $03)
-    rdblk_lsbf(@_tot_len, 2)
-    rdblk_lsbf(@_ident, 2)
-    rdblk_lsbf(@tmp, 2)
-    _ip_flags := ((tmp.byte[0] >> 5) & $03)
-    _frag_offs := (((tmp.byte[1] & $1f) << 8) | tmp.byte[2])
+        _dsvc := ((tmp >> 2) & $3f)
+        _ecn := (tmp & $03)
+    _tot_len := rdword_lsbf{}
+    _ident := rdword_lsbf{}
+    tmp := rdword_lsbf{}
+        _ip_flags := ((tmp.byte[0] >> 5) & $03)
+        _frag_offs := (((tmp.byte[1] & $1f) << 8) | tmp.byte[2])
     _ttl := rd_byte{}
     _proto := rd_byte{}
-    rdblk_lsbf(@_hdr_chk, 2)
+    _hdr_chk := rdword_lsbf{}
     rdblk_lsbf(@_ip_src_addr, IPV4ADDR_LEN)
     rdblk_lsbf(@_ip_dest_addr, IPV4ADDR_LEN)
     return currptr{}
@@ -233,13 +215,13 @@ PUB Wr_IP_Header{}: ptr | i   ' TODO: move the shifting/masking to the Set*() me
 '   Returns: length of assembled datagram, in bytes
     wr_byte((_ver << 4) | _hdr_len)
     wr_byte((_dsvc << 2) | _ecn)
-    wrblk_msbf(@_tot_len, 2)
-    wrblk_msbf(@_ident, 2)
+    wrword_msbf(_tot_len)
+    wrword_msbf(_ident)
     wr_byte((_ip_flags << 5) | (_frag_offs >> 8) & $1f)
     wr_byte(_frag_offs & $ff)
     wr_byte(_ttl)
     wr_byte(_proto)
-    wrblk_msbf(@_hdr_chk, 2)
+    wrword_msbf(_hdr_chk)
     wrblk_msbf(@_ip_src_addr, IPV4ADDR_LEN)
     wrblk_msbf(@_ip_dest_addr, IPV4ADDR_LEN)
     return currptr{}

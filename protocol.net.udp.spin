@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Universal Datagram Protocol
     Started Feb 28, 2022
-    Updated Mar 13, 2022
+    Updated Mar 21, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -71,10 +71,10 @@ PUB UDPHeaderLen{}: len
 PUB Rd_UDP_Header{}
 ' Read UDP header from ptr_buff
 '   Returns: length of read header, in bytes
-    rdblk_lsbf(@_src_port, 2)
-    rdblk_lsbf(@_dest_port, 2)
-    rdblk_lsbf(@_length, 2)
-    rdblk_lsbf(@_cksum, 2)
+    _src_port := rdword_lsbf{}
+    _dest_port := rdword_lsbf{}
+    _length := rdword_lsbf{}
+    _cksum := rdword_lsbf{}
     return currptr{}
 
 PUB Wr_UDP_Header{}: ptr
