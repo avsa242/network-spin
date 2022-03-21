@@ -9,7 +9,9 @@
     See end of file for terms of use.
     --------------------------------------------
 }
+#ifndef NET_COMMON
 #include "net-common.spinh"
+#endif
 
 CON
 
@@ -72,7 +74,7 @@ PUB HWType{}: hrd
 '   Returns: word
     return _arp_hrd
 
-PUB OpCode{}: op
+PUB ARPOpCode{}: op
 ' Get ARP operation code
 '   Returns: byte
     return _arp_op
@@ -87,9 +89,9 @@ PUB ProtoType{}: pro
 '   Returns: word
     return _arp_pro
 
-PUB Rd_ARP_Msg(ptr_buff) | i, ptr
+PUB Rd_ARP_Msg{} | i, ptr
 ' Read ARP message
-    ptr := 0
+{    ptr := 0
     sethwtype((byte[ptr_buff][ptr++] << 8) | byte[ptr_buff][ptr++])
     setprototype((byte[ptr_buff][ptr++] << 8) | byte[ptr_buff][ptr++])
     sethwaddrlen(byte[ptr_buff][ptr++])
@@ -107,6 +109,16 @@ PUB Rd_ARP_Msg(ptr_buff) | i, ptr
 
     bytemove(@_arp_tpa, ptr_buff+ptr, IPV4ADDR_LEN)
     ptr += IPV4ADDR_LEN
+}
+    rdblk_msbf(@_arp_hrd, 2)
+    rdblk_msbf(@_arp_pro, 2)
+    _arp_hln := rd_byte{}
+    _arp_pln := rd_byte{}
+    rdblk_msbf(@_arp_op, 2)
+    rdblk_lsbf(@_arp_sha, MACADDR_LEN)
+    rdblk_lsbf(@_arp_spa, IPV4ADDR_LEN)
+    rdblk_lsbf(@_arp_tha, MACADDR_LEN)
+    rdblk_lsbf(@_arp_tpa, IPV4ADDR_LEN)
 
 PUB SenderHWAddr{}: ptr_addr
 ' Get sender hardware address
@@ -126,7 +138,7 @@ PUB SetHWType(hrd)
 ' Set hardware type
     _arp_hrd := hrd
 
-PUB SetOpCode(op)
+PUB SetARPOpCode(op)
 ' Set ARP operation code
     _arp_op := op
 
@@ -164,9 +176,9 @@ PUB TargetProtoAddr{}: addr
 '   Returns: 4-byte IPv4 address, packed into long
     return _arp_tpa
 
-PUB Wr_ARP_Msg(ptr_buff): ptr | i
+PUB Wr_ARP_Msg{}: ptr | i
 ' Write ARP message
-    ptr := 0
+{    ptr := 0
     byte[ptr_buff][ptr++] := _arp_hrd.byte[1]
     byte[ptr_buff][ptr++] := _arp_hrd.byte[0]
     byte[ptr_buff][ptr++] := _arp_pro.byte[1]
@@ -187,6 +199,16 @@ PUB Wr_ARP_Msg(ptr_buff): ptr | i
 
     bytemove(ptr_buff+ptr, @_arp_tpa, IPV4ADDR_LEN)
     ptr += IPV4ADDR_LEN
+}
+    wrblk_msbf(@_arp_hrd, 2)
+    wrblk_msbf(@_arp_pro, 2)
+    wr_byte(_arp_hln)
+    wr_byte(_arp_pln)
+    wrblk_msbf(@_arp_op, 2)
+    wrblk_lsbf(@_arp_sha, MACADDR_LEN)
+    wrblk_lsbf(@_arp_spa, IPV4ADDR_LEN)
+    wrblk_lsbf(@_arp_tha, MACADDR_LEN)
+    wrblk_lsbf(@_arp_tpa, IPV4ADDR_LEN)
 
 DAT
 {

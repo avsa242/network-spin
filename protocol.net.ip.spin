@@ -9,7 +9,9 @@
     See end of file for terms of use.
     --------------------------------------------
 }
+#ifndef NET_COMMON
 #include "net-common.spinh"
+#endif
 
 CON
 
@@ -44,7 +46,7 @@ CON
 
 VAR
 
-    long _src_addr, _dest_addr
+    long _ip_src_addr, _ip_dest_addr
 
     word _tot_len
     word _ident
@@ -55,14 +57,14 @@ VAR
     byte _hdr_len                               ' in 32-bit words; bytes = *4
     byte _dsvc                                  ' dsc[7..2]:ecn[1..0]
     byte _ecn
-    byte _flags
+    byte _ip_flags
     byte _ttl
     byte _proto
 
-PUB DestAddr{}: addr
+PUB DestIP{}: addr
 ' Get destination address of IP datagram
 '   Returns: 4 IPv4 address bytes packed into long
-    return _dest_addr
+    return _ip_dest_addr
 
 PUB DSCP{}: cp
 ' Differentiated services code point
@@ -77,7 +79,7 @@ PUB ECN{}: state
 PUB Flags{}: f  'XXX methods to set DF and MF
 ' Get fragmentation control flags
 '   Returns: 3-bit field
-    return _flags
+    return _ip_flags
 
 PUB FragOffset{}: o
 ' Get offset in overall message of this fragment
@@ -89,7 +91,7 @@ PUB HdrChksum{}: cksum
 '   Returns: word
     return _hdr_chk
 
-PUB HeaderLen{}: len
+PUB IPHeaderLen{}: len
 ' Get header length, in longwords
 '   Returns: byte
     return _hdr_len
@@ -104,8 +106,9 @@ PUB Layer4Proto{}: proto
 '   Returns: byte
     return _proto
 
-PUB Rd_IP_Header(ptr_buff): ptr | i
+PUB Rd_IP_Header{}: ptr | tmp
 ' Read IP datagram from buffer
+{
     ptr := 0
     _ver := ((byte[ptr_buff][ptr] >> 4) & $0f)
     _hdr_len := (byte[ptr_buff][ptr++] & $0f)
@@ -113,20 +116,38 @@ PUB Rd_IP_Header(ptr_buff): ptr | i
     _ecn := (byte[ptr_buff][ptr++] & $03)
     _tot_len := ((byte[ptr_buff][ptr++] << 8) | byte[ptr_buff][ptr++])
     _ident := ((byte[ptr_buff][ptr++] << 8) | byte[ptr_buff][ptr++])
-    _flags := (byte[ptr_buff][ptr] >> 5) & $03
+    _ip_flags := (byte[ptr_buff][ptr] >> 5) & $03
     _frag_offs := (((byte[ptr_buff][ptr++] & $1f) << 8) | byte[ptr_buff][ptr++])
     _ttl := byte[ptr_buff][ptr++]
     _proto := byte[ptr_buff][ptr++]
     _hdr_chk := ((byte[ptr_buff][ptr++] << 8) | byte[ptr_buff][ptr++])
-    bytemove(@_src_addr, ptr_buff+ptr, IPV4ADDR_LEN)
+    bytemove(@_ip_src_addr, ptr_buff+ptr, IPV4ADDR_LEN)
     ptr += IPV4ADDR_LEN
-    bytemove(@_dest_addr, ptr_buff+ptr, IPV4ADDR_LEN)
+    bytemove(@_ip_dest_addr, ptr_buff+ptr, IPV4ADDR_LEN)
     ptr += IPV4ADDR_LEN
+}
+    tmp := rd_byte{}
+    _ver := ((tmp >> 4) & $0f)
+    _hdr_len := (tmp & $0f)
+    tmp := rd_byte{}
+    _dsvc := ((tmp >> 2) & $3f)
+    _ecn := (tmp & $03)
+    rdblk_lsbf(@_tot_len, 2)
+    rdblk_lsbf(@_ident, 2)
+    rdblk_lsbf(@tmp, 2)
+    _ip_flags := ((tmp.byte[0] >> 5) & $03)
+    _frag_offs := (((tmp.byte[1] & $1f) << 8) | tmp.byte[2])
+    _ttl := rd_byte{}
+    _proto := rd_byte{}
+    rdblk_lsbf(@_hdr_chk, 2)
+    rdblk_lsbf(@_ip_src_addr, IPV4ADDR_LEN)
+    rdblk_lsbf(@_ip_dest_addr, IPV4ADDR_LEN)
+    return currptr{}
 
-PUB SetDestAddr(addr)
+PUB SetDestIP(addr)
 ' Get destination address of IP datagram
 '   Returns: 4 IPv4 address bytes packed into long
-    _dest_addr := addr
+    _ip_dest_addr := addr
 
 PUB SetDSCP(cp)
 ' Differentiated services code point
@@ -141,7 +162,7 @@ PUB SetECN(state)
 PUB SetFlags(f)  'XXX methods to set DF and MF
 ' Get fragmentation control flags
 '   Returns: 3-bit field
-    _flags := f
+    _ip_flags := f
 
 PUB SetFragOffset(o)
 ' Get offset in overall message of this fragment
@@ -168,10 +189,10 @@ PUB SetLayer4Proto(proto)
 '   Returns: byte
     _proto := proto
 
-PUB SetSourceAddr(addr)
+PUB SetSourceIP(addr)
 ' Get source/originator of IP datagram
 '   Returns: 4 IPv4 address bytes packed into long
-    _src_addr := addr
+    _ip_src_addr := addr
 
 PUB SetTimeToLive(ttl)
 ' Get number of router hops datagram is allowed to traverse
@@ -188,10 +209,10 @@ PUB SetVersion(ver)
 '   Returns: byte
     _ver := ver
 
-PUB SourceAddr{}: addr
+PUB SourceIP{}: addr
 ' Get source/originator of IP datagram
 '   Returns: 4 IPv4 address bytes packed into long
-    return _src_addr
+    return _ip_src_addr
 
 PUB TimeToLive{}: ttl
 ' Get number of router hops datagram is allowed to traverse
@@ -207,26 +228,21 @@ PUB Version{}: ver
 '   Returns: byte
     return _ver
 
-PUB Wr_IP_Header(ptr_buff): ptr | i   ' TODO: move the shifting/masking to the Set*() methods
-' Read IP datagram from buffer
+PUB Wr_IP_Header{}: ptr | i   ' TODO: move the shifting/masking to the Set*() methods
+' Write IP datagram to buffer
 '   Returns: length of assembled datagram, in bytes
-    ptr := 0
-    byte[ptr_buff][ptr++] := (_ver << 4) | _hdr_len
-    byte[ptr_buff][ptr++] := (_dsvc << 2) | _ecn
-    byte[ptr_buff][ptr++] := _tot_len.byte[1]
-    byte[ptr_buff][ptr++] := _tot_len.byte[0]
-    byte[ptr_buff][ptr++] := _ident.byte[1]
-    byte[ptr_buff][ptr++] := _ident.byte[0]
-    byte[ptr_buff][ptr++] := (_flags << 5) | (_frag_offs >> 8) & $1f ' _flags | upper 5 bits of _frag_offs
-    byte[ptr_buff][ptr++] := _frag_offs & $ff   ' lower 8 bits
-    byte[ptr_buff][ptr++] := _ttl
-    byte[ptr_buff][ptr++] := _proto
-    byte[ptr_buff][ptr++] := _hdr_chk.byte[1]
-    byte[ptr_buff][ptr++] := _hdr_chk.byte[0]
-    bytemove(ptr_buff+ptr, @_src_addr, IPV4ADDR_LEN)
-    ptr += IPV4ADDR_LEN
-    bytemove(ptr_buff+ptr, @_dest_addr, IPV4ADDR_LEN)
-    ptr += IPV4ADDR_LEN
+    wr_byte((_ver << 4) | _hdr_len)
+    wr_byte((_dsvc << 2) | _ecn)
+    wrblk_msbf(@_tot_len, 2)
+    wrblk_msbf(@_ident, 2)
+    wr_byte((_ip_flags << 5) | (_frag_offs >> 8) & $1f)
+    wr_byte(_frag_offs & $ff)
+    wr_byte(_ttl)
+    wr_byte(_proto)
+    wrblk_msbf(@_hdr_chk, 2)
+    wrblk_msbf(@_ip_src_addr, IPV4ADDR_LEN)
+    wrblk_msbf(@_ip_dest_addr, IPV4ADDR_LEN)
+    return currptr{}
 
 DAT
 

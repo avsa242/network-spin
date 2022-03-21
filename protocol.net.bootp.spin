@@ -9,11 +9,18 @@
     See end of file for terms of use.
     --------------------------------------------
 }
+#ifndef NET_COMMON
 #include "net-common.spinh"
+#endif
 
 CON
 
     DHCP_MAGIC_COOKIE   = $63_82_53_63
+    DHCP_MAGIC_COOKIE3  = ((DHCP_MAGIC_COOKIE >> 24) & $FF)
+    DHCP_MAGIC_COOKIE2  = ((DHCP_MAGIC_COOKIE >> 16) & $FF)
+    DHCP_MAGIC_COOKIE1  = ((DHCP_MAGIC_COOKIE >> 8) & $FF)
+    DHCP_MAGIC_COOKIE0  = (DHCP_MAGIC_COOKIE & $FF)
+
     FLAG_B              = 15
 
     HDWADDRLEN_MAX      = 16
@@ -78,8 +85,8 @@ VAR
 
     word _lstime_elapsed
     word _flags
-    word _ptr
     word _dhcp_max_msg_len
+    word _dhcp_msg_len
 
     byte _bootp_opcode
     byte _hdw_addr_len
@@ -220,9 +227,9 @@ PUB SetDHCPMaxMsgLen(len)
 ' Set maximum accepted DHCP message length
     _dhcp_max_msg_len := len
 
-PUB SetDHCPMsgLen{}: ptr
+PUB DHCPMsgLen{}: ptr
 ' Get length of assembled DHCP message
-    return _ptr
+    return _dhcp_msg_len
 
 PUB SetDHCPMsgType(type)
 ' Set DHCP message type
@@ -268,9 +275,9 @@ PUB SetParamsReqd(ptr_buff, len)
 ' Set list of parameters to retrieve from DHCP server
     bytemove(@_dhcp_param_req, ptr_buff, (len <# 5))
 
-PUB Rd_BOOTP_Msg(ptr_buff): ptr | i
+PUB Rd_BOOTP_Msg{}: ptr | i
 ' Read BOOTP message, as well as DHCP message, if it exists
-    _ptr := ptr := 0
+{    _ptr := ptr := 0
     _bootp_opcode := byte[ptr_buff][_ptr++]
     _client_hw_t := byte[ptr_buff][_ptr++]
     _hdw_addr_len := byte[ptr_buff][_ptr++]
@@ -310,8 +317,29 @@ PUB Rd_BOOTP_Msg(ptr_buff): ptr | i
         rd_DHCP_msg(ptr_buff)
 
     return _ptr
+}
+    _bootp_opcode := rd_byte{}
+    _client_hw_t := rd_byte{}
+    _hdw_addr_len := rd_byte{}
+    _hops := rd_byte
+    rdblk_lsbf(@_trans_id, 4)
+    rdblk_lsbf(@_lstime_elapsed, 2)
+    rdblk_lsbf(@_flags, 2)
+    rdblk_lsbf(@_client_ip, IPV4ADDR_LEN)
+    rdblk_lsbf(@_your_ip, IPV4ADDR_LEN)
+    rdblk_lsbf(@_srv_ip, IPV4ADDR_LEN)
+    rdblk_lsbf(@_gwy_ip, IPV4ADDR_LEN)
+    rdblk_lsbf(@_client_mac, MACADDR_LEN)
 
-PUB Rd_DHCP_Msg(ptr_buff): ptr | i, t, v
+    ptrinc(HDWADDRLEN_MAX-MACADDR_LEN)
+
+    _client_hdw_addr_pad := (HDWADDRLEN_MAX-MACADDR_LEN)
+
+    rdblk_lsbf(@_srv_hostname, SRV_HOSTN_LEN)
+    rdblk_lsbf(@_boot_fname, BOOT_FN_LEN)
+
+
+PUB Rd_DHCP_Msg{}: ptr | i, t, v
 ' Read DHCP message
     { read through all TLVs }
     repeat
@@ -361,69 +389,58 @@ PUB SetServerIP(addr)
 ' Set server IP address
     bytemove(@_srv_ip, @addr, IPV4ADDR_LEN)
 
-PUB Wr_BOOTP_Msg(ptr_buff): ptr | i
+PUB Wr_BOOTP_Msg{}: ptr | st
 ' Write BOOTP message
 '   Returns: number of bytes written to buffer
-    byte[ptr_buff][_ptr++] := _bootp_opcode
-    byte[ptr_buff][_ptr++] := _client_hw_t
-    byte[ptr_buff][_ptr++] := _hdw_addr_len
-    byte[ptr_buff][_ptr++] := _hops
-    repeat i from 3 to 0
-        byte[ptr_buff][_ptr++] := _trans_id.byte[i]
-    byte[ptr_buff][_ptr++] := _lstime_elapsed.byte[1]
-    byte[ptr_buff][_ptr++] := _lstime_elapsed.byte[0]
-    byte[ptr_buff][_ptr++] := _flags.byte[1]
-    byte[ptr_buff][_ptr++] := _flags.byte[0]
-    bytemove(ptr_buff+_ptr, @_client_ip, IPV4ADDR_LEN)
-    _ptr += IPV4ADDR_LEN
-    bytemove(ptr_buff+_ptr, @_your_ip, IPV4ADDR_LEN)
-    _ptr += IPV4ADDR_LEN
-    bytemove(ptr_buff+_ptr, @_srv_ip, IPV4ADDR_LEN)
-    _ptr += IPV4ADDR_LEN
-    bytemove(ptr_buff+_ptr, @_gwy_ip, IPV4ADDR_LEN)
-    _ptr += IPV4ADDR_LEN
-    bytemove(ptr_buff+_ptr, @_client_mac, MACADDR_LEN)
-    _ptr += MACADDR_LEN
+    st := currptr{}
+    wr_byte(_bootp_opcode)
+    wr_byte(_client_hw_t)
+    wr_byte(_hdw_addr_len)
+    wr_byte(_hops)
+    wrblk_msbf(@_trans_id, 4)
+    wrblk_msbf(@_lstime_elapsed, 2)
+    wrblk_msbf(@_flags, 2)
+    wrblk_msbf(@_client_ip, IPV4ADDR_LEN)
+    wrblk_msbf(@_your_ip, IPV4ADDR_LEN)
+    wrblk_msbf(@_srv_ip, IPV4ADDR_LEN)
+    wrblk_msbf(@_gwy_ip, IPV4ADDR_LEN)
+    wrblk_lsbf(@_client_mac, MACADDR_LEN)
+    wr_bytex($00, HDWADDRLEN_MAX-MACADDR_LEN)
+    wrblk_lsbf(@_srv_hostname, SRV_HOSTN_LEN)
+    wrblk_lsbf(@_boot_fname, BOOT_FN_LEN)
+    return currptr{}-st
 
-    repeat (HDWADDRLEN_MAX-MACADDR_LEN)
-        byte[ptr_buff][_ptr++] := $00
-    bytemove(ptr_buff+_ptr, @_srv_hostname, SRV_HOSTN_LEN)
-    _ptr += SRV_HOSTN_LEN
-    bytemove(ptr_buff+_ptr, @_boot_fname, BOOT_FN_LEN)
-    _ptr += BOOT_FN_LEN
-    return _ptr
-
-PUB Wr_DHCP_Msg(ptr_buff, msg_t): ptr
+PUB Wr_DHCP_Msg{}: ptr | st
 ' Write DHCP message, preceded by BOOTP message
-'   Valid values:
-'       msg_t: DHCPDISCOVER ($01), DHCPREQUEST ($03)
+'   NOTE: Ensure DHCPMsgType() is set, prior to calling this method
+    st := currptr{}
 
     { start with BOOTP message }
-    wr_bootp_msg(ptr_buff)
+    wr_bootp_msg{}
 
     { then the DHCP 'magic cookie' value to identify it as a DHCP message }
-    byte[ptr_buff][_ptr++] := (DHCP_MAGIC_COOKIE >> 24) & $ff   ' XXX separate CON into 4 octets
-    byte[ptr_buff][_ptr++] := (DHCP_MAGIC_COOKIE >> 16) & $ff   ' to avoid runtime shift & mask
-    byte[ptr_buff][_ptr++] := (DHCP_MAGIC_COOKIE >> 8) & $ff
-    byte[ptr_buff][_ptr++] := DHCP_MAGIC_COOKIE & $ff
+    wr_byte(DHCP_MAGIC_COOKIE3)
+    wr_byte(DHCP_MAGIC_COOKIE2)
+    wr_byte(DHCP_MAGIC_COOKIE1)
+    wr_byte(DHCP_MAGIC_COOKIE0)
 
     { finally, the DHCP 'options' }
     _dhcp_optsz := 0
-    _ptr += writetlv(ptr_buff+_ptr, MSG_TYPE, 1, msg_t)
-    _ptr += writetlv(ptr_buff+_ptr, PARAM_REQLST, 5, @_dhcp_param_req)
-    _ptr += writetlv(ptr_buff+_ptr, CLIENT_ID, 7, @_client_hw_t)    ' HW type, then HW addr
-    if (msg_t == DHCPDISCOVER)
-        _ptr += writetlv(ptr_buff+_ptr, MAX_DHCP_MSGSZ, 2, _dhcp_max_msg_len)
-    if (msg_t == DHCPREQUEST)
-        _ptr += writetlv(ptr_buff+_ptr, REQD_IPADDR, 4, @_your_ip)
-        _ptr += writetlv(ptr_buff+_ptr, DHCP_SRV_ID, 4, @_dhcp_srv_ip)
-    _ptr += writetlv(ptr_buff+_ptr, IP_LEASE_TM, 4, @_dhcp_lease_tm)
-    _ptr += writetlv(ptr_buff+_ptr, OPT_END, 0, 0)
+    writetlv(MSG_TYPE, 1, _dhcp_msg_t)
+    writetlv(PARAM_REQLST, 5, @_dhcp_param_req)
+    writetlv(CLIENT_ID, 7, @_client_hw_t)    ' HW type, then HW addr
+    if (_dhcp_msg_t == DHCPDISCOVER)
+        writetlv(MAX_DHCP_MSGSZ, 2, _dhcp_max_msg_len)
+    elseif (_dhcp_msg_t == DHCPREQUEST)
+        writetlv(REQD_IPADDR, 4, @_your_ip)
+        writetlv(DHCP_SRV_ID, 4, @_dhcp_srv_ip)
+    writetlv(IP_LEASE_TM, 4, @_dhcp_lease_tm)
+    writetlv(OPT_END, 0, 0)
 
     { pad the end of the message equal to the number of bytes in the options }
-    repeat _dhcp_optsz
-        byte[ptr_buff][_ptr++] := $00
-    return _ptr
+    wr_bytex($00, _dhcp_optsz)
+    _dhcp_msg_len := (currptr{} - st)
+    return currptr{}-st
 
 PUB ResetPtr{}  ' XXX tentative
 ' Reset message pointer
@@ -437,31 +454,26 @@ PUB SetTransID(id)
 ' Set transaction ID
     _trans_id := id
 
-PUB WriteTLV(ptr_buff, type, len, val): ptr | i 'XXX rewrite using underlying memory-agnostic 'writer' methods
+PUB WriteTLV(type, len, val): ptr
 ' Write TLV to ptr_buff
 '   len:
-'       1..4: values will be read (MSByte-first) directly from parameter
-'       5..255: values will be read by pointer passed in ptr_val
+'       1..2: values will be read (MSByte-first) directly from parameter
+'       3..255: values will be read by pointer passed in ptr_val
 '       other values: only the type will be written
 '   Returns: total length of TLV (includes: type, length, and all values)
-    ptr := 0
-    byte[ptr_buff][ptr++] := type
+    _dhcp_optsz += wr_byte(type)
     case len
         1..2:                                   ' immediate value
-            byte[ptr_buff][ptr++] := len
-            repeat i from len-1 to 0
-                byte[ptr_buff][ptr++] := val.byte[i]
+            _dhcp_optsz += wr_byte(len)
+            _dhcp_optsz += wrblk_msbf(@val, len)
         3..255:                                 ' value pointed to
-            byte[ptr_buff][ptr++] := len
+            _dhcp_optsz += wr_byte(len)
             if (type == REQD_IPADDR or type == DHCP_SRV_ID or type == CLIENT_ID) 'XXX temp hack - add byte order param?
-                repeat i from 0 to len-1
-                    byte[ptr_buff][ptr++] := byte[val][i]
+                _dhcp_optsz += wrblk_lsbf(val, len)
             else
-                repeat i from len-1 to 0
-                    byte[ptr_buff][ptr++] := byte[val][i]
+                _dhcp_optsz += wrblk_msbf(val, len)
         other:                                  ' type only
-
-    _dhcp_optsz += ptr
+    return _dhcp_optsz
 
 PUB SetYourIP(addr)
 ' Set 'your' IP address

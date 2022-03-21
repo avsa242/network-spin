@@ -9,8 +9,11 @@
     See end of file for terms of use.
     --------------------------------------------
 }
+#ifndef NET_COMMON
 #include "net-common.spinh"
-#include "services.spinh"
+#endif
+
+'#include "services.spinh"
 
 CON
 
@@ -28,7 +31,6 @@ VAR
     word _src_port, _dest_port
     word _length
     word _cksum
-    byte _ptr
 
 PUB Checksum{}: ck
 ' Get checksum
@@ -62,40 +64,28 @@ PUB SourcePort{}: p
 ' Get source port field
     return _src_port
 
-PUB HeaderLen{}: len
+PUB UDPHeaderLen{}: len
 ' Get current header length
-    return _ptr
+    return UDP_MSG_LEN
 
-PUB Rd_UDP_Header(ptr_buff)
+PUB Rd_UDP_Header{}
 ' Read UDP header from ptr_buff
 '   Returns: length of read header, in bytes
-    _ptr := 0
-    _src_port := (byte[ptr_buff][_ptr++] << 8) | byte[ptr_buff][_ptr++]
-    _dest_port := (byte[ptr_buff][_ptr++] << 8) | byte[ptr_buff][_ptr++]
-    _length := (byte[ptr_buff][_ptr++] << 8) | byte[ptr_buff][_ptr++]
-    _cksum := (byte[ptr_buff][_ptr++] << 8) | byte[ptr_buff][_ptr++]
-    return _ptr
+    rdblk_lsbf(@_src_port, 2)
+    rdblk_lsbf(@_dest_port, 2)
+    rdblk_lsbf(@_length, 2)
+    rdblk_lsbf(@_cksum, 2)
+    return currptr{}
 
-PUB ResetPtr{}  'XXX tentative
-' Reset buffer pointer
-    _ptr := 0
-
-PUB Wr_UDP_Header(ptr_buff): ptr
+PUB Wr_UDP_Header{}: ptr
 ' Write assembled UDP header to ptr_buff
 '   Returns: length of assembled header, in bytes
-    _ptr := 0
-    byte[ptr_buff][_ptr++] := _src_port.byte[1]
-    byte[ptr_buff][_ptr++] := _src_port.byte[0]
-    byte[ptr_buff][_ptr++] := _dest_port.byte[1]
-    byte[ptr_buff][_ptr++] := _dest_port.byte[0]
-    byte[ptr_buff][_ptr++] := _length.byte[1]
-    byte[ptr_buff][_ptr++] := _length.byte[0]
-    byte[ptr_buff][_ptr++] := $00                ' checksum - ignore for now
-    byte[ptr_buff][_ptr++] := $00                ' since it's optional in UDP
-
-    wordfill(@_src_port, 0, 4)                  ' clear vars after writing
-
-    return _ptr
+'    wrblk_msbf(@_src_port, 2)
+    wrword_msbf(_src_port)
+    wrword_msbf(_dest_port)
+    wrword_msbf(_length)
+    wrword_msbf(_cksum)
+    return currptr{}
 
 DAT
 

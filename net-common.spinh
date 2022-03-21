@@ -9,6 +9,8 @@
     See end of file for terms of use.
     --------------------------------------------
 }
+#define NET_COMMON
+
 CON
 
 { Limits }

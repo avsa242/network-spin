@@ -9,7 +9,9 @@
     See end of file for terms of use.
     --------------------------------------------
 }
+#ifndef NET_COMMON
 #include "net-common.spinh"
+#endif
 
 VAR
 
@@ -44,26 +46,34 @@ PUB SetSrcAddr(ptr_addr)
 ' Set source address of ethernet frame
     bytemove(@_src_addr, ptr_addr, MACADDR_LEN)
 
-PUB Rd_ETHII_Frame(ptr_buff): ptr | i
+PUB Rd_ETHII_Frame{}: ptr | i
 ' Read ethernet-II frame
 '   Returns: number of bytes read
-    ptr := 0
-    bytemove(@_dest_addr, ptr_buff+ptr, MACADDR_LEN)
-    ptr += MACADDR_LEN
-    bytemove(@_src_addr, ptr_buff+ptr, MACADDR_LEN)
-    ptr += MACADDR_LEN
-    _eth_t.byte[1] := byte[ptr_buff][ptr++]
-    _eth_t.byte[0] := byte[ptr_buff][ptr++]
+'    bytemove(@_dest_addr, ptr_buff+ptr, MACADDR_LEN)
+'    ptr += MACADDR_LEN
+'    bytemove(@_src_addr, ptr_buff+ptr, MACADDR_LEN)
+'    ptr += MACADDR_LEN
+'    _eth_t.byte[1] := byte[ptr_buff][ptr++]
+'    _eth_t.byte[0] := byte[ptr_buff][ptr++]
 
-PUB Wr_ETHII_Frame(ptr_buff): ptr | i
+    rdblk_lsbf(@_dest_addr, MACADDR_LEN)
+    rdblk_lsbf(@_src_addr, MACADDR_LEN)
+    rdblk_msbf(@_eth_t, 2)
+    return currptr{}
+
+PUB Wr_ETHII_Frame{}: ptr | i
 ' Write ethernet-II frame
-    ptr := 0
-    bytemove(ptr_buff+ptr, @_dest_addr, MACADDR_LEN)
-    ptr += MACADDR_LEN
-    bytemove(ptr_buff+ptr, @_src_addr, MACADDR_LEN)
-    ptr += MACADDR_LEN
-    byte[ptr_buff][ptr++] := _eth_t.byte[1]
-    byte[ptr_buff][ptr++] := _eth_t.byte[0]
+'    bytemove(ptr_buff+ptr, @_dest_addr, MACADDR_LEN)
+'    ptr += MACADDR_LEN
+'    bytemove(ptr_buff+ptr, @_src_addr, MACADDR_LEN)
+'    ptr += MACADDR_LEN
+'    byte[ptr_buff][ptr++] := _eth_t.byte[1]
+'    byte[ptr_buff][ptr++] := _eth_t.byte[0]
+
+    wrblk_lsbf(@_dest_addr, MACADDR_LEN)
+    wrblk_lsbf(@_src_addr, MACADDR_LEN)
+    wrblk_msbf(@_eth_t, 2)
+    return currptr{}
 
 DAT
 {
