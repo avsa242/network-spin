@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Boot Protocol/Dynamic Host Configuration Protocol
     Started Feb 28, 2022
-    Updated Mar 20, 2022
+    Updated Mar 21, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -332,7 +332,7 @@ PUB Rd_BOOTP_Msg{}: ptr | i, tmp
     rdblk_lsbf(@_gwy_ip, IPV4ADDR_LEN)
     rdblk_lsbf(@_client_mac, MACADDR_LEN)
 
-    ptrinc(HDWADDRLEN_MAX-MACADDR_LEN)
+    incptr(HDWADDRLEN_MAX-MACADDR_LEN)
 
     _client_hdw_addr_pad := (HDWADDRLEN_MAX-MACADDR_LEN)
 
@@ -415,9 +415,9 @@ PUB Wr_BOOTP_Msg{}: ptr | st
     wr_byte(_client_hw_t)
     wr_byte(_hdw_addr_len)
     wr_byte(_hops)
-    wrblk_msbf(@_trans_id, 4)
-    wrblk_msbf(@_lstime_elapsed, 2)
-    wrblk_msbf(@_flags, 2)
+    wrlong_msbf(_trans_id)
+    wrword_msbf(_lstime_elapsed)
+    wrword_msbf(_flags)
     wrblk_msbf(@_client_ip, IPV4ADDR_LEN)
     wrblk_msbf(@_your_ip, IPV4ADDR_LEN)
     wrblk_msbf(@_srv_ip, IPV4ADDR_LEN)
@@ -437,10 +437,7 @@ PUB Wr_DHCP_Msg{}: ptr | st
     wr_bootp_msg{}
 
     { then the DHCP 'magic cookie' value to identify it as a DHCP message }
-    wr_byte(DHCP_MAGIC_COOKIE3)
-    wr_byte(DHCP_MAGIC_COOKIE2)
-    wr_byte(DHCP_MAGIC_COOKIE1)
-    wr_byte(DHCP_MAGIC_COOKIE0)
+    wrlong_msbf(DHCP_MAGIC_COOKIE)
 
     { finally, the DHCP 'options' }
     _dhcp_opts_len := 0
