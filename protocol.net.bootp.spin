@@ -97,7 +97,7 @@ VAR
     byte _srv_hostname[SRV_HOSTN_LEN+1]         ' str + 0
     byte _boot_fname[BOOT_FN_LEN+1]             ' str + 0
 
-    byte _dhcp_optsz
+    byte _dhcp_opts_len
     byte _dhcp_param_req[5]
     byte _dhcp_msg_t
 
@@ -275,7 +275,7 @@ PUB SetParamsReqd(ptr_buff, len)
 ' Set list of parameters to retrieve from DHCP server
     bytemove(@_dhcp_param_req, ptr_buff, (len <# 5))
 
-PUB Rd_BOOTP_Msg{}: ptr | i
+PUB Rd_BOOTP_Msg{}: ptr | i, tmp
 ' Read BOOTP message, as well as DHCP message, if it exists
 {    _ptr := ptr := 0
     _bootp_opcode := byte[ptr_buff][_ptr++]
@@ -309,14 +309,15 @@ PUB Rd_BOOTP_Msg{}: ptr | i
     _ptr += BOOT_FN_LEN
 
     { DHCP message? Check it without advancing the pointer, in case it's not }
-    if (byte[ptr_buff][_ptr] == ((DHCP_MAGIC_COOKIE >> 24) & $ff)) and {
-}   (byte[ptr_buff][_ptr+1] == ((DHCP_MAGIC_COOKIE >> 16) & $ff)) and {
-}   (byte[ptr_buff][_ptr+2] == ((DHCP_MAGIC_COOKIE >> 8) & $ff)) and {
-}   (byte[ptr_buff][_ptr+3] == (DHCP_MAGIC_COOKIE & $ff))
-        _ptr += 4
+'    if (byte[ptr_buff][_ptr] == ((DHCP_MAGIC_COOKIE >> 24) & $ff)) and {
+'}   (byte[ptr_buff][_ptr+1] == ((DHCP_MAGIC_COOKIE >> 16) & $ff)) and {
+'}   (byte[ptr_buff][_ptr+2] == ((DHCP_MAGIC_COOKIE >> 8) & $ff)) and {
+'}   (byte[ptr_buff][_ptr+3] == (DHCP_MAGIC_COOKIE & $ff))
+    if (rdlong_msbf(@tmp, 4) == DHCP_MAGIC_COOKIE
         rd_DHCP_msg(ptr_buff)
-
-    return _ptr
+    else
+        setptr(currptr{}-4)                     ' rewind if it's not DHCP
+    return currptr{}
 }
     _bootp_opcode := rd_byte{}
     _client_hw_t := rd_byte{}
@@ -338,52 +339,69 @@ PUB Rd_BOOTP_Msg{}: ptr | i
     rdblk_lsbf(@_srv_hostname, SRV_HOSTN_LEN)
     rdblk_lsbf(@_boot_fname, BOOT_FN_LEN)
 
-
 PUB Rd_DHCP_Msg{}: ptr | i, t, v
 ' Read DHCP message
     { read through all TLVs }
     repeat
-        t := byte[ptr_buff][_ptr++]
+'        t := byte[ptr_buff][_ptr++]
+        t := rd_byte{}
         case t
             MSG_TYPE:
-                _ptr++                          ' skip over the length byte
-                _dhcp_msg_t := byte[ptr_buff][_ptr++]
+                rd_byte{}'_ptr++                          ' skip over the length byte
+                _dhcp_msg_t := rd_byte{}'byte[ptr_buff][_ptr++]
             DHCP_SRV_ID:
-                _ptr++
-                bytemove(@_dhcp_srv_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
-                _ptr += IPV4ADDR_LEN
+                '_ptr++
+                'bytemove(@_dhcp_srv_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
+                '_ptr += IPV4ADDR_LEN
+                rd_byte{}
+                rdblk_lsbf(@_dhcp_srv_ip, IPV4ADDR_LEN)
             IP_LEASE_TM:
-                _ptr++
-                repeat i from 3 to 0
-                    _dhcp_lease_tm.byte[i] := byte[ptr_buff][_ptr++]
+'                _ptr++
+'                repeat i from 3 to 0
+'                    _dhcp_lease_tm.byte[i] := byte[ptr_buff][_ptr++]
+                rd_byte{}
+                rdblk_msbf(@_dhcp_lease_tm, 4)
             RENEWAL_TM:
-                _ptr++
-                repeat i from 3 to 0
-                    _dhcp_renewal_tm.byte[i] := byte[ptr_buff][_ptr++]
+                '_ptr++
+                'repeat i from 3 to 0
+                '    _dhcp_renewal_tm.byte[i] := byte[ptr_buff][_ptr++]
+                rd_byte{}
+                rdblk_msbf(@_dhcp_renewal_tm, 4)
             REBIND_TM:
-                _ptr++
-                repeat i from 3 to 0
-                    _dhcp_rebind_tm.byte[i] := byte[ptr_buff][_ptr++]
+                '_ptr++
+                'repeat i from 3 to 0
+                '    _dhcp_rebind_tm.byte[i] := byte[ptr_buff][_ptr++]
+                rd_byte{}
+                rdblk_msbf(@_dhcp_rebind_tm, 4)
             SUBNET_MASK:
-                _ptr++
-                bytemove(@_subnet_mask, ptr_buff+_ptr, IPV4ADDR_LEN)
-                _ptr += IPV4ADDR_LEN
+                '_ptr++
+                'bytemove(@_subnet_mask, ptr_buff+_ptr, IPV4ADDR_LEN)
+                '_ptr += IPV4ADDR_LEN
+                rd_byte{}
+                rdblk_lsbf(@_subnet_mask, IPV4ADDR_LEN)
             BCAST_ADDR:
-                _ptr++
-                bytemove(@_bcast_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
-                _ptr += IPV4ADDR_LEN
+                '_ptr++
+                'bytemove(@_bcast_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
+                '_ptr += IPV4ADDR_LEN
+                rd_byte{}
+                rdblk_lsbf(@_bcast_ip, IPV4ADDR_LEN)
             ROUTER:
-                _ptr++
-                bytemove(@_router_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
-                _ptr += IPV4ADDR_LEN
+                '_ptr++
+                'bytemove(@_router_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
+                '_ptr += IPV4ADDR_LEN
+                rd_byte{}
+                rdblk_lsbf(@_router_ip, IPV4ADDR_LEN)
             DNS:
-                _ptr++
-                bytemove(@_dns_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
-                _ptr += IPV4ADDR_LEN
+                '_ptr++
+                'bytemove(@_dns_ip, ptr_buff+_ptr, IPV4ADDR_LEN)
+                '_ptr += IPV4ADDR_LEN
+                rd_byte{}
+                rdblk_lsbf(@_dns_ip, IPV4ADDR_LEN)
             OPT_END:
-                _ptr++
+                '_ptr++
+                rd_byte{}
     until (t == OPT_END)    'XXX not safeguarded against bad messages missing the OPT_END ($FF) byte
-    return _ptr
+    return curr_pos{}
 
 PUB SetServerIP(addr)
 ' Set server IP address
@@ -425,7 +443,7 @@ PUB Wr_DHCP_Msg{}: ptr | st
     wr_byte(DHCP_MAGIC_COOKIE0)
 
     { finally, the DHCP 'options' }
-    _dhcp_optsz := 0
+    _dhcp_opts_len := 0
     writetlv(MSG_TYPE, 1, _dhcp_msg_t)
     writetlv(PARAM_REQLST, 5, @_dhcp_param_req)
     writetlv(CLIENT_ID, 7, @_client_hw_t)    ' HW type, then HW addr
@@ -438,16 +456,12 @@ PUB Wr_DHCP_Msg{}: ptr | st
     writetlv(OPT_END, 0, 0)
 
     { pad the end of the message equal to the number of bytes in the options }
-    wr_bytex($00, _dhcp_optsz)
+    wr_bytex($00, _dhcp_opts_len)
     _dhcp_msg_len := (currptr{} - st)
     return currptr{}-st
 
-PUB ResetPtr{}  ' XXX tentative
-' Reset message pointer
-    _ptr := 0
-
 PUB SetServerHostname(ptr_str)
-' Set server hostname
+' Set server hostname, up to 64 bytes
     bytemove(@_srv_hostname, ptr_str, strsize(ptr_str) <# SRV_HOSTN_LEN)
 
 PUB SetTransID(id)
@@ -461,19 +475,21 @@ PUB WriteTLV(type, len, val): ptr
 '       3..255: values will be read by pointer passed in ptr_val
 '       other values: only the type will be written
 '   Returns: total length of TLV (includes: type, length, and all values)
-    _dhcp_optsz += wr_byte(type)
+    { track length of DHCP options; it'll be needed later for padding
+        the end of the DHCP message }
+    _dhcp_opts_len += wr_byte(type)
     case len
         1..2:                                   ' immediate value
-            _dhcp_optsz += wr_byte(len)
-            _dhcp_optsz += wrblk_msbf(@val, len)
+            _dhcp_opts_len += wr_byte(len)
+            _dhcp_opts_len += wrblk_msbf(@val, len)
         3..255:                                 ' value pointed to
-            _dhcp_optsz += wr_byte(len)
+            _dhcp_opts_len += wr_byte(len)
             if (type == REQD_IPADDR or type == DHCP_SRV_ID or type == CLIENT_ID) 'XXX temp hack - add byte order param?
-                _dhcp_optsz += wrblk_lsbf(val, len)
+                _dhcp_opts_len += wrblk_lsbf(val, len)
             else
-                _dhcp_optsz += wrblk_msbf(val, len)
+                _dhcp_opts_len += wrblk_msbf(val, len)
         other:                                  ' type only
-    return _dhcp_optsz
+    return _dhcp_opts_len
 
 PUB SetYourIP(addr)
 ' Set 'your' IP address
