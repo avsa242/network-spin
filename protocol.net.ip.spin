@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Protocol
     Started Feb 27, 2022
-    Updated Mar 21, 2022
+    Updated Mar 22, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -186,7 +186,7 @@ PUB SetTotalLen(len)
 '   Returns: word
     _tot_len := len
 
-PUB SetVersion(ver)
+PUB SetIPVersion(ver)
 ' Get IP version
 '   Returns: byte
     _ver := ver
@@ -205,7 +205,7 @@ PUB TotalLen{}: len
 '   Returns: word
     return _tot_len
 
-PUB Version{}: ver
+PUB IPVersion{}: ver
 ' Get IP version
 '   Returns: byte
     return _ver
