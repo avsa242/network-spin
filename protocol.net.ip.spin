@@ -91,7 +91,7 @@ PUB IPFragOffset{}: o
 '   Returns: 13-bit offset
     return _frag_offs
 
-PUB IPHdrChksum{}: cksum
+PUB IPChksum{}: cksum
 ' Get header checksum
 '   Returns: word
     return _hdr_chk
@@ -170,7 +170,7 @@ PUB SetIPFragOffset(o)
 '   Returns: 13-bit offset
     _frag_offs := o
 
-PUB SetIPHdrChksum(cksum)
+PUB SetIPChksum(cksum)
 ' Get header checksum
 '   Returns: word
     _hdr_chk := cksum
