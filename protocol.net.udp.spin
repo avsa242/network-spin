@@ -32,44 +32,44 @@ VAR
     word _length
     word _cksum
 
-PUB DestPort{}: p
-' Get destination port field
-    return _dest_port
-
-PUB Length{}: len
-' Get length of UDP datagram
-    return _length
-
-PUB SetDestPort(p)
-' Set destination port field
-    _dest_port := p
-
-PUB SetLength(len)
-' Set length of UDP datagram
-    _length := len
-
-PUB SetSourcePort(p)
-' Set source port field
-    _src_port := p
-
-PUB SetUDPChecksum(ck)
+PUB SetUDPChksum(ck)
 ' Set checksum
     _cksum := ck
 
-PUB SourcePort{}: p
-' Get source port field
-    return _src_port
+PUB SetUDPDestPort(p)
+' Set destination port field
+    _dest_port := p
 
-PUB UDPChecksum{}: ck
+PUB SetUDPDgramLen(len)
+' Set length of UDP datagram
+    _length := len
+
+PUB SetUDPSrcPort(p)
+' Set source port field
+    _src_port := p
+
+PUB UDPChksum{}: ck
 ' Get checksum
     return _cksum
+
+PUB UDPDestPort{}: p
+' Get destination port field
+    return _dest_port
+
+PUB UDPDgramLen{}: len
+' Get length of UDP datagram
+    return _length
 
 PUB UDPHeaderLen{}: len
 ' Get current header length
     return UDP_MSG_LEN
 
+PUB UDPSrcPort{}: p
+' Get source port field
+    return _src_port
+
 PUB Rd_UDP_Header{}
-' Read UDP header from ptr_buff
+' Read/disassemble UDP header
 '   Returns: length of read header, in bytes
     _src_port := rdword_msbf{}
     _dest_port := rdword_msbf{}
@@ -78,7 +78,7 @@ PUB Rd_UDP_Header{}
     return currptr{}
 
 PUB Wr_UDP_Header{}: ptr
-' Write assembled UDP header to ptr_buff
+' Write assembled UDP header
 '   Returns: length of assembled header, in bytes
 '    wrblk_msbf(@_src_port, 2)
     wrword_msbf(_src_port)
