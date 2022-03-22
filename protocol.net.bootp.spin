@@ -173,7 +173,7 @@ PUB LeaseElapsed{}: s
 ' Get time elapsed since start of attempt to acquire or renew lease
     return _lstime_elapsed
 
-PUB BOOTP_OpCode{}: c
+PUB BOOTP_Opcode{}: c
 ' Get BOOTP message opcode
     return _bootp_opcode
 
@@ -267,7 +267,7 @@ PUB SetLeaseStartElapsed(s)
 ' Set time elapsed since start of attempt to acquire or renew lease
     _lstime_elapsed := s
 
-PUB SetBOOTP_OpCode(c)
+PUB SetBOOTP_Opcode(c)
 ' Set BOOTP message opcode
     _bootp_opcode := c
 

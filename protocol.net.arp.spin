@@ -74,7 +74,7 @@ PUB HWType{}: hrd
 '   Returns: word
     return _arp_hrd
 
-PUB ARPOpCode{}: op
+PUB ARPOpcode{}: op
 ' Get ARP operation code
 '   Returns: byte
     return _arp_op
@@ -120,7 +120,7 @@ PUB SetHWType(hrd)
 ' Set hardware type
     _arp_hrd := hrd
 
-PUB SetARPOpCode(op)
+PUB SetARPOpcode(op)
 ' Set ARP operation code
     _arp_op := op
 
