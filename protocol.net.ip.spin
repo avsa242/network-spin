@@ -16,18 +16,18 @@
 CON
 
 { offsets within header}
-    VERS            = 0
-    HDRLEN          = 0
-    DSCP_ECN        = 1
-    TLEN            = 2
-    IDENT           = 4'..5
-    FLAGS_FRGH      = 6
-    FRGL            = 7
-    T2L             = 8
-    PRTCL           = 9
-    IPCKSUM         = 10'..11
-    SRCIP           = 12'..15
-    DSTIP           = 16'..19
+    IP_VERS         = 0
+    IP_HDRLEN       = 0
+    IP_DSCP_ECN     = 1
+    IP_TLEN         = 2
+    IP_IDENT        = 4'..5
+    IP_FLAGS_FRGH   = 6
+    IP_FRGL         = 7
+    IP_T2L          = 8
+    IP_PRTCL        = 9
+    IP_CKSUM        = 10'..11
+    IP_SRCIP        = 12'..15
+    IP_DSTIP        = 16'..19
 
 { layer 4 protocols }
     RSVD            = $00
@@ -66,27 +66,32 @@ PUB DestIP{}: addr
 '   Returns: 4 IPv4 address bytes packed into long
     return _ip_dest_addr
 
-PUB DSCP{}: cp
+PUB IPDgramLen{}: len
+' Return total length of IP datagram, in bytes
+'   Returns: word
+    return _tot_len
+
+PUB IPDSCP{}: cp
 ' Differentiated services code point
 '   Returns: 6-bit code point
     return _dsvc
 
-PUB ECN{}: state
+PUB IPECN{}: state
 ' Explicit Congestion Notification
 '   Returns: 2-bit ECN state
     return _ecn
 
-PUB Flags{}: f  'XXX methods to set DF and MF
+PUB IPFlags{}: f  'XXX methods to set DF and MF
 ' Get fragmentation control flags
 '   Returns: 3-bit field
     return _ip_flags
 
-PUB FragOffset{}: o
+PUB IPFragOffset{}: o
 ' Get offset in overall message of this fragment
 '   Returns: 13-bit offset
     return _frag_offs
 
-PUB HdrChksum{}: cksum
+PUB IPHdrChksum{}: cksum
 ' Get header checksum
 '   Returns: word
     return _hdr_chk
@@ -96,15 +101,24 @@ PUB IPHeaderLen{}: len
 '   Returns: byte
     return _hdr_len
 
-PUB MsgIdent{}: id
+PUB IPL4Proto{}: proto
+' Get protocol carried in datagram
+'   Returns: byte
+    return _proto
+
+PUB IPMsgIdent{}: id
 ' Get identification common to all fragments in a message
 '   Returns: word
     return _ident
 
-PUB Layer4Proto{}: proto
-' Get protocol carried in datagram
+PUB IPTTL{}: ttl
+' Get number of router hops datagram is allowed to traverse
 '   Returns: byte
-    return _proto
+
+PUB IPVersion{}: ver
+' Get IP version
+'   Returns: byte
+    return _ver
 
 PUB Rd_IP_Header{}: ptr | tmp
 ' Read IP datagram from buffer
@@ -131,84 +145,70 @@ PUB SetDestIP(addr)
 '   Returns: 4 IPv4 address bytes packed into long
     _ip_dest_addr := addr
 
-PUB SetDSCP(cp)
+PUB SetIPDgramLen(len)
+' Return total length of IP datagram, in bytes
+'   Returns: word
+    _tot_len := len
+
+PUB SetIPDSCP(cp)
 ' Differentiated services code point
 '   Returns: 6-bit code point
     _dsvc := cp
 
-PUB SetECN(state)
+PUB SetIPECN(state)
 ' Explicit Congestion Notification
 '   Returns: 2-bit ECN state
     _ecn := state
 
-PUB SetFlags(f)  'XXX methods to set DF and MF
+PUB SetIPFlags(f)  'XXX methods to set DF and MF
 ' Get fragmentation control flags
 '   Returns: 3-bit field
     _ip_flags := f
 
-PUB SetFragOffset(o)
+PUB SetIPFragOffset(o)
 ' Get offset in overall message of this fragment
 '   Returns: 13-bit offset
     _frag_offs := o
 
-PUB SetHdrChksum(cksum)
+PUB SetIPHdrChksum(cksum)
 ' Get header checksum
 '   Returns: word
     _hdr_chk := cksum
 
-PUB SetHeaderLen(len)
+PUB SetIPHeaderLen(len)
 ' Get header length, in longwords
 '   Returns: byte
     _hdr_len := len
 
-PUB SetMsgIdent(id)
-' Get identification common to all fragments in a message
-'   Returns: word
-    _ident := id
-
-PUB SetLayer4Proto(proto)
+PUB SetIPL4Proto(proto)
 ' Get protocol carried in datagram
 '   Returns: byte
     _proto := proto
 
-PUB SetSourceIP(addr)
-' Get source/originator of IP datagram
-'   Returns: 4 IPv4 address bytes packed into long
-    _ip_src_addr := addr
+PUB SetIPMsgIdent(id)
+' Get identification common to all fragments in a message
+'   Returns: word
+    _ident := id
 
-PUB SetTimeToLive(ttl)
+PUB SetIPTTL(ttl)
 ' Get number of router hops datagram is allowed to traverse
 '   Returns: byte
     _ttl := ttl
-
-PUB SetTotalLen(len)
-' Return total length of IP datagram, in bytes
-'   Returns: word
-    _tot_len := len
 
 PUB SetIPVersion(ver)
 ' Get IP version
 '   Returns: byte
     _ver := ver
 
-PUB SourceIP{}: addr
+PUB SetSrcIP(addr)
+' Get source/originator of IP datagram
+'   Returns: 4 IPv4 address bytes packed into long
+    _ip_src_addr := addr
+
+PUB SrcIP{}: addr
 ' Get source/originator of IP datagram
 '   Returns: 4 IPv4 address bytes packed into long
     return _ip_src_addr
-
-PUB TimeToLive{}: ttl
-' Get number of router hops datagram is allowed to traverse
-'   Returns: byte
-
-PUB TotalLen{}: len
-' Return total length of IP datagram, in bytes
-'   Returns: word
-    return _tot_len
-
-PUB IPVersion{}: ver
-' Get IP version
-'   Returns: byte
-    return _ver
 
 PUB Wr_IP_Header{}: ptr | i   ' TODO: move the shifting/masking to the Set*() methods
 ' Write IP datagram to buffer
