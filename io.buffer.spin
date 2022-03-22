@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Generic buffer I/O operations
     Started Mar 21, 2022
-    Updated Mar 21, 2022
+    Updated Mar 22, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -42,7 +42,7 @@ PUB RdBlk_LSBF(ptr_buff, len): ptr | i
 '   Returns: number of bytes read
     ptr := 0
     repeat i from 0 to (len-1)
-        byte[ptr_buff][i] := byte[_ptr_dest][i]
+        byte[ptr_buff][i] := byte[_ptr_dest][_ptr++]
         ptr++
 
 PUB RdBlk_MSBF(ptr_buff, len): ptr | i
@@ -50,7 +50,7 @@ PUB RdBlk_MSBF(ptr_buff, len): ptr | i
 '   Returns: number of bytes read
     ptr := 0
     repeat i from (len-1) to 0
-        byte[ptr_buff][i] := byte[_ptr_dest][i]
+        byte[ptr_buff][i] := byte[_ptr_dest][_ptr++]
         ptr++
 
 PUB Rd_Byte{}: b

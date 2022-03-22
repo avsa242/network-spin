@@ -100,7 +100,7 @@ PUB Rd_ARP_Msg{}: ptr
     rdblk_lsbf(@_arp_spa, IPV4ADDR_LEN)
     rdblk_lsbf(@_arp_tha, MACADDR_LEN)
     rdblk_lsbf(@_arp_tpa, IPV4ADDR_LEN)
-    return curr_ptr{}
+    return currptr{}
 
 PUB SenderHWAddr{}: ptr_addr
 ' Get sender hardware address
@@ -169,7 +169,7 @@ PUB Wr_ARP_Msg{}: ptr
     wrblk_lsbf(@_arp_spa, IPV4ADDR_LEN)
     wrblk_lsbf(@_arp_tha, MACADDR_LEN)
     wrblk_lsbf(@_arp_tpa, IPV4ADDR_LEN)
-    return curr_ptr{}
+    return currptr{}
 
 DAT
 {

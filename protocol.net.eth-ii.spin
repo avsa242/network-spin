@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Ethernet II protocol
     Started Mar 1, 2022
-    Updated Mar 20, 2022
+    Updated Mar 22, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -49,30 +49,16 @@ PUB SetSrcAddr(ptr_addr)
 PUB Rd_ETHII_Frame{}: ptr | i
 ' Read ethernet-II frame
 '   Returns: number of bytes read
-'    bytemove(@_dest_addr, ptr_buff+ptr, MACADDR_LEN)
-'    ptr += MACADDR_LEN
-'    bytemove(@_src_addr, ptr_buff+ptr, MACADDR_LEN)
-'    ptr += MACADDR_LEN
-'    _eth_t.byte[1] := byte[ptr_buff][ptr++]
-'    _eth_t.byte[0] := byte[ptr_buff][ptr++]
-
     rdblk_lsbf(@_dest_addr, MACADDR_LEN)
     rdblk_lsbf(@_src_addr, MACADDR_LEN)
-    rdblk_msbf(@_eth_t, 2)
+    _eth_t := rdword_msbf{}
     return currptr{}
 
 PUB Wr_ETHII_Frame{}: ptr | i
 ' Write ethernet-II frame
-'    bytemove(ptr_buff+ptr, @_dest_addr, MACADDR_LEN)
-'    ptr += MACADDR_LEN
-'    bytemove(ptr_buff+ptr, @_src_addr, MACADDR_LEN)
-'    ptr += MACADDR_LEN
-'    byte[ptr_buff][ptr++] := _eth_t.byte[1]
-'    byte[ptr_buff][ptr++] := _eth_t.byte[0]
-
     wrblk_lsbf(@_dest_addr, MACADDR_LEN)
     wrblk_lsbf(@_src_addr, MACADDR_LEN)
-    wrblk_msbf(@_eth_t, 2)
+    wrword_msbf(_eth_t)
     return currptr{}
 
 DAT

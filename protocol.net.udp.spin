@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Universal Datagram Protocol
     Started Feb 28, 2022
-    Updated Mar 21, 2022
+    Updated Mar 22, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -18,23 +18,19 @@
 CON
 
 { Limits }
-    UDP_MSG_LEN = 8
+    UDP_MSG_LEN     = 8
 
 { offsets within header }
-    SRC_PORT    = 0
-    DEST_PORT   = 2
-    DGRAMLEN    = 4
-    CKSUM       = 6
+    UDP_SRC_PORT    = 0
+    UDP_DEST_PORT   = 2
+    UDP_DGRAMLEN    = 4
+    UDP_CKSUM       = 6
 
 VAR
 
     word _src_port, _dest_port
     word _length
     word _cksum
-
-PUB Checksum{}: ck
-' Get checksum
-    return _cksum
 
 PUB DestPort{}: p
 ' Get destination port field
@@ -43,10 +39,6 @@ PUB DestPort{}: p
 PUB Length{}: len
 ' Get length of UDP datagram
     return _length
-
-PUB SetChecksum(ck)
-' Set checksum
-    _cksum := ck
 
 PUB SetDestPort(p)
 ' Set destination port field
@@ -60,9 +52,17 @@ PUB SetSourcePort(p)
 ' Set source port field
     _src_port := p
 
+PUB SetUDPChecksum(ck)
+' Set checksum
+    _cksum := ck
+
 PUB SourcePort{}: p
 ' Get source port field
     return _src_port
+
+PUB UDPChecksum{}: ck
+' Get checksum
+    return _cksum
 
 PUB UDPHeaderLen{}: len
 ' Get current header length
@@ -71,10 +71,10 @@ PUB UDPHeaderLen{}: len
 PUB Rd_UDP_Header{}
 ' Read UDP header from ptr_buff
 '   Returns: length of read header, in bytes
-    _src_port := rdword_lsbf{}
-    _dest_port := rdword_lsbf{}
-    _length := rdword_lsbf{}
-    _cksum := rdword_lsbf{}
+    _src_port := rdword_msbf{}
+    _dest_port := rdword_msbf{}
+    _length := rdword_msbf{}
+    _cksum := rdword_msbf{}
     return currptr{}
 
 PUB Wr_UDP_Header{}: ptr

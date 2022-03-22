@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Boot Protocol/Dynamic Host Configuration Protocol
     Started Feb 28, 2022
-    Updated Mar 21, 2022
+    Updated Mar 22, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -173,7 +173,7 @@ PUB LeaseElapsed{}: s
 ' Get time elapsed since start of attempt to acquire or renew lease
     return _lstime_elapsed
 
-PUB OpCode{}: c
+PUB BOOTP_OpCode{}: c
 ' Get BOOTP message opcode
     return _bootp_opcode
 
@@ -267,7 +267,7 @@ PUB SetLeaseStartElapsed(s)
 ' Set time elapsed since start of attempt to acquire or renew lease
     _lstime_elapsed := s
 
-PUB SetOpCode(c)
+PUB SetBOOTP_OpCode(c)
 ' Set BOOTP message opcode
     _bootp_opcode := c
 
@@ -342,7 +342,7 @@ PUB Rd_DHCP_Msg{}: ptr | t
             OPT_END:
                 rd_byte{}
     until (t == OPT_END)    'XXX not safeguarded against bad messages missing the OPT_END ($FF) byte
-    return curr_pos{}
+    return currptr{}
 
 PUB SetServerIP(addr)
 ' Set server IP address
