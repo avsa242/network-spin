@@ -133,7 +133,7 @@ PUB BOOTP_DNSIP{}: addr
 ' Get domain name server IP address
     return _dns_ip
 
-PUB BOOTP_GatewayIP{}: addr
+PUB BOOTP_GwyIP{}: addr
 ' Get relay agent IP address
     return _gwy_ip
 
@@ -185,7 +185,7 @@ PUB DHCP_IPRebindTime{}: s
 ' Get rebinding time of IP address, in seconds
     return _dhcp_rebind_tm
 
-PUB DHCP_IPRenewalTime{}: s
+PUB DHCP_IPRenewTime{}: s
 ' Get renewal time of IP address, in seconds
     return _dhcp_renewal_tm
 
@@ -213,113 +213,113 @@ PUB DHCP_SubnetMask{}: mask
 ' Get subnet mask
     return _subnet_mask
 
-PUB SetBOOTP_BcastFlag(flag)
+PUB BOOTP_SetBcastFlag(flag)
 ' Set BOOTP broadcast flag
 '   Valid values:
 '       FALSE (0), TRUE (any non-zero value)
     _flags := (||(flag <> 0)) << FLAG_B
 
-PUB SetBOOTP_BcastIP(addr)
+PUB BOOTP_SetBcastIP(addr)
 ' Get broadcast IP address
     bytemove(@_bcast_ip, @addr, IPV4ADDR_LEN)
 
-PUB SetBOOTP_BootFN(ptr_str)
+PUB BOOTP_SetBootFN(ptr_str)
 ' Set boot filename
     bytemove(@_boot_fname, ptr_str, strsize(ptr_str))
 
-PUB SetBOOTP_ClientIP(addr)
+PUB BOOTP_SetClientIP(addr)
 ' Set client IP address
     bytemove(@_client_ip, @addr, IPV4ADDR_LEN)
 
-PUB SetBOOTP_ClientMAC(ptr_addr)
+PUB BOOTP_SetClientMAC(ptr_addr)
 ' Set client MAC address
     bytemove(@_client_mac, ptr_addr, MACADDR_LEN)
 
-PUB SetBOOTP_CliHdwAddrPadLen(len)
+PUB BOOTP_SetCliHdwAddrPadLen(len)
 ' Get length of client hardware address padding
     _client_hdw_addr_pad := len
 
-PUB SetBOOTP_DNSIP(addr)
+PUB BOOTP_SetDNSIP(addr)
 ' Get domain name server IP address
     bytemove(@_dns_ip, @addr, IPV4ADDR_LEN)
 
-PUB SetBOOTP_GatewayIP(addr)
+PUB BOOTP_SetGwyIP(addr)
 ' Set relay agent IP address
     _gwy_ip := addr
 
-PUB SetBOOTP_HdwAddrLen(len)
+PUB BOOTP_SetHdwAddrLen(len)
 ' Set hardware address length
     _hdw_addr_len := len
 
-PUB SetBOOTP_HdwType(t)
+PUB BOOTP_SetHdwType(t)
 ' Set hardware type
     _client_hw_t := t
 
-PUB SetBOOTP_Hops(h)
+PUB BOOTP_SetHops(h)
 ' Set number of hops
     _hops := h
 
-PUB SetBOOTP_LeaseElapsed(s)
+PUB BOOTP_SetLeaseElapsed(s)
 ' Set time elapsed since start of attempt to acquire or renew lease
     _lstime_elapsed := s
 
-PUB SetBOOTP_Opcode(c)
+PUB BOOTP_SetOpcode(c)
 ' Set BOOTP message opcode
     _bootp_opcode := c
 
-PUB SetBOOTP_RsvdFlags(flags)
+PUB BOOTP_SetRsvdFlags(flags)
 ' Get BOOTP reserved flags
     _flags := (flags & $7fff)
 
-PUB SetBOOTP_SrvHostname(ptr_str)
+PUB BOOTP_SetSrvHostname(ptr_str)
 ' Set server hostname, up to 64 bytes
     bytemove(@_srv_hostname, ptr_str, strsize(ptr_str) <# SRV_HOSTN_LEN)
 
-PUB SetBOOTP_SrvIP(addr)
+PUB BOOTP_SetSrvIP(addr)
 ' Set server IP address
     bytemove(@_srv_ip, @addr, IPV4ADDR_LEN)
 
-PUB SetBOOTP_TransID(id)
+PUB BOOTP_SetTransID(id)
 ' Set transaction ID
     _trans_id := id
 
-PUB SetBOOTP_YourIP(addr)
+PUB BOOTP_SetYourIP(addr)
 ' Set 'your' IP address
     bytemove(@_your_ip, @addr, IPV4ADDR_LEN)
 
-PUB SetDHCP_IPLeaseTime(s)
+PUB DHCP_SetIPLeaseTime(s)
 ' Set lease time for IP address, in seconds
     _dhcp_lease_tm := s
 
-PUB SetDHCP_IPRebindTime(s)
+PUB DHCP_SetIPRebindTime(s)
 ' Set rebinding time for IP address, in seconds
     _dhcp_rebind_tm := s
 
-PUB SetDHCP_IPRenewalTime(s)
+PUB DHCP_SetIPRenewTime(s)
 ' Set renewal time for IP address, in seconds
     _dhcp_renewal_tm := s
 
-PUB SetDHCP_MaxMsgLen(len)
+PUB DHCP_SetMaxMsgLen(len)
 ' Set maximum accepted DHCP message length
     _dhcp_max_msg_len := len
 
-PUB SetDHCP_MsgType(type)
+PUB DHCP_SetMsgType(type)
 ' Set DHCP message type
     _dhcp_msg_t := type
 
-PUB SetDHCP_ParamsReqd(ptr_buff, len)
+PUB DHCP_SetParamsReqd(ptr_buff, len)
 ' Set list of parameters to retrieve from DHCP server
     bytemove(@_dhcp_param_req, ptr_buff, (len <# 5))
 
-PUB SetDHCP_RouterIP(addr)
+PUB DHCP_SetRouterIP(addr)
 ' Get router IP address
     bytemove(@_router_ip, @addr, IPV4ADDR_LEN)
 
-PUB SetDHCP_SrvIP(addr)
+PUB DHCP_SetSrvIP(addr)
 ' Set DHCP server IP address
     bytemove(@_dhcp_srv_ip, @addr, IPV4ADDR_LEN)
 
-PUB SetDHCP_SubnetMask(mask)
+PUB DHCP_SetSubnetMask(mask)
 ' Get subnet mask
     bytemove(@_subnet_mask, @mask, IPV4ADDR_LEN)
 

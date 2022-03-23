@@ -125,67 +125,67 @@ PUB IP_Version{}: ver
 '   Returns: byte
     return _ver
 
-PUB SetIP_DestAddr(addr)
+PUB IP_SetDestAddr(addr)
 ' Get destination address of IP datagram
 '   Returns: 4 IPv4 address bytes packed into long
     _ip_dest_addr := addr
 
-PUB SetIP_DgramLen(len)
+PUB IP_SetDgramLen(len)
 ' Return total length of IP datagram, in bytes
 '   Returns: word
     _tot_len := len
 
-PUB SetIP_DSCP(cp)
+PUB IP_SetDSCP(cp)
 ' Differentiated services code point
 '   Returns: 6-bit code point
     _dsvc := cp
 
-PUB SetIP_ECN(state)
+PUB IP_SetECN(state)
 ' Explicit Congestion Notification
 '   Returns: 2-bit ECN state
     _ecn := state
 
-PUB SetIP_Flags(f)  'XXX methods to set DF and MF
+PUB IP_SetFlags(f)  'XXX methods to set DF and MF
 ' Get fragmentation control flags
 '   Returns: 3-bit field
     _ip_flags := f
 
-PUB SetIP_FragOffset(o)
+PUB IP_SetFragOffset(o)
 ' Get offset in overall message of this fragment
 '   Returns: 13-bit offset
     _frag_offs := o
 
-PUB SetIP_HdrChk(cksum)
+PUB IP_SetHdrChk(cksum)
 ' Get header checksum
 '   Returns: word
     _hdr_chk := cksum
 
-PUB SetIP_HdrLen(len)
+PUB IP_SetHdrLen(len)
 ' Get header length, in longwords
 '   Returns: byte
     _hdr_len := len
 
-PUB SetIP_L4Proto(proto)
+PUB IP_SetL4Proto(proto)
 ' Get protocol carried in datagram
 '   Returns: byte
     _proto := proto
 
-PUB SetIP_MsgIdent(id)
+PUB IP_SetMsgIdent(id)
 ' Get identification common to all fragments in a message
 '   Returns: word
     _ident := id
 
-PUB SetIP_SrcAddr(addr)
+PUB IP_SetSrcAddr(addr)
 ' Get source/originator of IP datagram
 '   Returns: 4 IPv4 address bytes packed into long
     _ip_src_addr := addr
 
-PUB SetIP_TTL(ttl)
+PUB IP_SetTTL(ttl)
 ' Get number of router hops datagram is allowed to traverse
 '   Returns: byte
     _ttl := ttl
 
-PUB SetIP_Version(ver)
+PUB IP_SetVersion(ver)
 ' Get IP version
 '   Returns: byte
     _ver := ver

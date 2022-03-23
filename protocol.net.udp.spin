@@ -32,19 +32,19 @@ VAR
     word _length
     word _cksum
 
-PUB SetUDP_Chksum(ck)
+PUB UDP_SetChksum(ck)
 ' Set checksum (optional; set to 0 to ignore)
     _cksum := ck
 
-PUB SetUDP_DestPort(p)
+PUB UDP_SetDestPort(p)
 ' Set destination port field
     _dest_port := p
 
-PUB SetUDP_DgramLen(len)
+PUB UDP_SetDgramLen(len)
 ' Set length of UDP datagram
     _length := len
 
-PUB SetUDP_SrcPort(p)
+PUB UDP_SetSrcPort(p)
 ' Set source port field
     _src_port := p
 

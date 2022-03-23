@@ -34,15 +34,15 @@ PUB ETHII_SrcAddr{}: addr
 '   Returns: pointer to 6-byte MAC address
     return @_src_addr
 
-PUB SetETHII_DestAddr(ptr_addr)
+PUB ETHII_SetDestAddr(ptr_addr)
 ' Set destination address of ethernet frame
     bytemove(@_dest_addr, ptr_addr, MACADDR_LEN)
 
-PUB SetETHII_Ethertype(eth_t)
+PUB ETHII_SetEthertype(eth_t)
 ' Set ethertype of ethernet frame
     _eth_t := eth_t
 
-PUB SetETHII_SrcAddr(ptr_addr)
+PUB ETHII_SetSrcAddr(ptr_addr)
 ' Set source address of ethernet frame
     bytemove(@_src_addr, ptr_addr, MACADDR_LEN)
 

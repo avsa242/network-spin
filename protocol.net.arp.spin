@@ -109,39 +109,39 @@ PUB ARP_TargetProtoAddr{}: addr
 '   Returns: 4-byte IPv4 address, packed into long
     return _arp_tpa
 
-PUB SetARP_HWAddrLen(len)
+PUB ARP_SetHWAddrLen(len)
 ' Set hardware address length
     _arp_hln := len
 
-PUB SetARP_HWType(hrd)
+PUB ARP_SetHWType(hrd)
 ' Set hardware type
     _arp_hrd := hrd
 
-PUB SetARP_Opcode(op)
+PUB ARP_SetOpcode(op)
 ' Set ARP operation code
     _arp_op := op
 
-PUB SetARP_ProtoAddrLen(len)
+PUB ARP_SetProtoAddrLen(len)
 ' Set protocol address length
     _arp_pln := len
 
-PUB SetARP_ProtoType(pro)
+PUB ARP_SetProtoType(pro)
 ' Set protocol type
     _arp_pro := pro
 
-PUB SetARP_SenderHWAddr(ptr_addr)
+PUB ARP_SetSenderHWAddr(ptr_addr)
 ' Set sender hardware address
     bytemove(@_arp_sha, ptr_addr, MACADDR_LEN)
 
-PUB SetARP_SenderProtoAddr(addr)
+PUB ARP_SetSenderProtoAddr(addr)
 ' Set sender protocol address
     _arp_spa := addr
 
-PUB SetARP_TargetHWAddr(ptr_addr)
+PUB ARP_SetTargetHWAddr(ptr_addr)
 ' Set target hardware address
     bytemove(@_arp_tha, ptr_addr, MACADDR_LEN)
 
-PUB SetARP_TargetProtoAddr(addr)
+PUB ARP_SetTargetProtoAddr(addr)
 ' Set target protocol address
     _arp_tpa := addr
 
