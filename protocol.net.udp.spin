@@ -78,9 +78,8 @@ PUB Rd_UDP_Header{}
     return currptr{}
 
 PUB Wr_UDP_Header{}: ptr
-' Write assembled UDP header
+' Write/assemble UDP header
 '   Returns: length of assembled header, in bytes
-'    wrblk_msbf(@_src_port, 2)
     wrword_msbf(_src_port)
     wrword_msbf(_dest_port)
     wrword_msbf(_length)

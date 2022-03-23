@@ -138,7 +138,7 @@ PUB BOOTP_GwyIP{}: addr
     return _gwy_ip
 
 PUB BOOTP_HdwAddrLen{}: len
-' Set hardware address length
+' Get hardware address length
     return _hdw_addr_len
 
 PUB BOOTP_HdwType{}: t
@@ -162,7 +162,7 @@ PUB BOOTP_RsvdFlags{}: flags
     return _flags & $7fff
 
 PUB BOOTP_SrvHostname{}: ptr_str
-' Set server hostname
+' Get server hostname
     bytemove(ptr_str, @_srv_hostname, strsize(@_srv_hostname))
 
 PUB BOOTP_SrvIP{}: addr
@@ -220,7 +220,7 @@ PUB BOOTP_SetBcastFlag(flag)
     _flags := (||(flag <> 0)) << FLAG_B
 
 PUB BOOTP_SetBcastIP(addr)
-' Get broadcast IP address
+' Set broadcast IP address
     bytemove(@_bcast_ip, @addr, IPV4ADDR_LEN)
 
 PUB BOOTP_SetBootFN(ptr_str)
@@ -236,11 +236,11 @@ PUB BOOTP_SetClientMAC(ptr_addr)
     bytemove(@_client_mac, ptr_addr, MACADDR_LEN)
 
 PUB BOOTP_SetCliHdwAddrPadLen(len)
-' Get length of client hardware address padding
+' Set length of client hardware address padding
     _client_hdw_addr_pad := len
 
 PUB BOOTP_SetDNSIP(addr)
-' Get domain name server IP address
+' Set domain name server IP address
     bytemove(@_dns_ip, @addr, IPV4ADDR_LEN)
 
 PUB BOOTP_SetGwyIP(addr)
@@ -268,7 +268,7 @@ PUB BOOTP_SetOpcode(c)
     _bootp_opcode := c
 
 PUB BOOTP_SetRsvdFlags(flags)
-' Get BOOTP reserved flags
+' Set BOOTP reserved flags
     _flags := (flags & $7fff)
 
 PUB BOOTP_SetSrvHostname(ptr_str)
@@ -312,7 +312,7 @@ PUB DHCP_SetParamsReqd(ptr_buff, len)
     bytemove(@_dhcp_param_req, ptr_buff, (len <# 5))
 
 PUB DHCP_SetRouterIP(addr)
-' Get router IP address
+' Set router IP address
     bytemove(@_router_ip, @addr, IPV4ADDR_LEN)
 
 PUB DHCP_SetSrvIP(addr)
@@ -320,7 +320,7 @@ PUB DHCP_SetSrvIP(addr)
     bytemove(@_dhcp_srv_ip, @addr, IPV4ADDR_LEN)
 
 PUB DHCP_SetSubnetMask(mask)
-' Get subnet mask
+' Set subnet mask
     bytemove(@_subnet_mask, @mask, IPV4ADDR_LEN)
 
 PUB Rd_BOOTP_Msg{}: ptr | i, tmp
@@ -428,7 +428,7 @@ PUB Wr_DHCP_Msg{}: ptr | st
     _dhcp_opts_len := 0
     writetlv(MSG_TYPE, 1, _dhcp_msg_t)
     writetlv(PARAM_REQLST, 5, @_dhcp_param_req)
-    writetlv(CLIENT_ID, 7, @_client_hw_t)    ' HW type, then HW addr
+    writetlv(CLIENT_ID, 7, @_client_hw_t)       ' HW type, then HW addr
     if (_dhcp_msg_t == DHCPDISCOVER)
         writetlv(MAX_DHCP_MSGSZ, 2, _dhcp_max_msg_len)
     elseif (_dhcp_msg_t == DHCPREQUEST)

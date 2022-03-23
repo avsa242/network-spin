@@ -191,7 +191,7 @@ PUB IP_SetVersion(ver)
     _ver := ver
 
 PUB Rd_IP_Header{}: ptr | tmp
-' Read IP datagram from buffer
+' Read IP header from buffer
     tmp := rd_byte{}
         _ver := ((tmp >> 4) & $0f)
         _hdr_len := (tmp & $0f)
@@ -210,9 +210,9 @@ PUB Rd_IP_Header{}: ptr | tmp
     rdblk_lsbf(@_ip_dest_addr, IPV4ADDR_LEN)
     return currptr{}
 
-PUB Wr_IP_Header{}: ptr | i   ' TODO: move the shifting/masking to the Set*() methods
-' Write IP datagram to buffer
-'   Returns: length of assembled datagram, in bytes
+PUB Wr_IP_Header{}: ptr   ' TODO: move the shifting/masking to the Set*() methods
+' Write IP header to buffer
+'   Returns: length of assembled header, in bytes
     wr_byte((_ver << 4) | _hdr_len)
     wr_byte((_dsvc << 2) | _ecn)
     wrword_msbf(_tot_len)
