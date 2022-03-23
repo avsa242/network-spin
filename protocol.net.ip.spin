@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Protocol
     Started Feb 27, 2022
-    Updated Mar 22, 2022
+    Updated Mar 23, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -17,7 +17,7 @@ CON
 
 { offsets within header}
     IP_VERS         = 0
-    IP_HDRLEN       = 0
+    IP_HDR_LEN      = 0
     IP_DSCP_ECN     = 1
     IP_TLEN         = 2
     IP_IDENT        = 4'..5
@@ -61,64 +61,134 @@ VAR
     byte _ttl
     byte _proto
 
-PUB DestIP{}: addr
+PUB IP_DestAddr{}: addr
 ' Get destination address of IP datagram
 '   Returns: 4 IPv4 address bytes packed into long
     return _ip_dest_addr
 
-PUB IPDgramLen{}: len
+PUB IP_DgramLen{}: len
 ' Return total length of IP datagram, in bytes
 '   Returns: word
     return _tot_len
 
-PUB IPDSCP{}: cp
+PUB IP_DSCP{}: cp
 ' Differentiated services code point
 '   Returns: 6-bit code point
     return _dsvc
 
-PUB IPECN{}: state
+PUB IP_ECN{}: state
 ' Explicit Congestion Notification
 '   Returns: 2-bit ECN state
     return _ecn
 
-PUB IPFlags{}: f  'XXX methods to set DF and MF
+PUB IP_Flags{}: f  'XXX methods to set DF and MF
 ' Get fragmentation control flags
 '   Returns: 3-bit field
     return _ip_flags
 
-PUB IPFragOffset{}: o
+PUB IP_FragOffset{}: o
 ' Get offset in overall message of this fragment
 '   Returns: 13-bit offset
     return _frag_offs
 
-PUB IPChksum{}: cksum
+PUB IP_HdrChk{}: cksum
 ' Get header checksum
 '   Returns: word
     return _hdr_chk
 
-PUB IPHeaderLen{}: len
+PUB IP_HdrLen{}: len
 ' Get header length, in longwords
 '   Returns: byte
     return _hdr_len
 
-PUB IPL4Proto{}: proto
+PUB IP_L4Proto{}: proto
 ' Get protocol carried in datagram
 '   Returns: byte
     return _proto
 
-PUB IPMsgIdent{}: id
+PUB IP_MsgIdent{}: id
 ' Get identification common to all fragments in a message
 '   Returns: word
     return _ident
 
-PUB IPTTL{}: ttl
+PUB IP_SrcAddr{}: addr
+' Get source/originator of IP datagram
+'   Returns: 4 IPv4 address bytes packed into long
+    return _ip_src_addr
+
+PUB IP_TTL{}: ttl
 ' Get number of router hops datagram is allowed to traverse
 '   Returns: byte
 
-PUB IPVersion{}: ver
+PUB IP_Version{}: ver
 ' Get IP version
 '   Returns: byte
     return _ver
+
+PUB SetIP_DestAddr(addr)
+' Get destination address of IP datagram
+'   Returns: 4 IPv4 address bytes packed into long
+    _ip_dest_addr := addr
+
+PUB SetIP_DgramLen(len)
+' Return total length of IP datagram, in bytes
+'   Returns: word
+    _tot_len := len
+
+PUB SetIP_DSCP(cp)
+' Differentiated services code point
+'   Returns: 6-bit code point
+    _dsvc := cp
+
+PUB SetIP_ECN(state)
+' Explicit Congestion Notification
+'   Returns: 2-bit ECN state
+    _ecn := state
+
+PUB SetIP_Flags(f)  'XXX methods to set DF and MF
+' Get fragmentation control flags
+'   Returns: 3-bit field
+    _ip_flags := f
+
+PUB SetIP_FragOffset(o)
+' Get offset in overall message of this fragment
+'   Returns: 13-bit offset
+    _frag_offs := o
+
+PUB SetIP_HdrChk(cksum)
+' Get header checksum
+'   Returns: word
+    _hdr_chk := cksum
+
+PUB SetIP_HdrLen(len)
+' Get header length, in longwords
+'   Returns: byte
+    _hdr_len := len
+
+PUB SetIP_L4Proto(proto)
+' Get protocol carried in datagram
+'   Returns: byte
+    _proto := proto
+
+PUB SetIP_MsgIdent(id)
+' Get identification common to all fragments in a message
+'   Returns: word
+    _ident := id
+
+PUB SetIP_SrcAddr(addr)
+' Get source/originator of IP datagram
+'   Returns: 4 IPv4 address bytes packed into long
+    _ip_src_addr := addr
+
+PUB SetIP_TTL(ttl)
+' Get number of router hops datagram is allowed to traverse
+'   Returns: byte
+    _ttl := ttl
+
+PUB SetIP_Version(ver)
+' Get IP version
+'   Returns: byte
+    _ver := ver
 
 PUB Rd_IP_Header{}: ptr | tmp
 ' Read IP datagram from buffer
@@ -139,76 +209,6 @@ PUB Rd_IP_Header{}: ptr | tmp
     rdblk_lsbf(@_ip_src_addr, IPV4ADDR_LEN)
     rdblk_lsbf(@_ip_dest_addr, IPV4ADDR_LEN)
     return currptr{}
-
-PUB SetDestIP(addr)
-' Get destination address of IP datagram
-'   Returns: 4 IPv4 address bytes packed into long
-    _ip_dest_addr := addr
-
-PUB SetIPDgramLen(len)
-' Return total length of IP datagram, in bytes
-'   Returns: word
-    _tot_len := len
-
-PUB SetIPDSCP(cp)
-' Differentiated services code point
-'   Returns: 6-bit code point
-    _dsvc := cp
-
-PUB SetIPECN(state)
-' Explicit Congestion Notification
-'   Returns: 2-bit ECN state
-    _ecn := state
-
-PUB SetIPFlags(f)  'XXX methods to set DF and MF
-' Get fragmentation control flags
-'   Returns: 3-bit field
-    _ip_flags := f
-
-PUB SetIPFragOffset(o)
-' Get offset in overall message of this fragment
-'   Returns: 13-bit offset
-    _frag_offs := o
-
-PUB SetIPChksum(cksum)
-' Get header checksum
-'   Returns: word
-    _hdr_chk := cksum
-
-PUB SetIPHeaderLen(len)
-' Get header length, in longwords
-'   Returns: byte
-    _hdr_len := len
-
-PUB SetIPL4Proto(proto)
-' Get protocol carried in datagram
-'   Returns: byte
-    _proto := proto
-
-PUB SetIPMsgIdent(id)
-' Get identification common to all fragments in a message
-'   Returns: word
-    _ident := id
-
-PUB SetIPTTL(ttl)
-' Get number of router hops datagram is allowed to traverse
-'   Returns: byte
-    _ttl := ttl
-
-PUB SetIPVersion(ver)
-' Get IP version
-'   Returns: byte
-    _ver := ver
-
-PUB SetSrcIP(addr)
-' Get source/originator of IP datagram
-'   Returns: 4 IPv4 address bytes packed into long
-    _ip_src_addr := addr
-
-PUB SrcIP{}: addr
-' Get source/originator of IP datagram
-'   Returns: 4 IPv4 address bytes packed into long
-    return _ip_src_addr
 
 PUB Wr_IP_Header{}: ptr | i   ' TODO: move the shifting/masking to the Set*() methods
 ' Write IP datagram to buffer

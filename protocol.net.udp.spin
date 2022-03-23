@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Universal Datagram Protocol
     Started Feb 28, 2022
-    Updated Mar 22, 2022
+    Updated Mar 23, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -23,7 +23,7 @@ CON
 { offsets within header }
     UDP_SRC_PORT    = 0
     UDP_DEST_PORT   = 2
-    UDP_DGRAMLEN    = 4
+    UDP_DGRAM_LEN   = 4
     UDP_CKSUM       = 6
 
 VAR
@@ -32,39 +32,39 @@ VAR
     word _length
     word _cksum
 
-PUB SetUDPChksum(ck)
-' Set checksum
+PUB SetUDP_Chksum(ck)
+' Set checksum (optional; set to 0 to ignore)
     _cksum := ck
 
-PUB SetUDPDestPort(p)
+PUB SetUDP_DestPort(p)
 ' Set destination port field
     _dest_port := p
 
-PUB SetUDPDgramLen(len)
+PUB SetUDP_DgramLen(len)
 ' Set length of UDP datagram
     _length := len
 
-PUB SetUDPSrcPort(p)
+PUB SetUDP_SrcPort(p)
 ' Set source port field
     _src_port := p
 
-PUB UDPChksum{}: ck
+PUB UDP_Chksum{}: ck
 ' Get checksum
     return _cksum
 
-PUB UDPDestPort{}: p
+PUB UDP_DestPort{}: p
 ' Get destination port field
     return _dest_port
 
-PUB UDPDgramLen{}: len
+PUB UDP_DgramLen{}: len
 ' Get length of UDP datagram
     return _length
 
-PUB UDPHeaderLen{}: len
+PUB UDP_HdrLen{}: len
 ' Get current header length
     return UDP_MSG_LEN
 
-PUB UDPSrcPort{}: p
+PUB UDP_SrcPort{}: p
 ' Get source port field
     return _src_port
 

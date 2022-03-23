@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Boot Protocol/Dynamic Host Configuration Protocol
     Started Feb 28, 2022
-    Updated Mar 22, 2022
+    Updated Mar 23, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -105,71 +105,51 @@ OBJ
 
     time    : "time"
 
-PUB BroadcastIP{}: addr
-' Get broadcast IP address
-    return _bcast_ip
-
-PUB BootFName{}: ptr_str
-' Get boot filename
-    bytemove(ptr_str, @_boot_fname, strsize(@_boot_fname))
-
-PUB BroadcastFlag{}: f
+PUB BOOTP_BcastFlag{}: f
 ' Get BOOTP broadcast flag
     return (((_flags >> FLAG_B) & 1) == 1)
 
-PUB CliHdwAddrPadLen{}: len
-' Get length of client hardware address padding
-    return _client_hdw_addr_pad
+PUB BOOTP_BcastIP{}: addr
+' Get broadcast IP address
+    return _bcast_ip
 
-PUB ClientIP{}: addr
+PUB BOOTP_BootFN{}: ptr_str
+' Get boot filename
+    bytemove(ptr_str, @_boot_fname, strsize(@_boot_fname))
+
+PUB BOOTP_ClientIP{}: addr
 ' Get client IP address
     bytemove(@addr, @_client_ip, IPV4ADDR_LEN)
 
-PUB ClientMAC{}: ptr_addr
+PUB BOOTP_ClientMAC{}: ptr_addr
 ' Get client MAC address
     bytemove(ptr_addr, @_client_mac, MACADDR_LEN)
 
-PUB DHCPMsgType{}: t
-' Get type of DHCP message
-    return _dhcp_msg_t
+PUB BOOTP_CliHdwAddrPadLen{}: len
+' Get length of client hardware address padding
+    return _client_hdw_addr_pad
 
-PUB DHCPSrvIP{}: addr
-' Get DHCP server IP address
-    bytemove(@addr, @_dhcp_srv_ip, IPV4ADDR_LEN)
-
-PUB DNSIP{}: addr
+PUB BOOTP_DNSIP{}: addr
 ' Get domain name server IP address
     return _dns_ip
 
-PUB GatewayIP{}: addr
+PUB BOOTP_GatewayIP{}: addr
 ' Get relay agent IP address
     return _gwy_ip
 
-PUB HdwAddrLen{}: len
+PUB BOOTP_HdwAddrLen{}: len
 ' Set hardware address length
     return _hdw_addr_len
 
-PUB HdwType{}: t
+PUB BOOTP_HdwType{}: t
 ' Get hardware type
     return _client_hw_t
 
-PUB Hops{}: h
+PUB BOOTP_Hops{}: h
 ' Get number of hops
     return _hops
 
-PUB IPLeaseTime{}: s
-' Get lease time of IP address, in seconds
-    return _dhcp_lease_tm
-
-PUB IPRebindTime{}: s
-' Get rebinding time of IP address, in seconds
-    return _dhcp_rebind_tm
-
-PUB IPRenewalTime{}: s
-' Get renewal time of IP address, in seconds
-    return _dhcp_renewal_tm
-
-PUB LeaseElapsed{}: s
+PUB BOOTP_LeaseElapsed{}: s
 ' Get time elapsed since start of attempt to acquire or renew lease
     return _lstime_elapsed
 
@@ -177,93 +157,109 @@ PUB BOOTP_Opcode{}: c
 ' Get BOOTP message opcode
     return _bootp_opcode
 
-PUB RouterIP{}: addr
-' Get router IP address
-    return _router_ip
-
-PUB RsvdFlags{}: flags
+PUB BOOTP_RsvdFlags{}: flags
 ' Get BOOTP reserved flags
     return _flags & $7fff
 
-PUB ServerHostname{}: ptr_str
+PUB BOOTP_SrvHostname{}: ptr_str
 ' Set server hostname
     bytemove(ptr_str, @_srv_hostname, strsize(@_srv_hostname))
 
-PUB ServerIP{}: addr
+PUB BOOTP_SrvIP{}: addr
 ' Get next server IP address
     return _srv_ip
 
-PUB SubnetMask{}: mask
-' Get subnet mask
-    return _subnet_mask
-
-PUB TransID{}: id
+PUB BOOTP_TransID{}: id
 ' Get transaction ID
     return _trans_id
 
-PUB YourIP{}: addr | i
+PUB BOOTP_YourIP{}: addr | i
 ' Get your IP address
     return _your_ip
 
-PUB SetBootFName(ptr_str)
-' Set boot filename
-    bytemove(@_boot_fname, ptr_str, strsize(ptr_str))
+PUB DHCP_IPLeaseTime{}: s
+' Get lease time of IP address, in seconds
+    return _dhcp_lease_tm
 
-PUB SetBroadcastFlag(flag)
+PUB DHCP_IPRebindTime{}: s
+' Get rebinding time of IP address, in seconds
+    return _dhcp_rebind_tm
+
+PUB DHCP_IPRenewalTime{}: s
+' Get renewal time of IP address, in seconds
+    return _dhcp_renewal_tm
+
+PUB DHCP_MaxMsgLen{}: len
+' Get maximum accepted DHCP message length
+    return _dhcp_max_msg_len
+
+PUB DHCP_MsgLen{}: ptr
+' Get length of assembled DHCP message
+    return _dhcp_msg_len
+
+PUB DHCP_MsgType{}: t
+' Get type of DHCP message
+    return _dhcp_msg_t
+
+PUB DHCP_RouterIP{}: addr
+' Get router IP address
+    return _router_ip
+
+PUB DHCP_SrvIP{}: addr
+' Get DHCP server IP address
+    bytemove(@addr, @_dhcp_srv_ip, IPV4ADDR_LEN)
+
+PUB DHCP_SubnetMask{}: mask
+' Get subnet mask
+    return _subnet_mask
+
+PUB SetBOOTP_BcastFlag(flag)
 ' Set BOOTP broadcast flag
 '   Valid values:
 '       FALSE (0), TRUE (any non-zero value)
     _flags := (||(flag <> 0)) << FLAG_B
 
-PUB SetClientIP(addr)
+PUB SetBOOTP_BcastIP(addr)
+' Get broadcast IP address
+    bytemove(@_bcast_ip, @addr, IPV4ADDR_LEN)
+
+PUB SetBOOTP_BootFN(ptr_str)
+' Set boot filename
+    bytemove(@_boot_fname, ptr_str, strsize(ptr_str))
+
+PUB SetBOOTP_ClientIP(addr)
 ' Set client IP address
     bytemove(@_client_ip, @addr, IPV4ADDR_LEN)
 
-PUB SetClientMAC(ptr_addr)
+PUB SetBOOTP_ClientMAC(ptr_addr)
 ' Set client MAC address
     bytemove(@_client_mac, ptr_addr, MACADDR_LEN)
 
-PUB SetDHCPMaxMsgLen(len)
-' Set maximum accepted DHCP message length
-    _dhcp_max_msg_len := len
+PUB SetBOOTP_CliHdwAddrPadLen(len)
+' Get length of client hardware address padding
+    _client_hdw_addr_pad := len
 
-PUB DHCPMsgLen{}: ptr
-' Get length of assembled DHCP message
-    return _dhcp_msg_len
+PUB SetBOOTP_DNSIP(addr)
+' Get domain name server IP address
+    bytemove(@_dns_ip, @addr, IPV4ADDR_LEN)
 
-PUB SetDHCPMsgType(type)
-' Set DHCP message type
-    _dhcp_msg_t := type
-
-PUB SetGatewayIP(addr)
+PUB SetBOOTP_GatewayIP(addr)
 ' Set relay agent IP address
     _gwy_ip := addr
 
-PUB SetHdwAddrLen(len)
+PUB SetBOOTP_HdwAddrLen(len)
 ' Set hardware address length
     _hdw_addr_len := len
 
-PUB SetHdwType(t)
+PUB SetBOOTP_HdwType(t)
 ' Set hardware type
     _client_hw_t := t
 
-PUB SetHops(h)
+PUB SetBOOTP_Hops(h)
 ' Set number of hops
     _hops := h
 
-PUB SetIPLeaseTime(s)
-' Set lease time for IP address, in seconds
-    _dhcp_lease_tm := s
-
-PUB SetIPRebindTime(s)
-' Set rebinding time for IP address, in seconds
-    _dhcp_rebind_tm := s
-
-PUB SetIPRenewalTime(s)
-' Set renewal time for IP address, in seconds
-    _dhcp_renewal_tm := s
-
-PUB SetLeaseStartElapsed(s)
+PUB SetBOOTP_LeaseElapsed(s)
 ' Set time elapsed since start of attempt to acquire or renew lease
     _lstime_elapsed := s
 
@@ -271,9 +267,61 @@ PUB SetBOOTP_Opcode(c)
 ' Set BOOTP message opcode
     _bootp_opcode := c
 
-PUB SetParamsReqd(ptr_buff, len)
+PUB SetBOOTP_RsvdFlags(flags)
+' Get BOOTP reserved flags
+    _flags := (flags & $7fff)
+
+PUB SetBOOTP_SrvHostname(ptr_str)
+' Set server hostname, up to 64 bytes
+    bytemove(@_srv_hostname, ptr_str, strsize(ptr_str) <# SRV_HOSTN_LEN)
+
+PUB SetBOOTP_SrvIP(addr)
+' Set server IP address
+    bytemove(@_srv_ip, @addr, IPV4ADDR_LEN)
+
+PUB SetBOOTP_TransID(id)
+' Set transaction ID
+    _trans_id := id
+
+PUB SetBOOTP_YourIP(addr)
+' Set 'your' IP address
+    bytemove(@_your_ip, @addr, IPV4ADDR_LEN)
+
+PUB SetDHCP_IPLeaseTime(s)
+' Set lease time for IP address, in seconds
+    _dhcp_lease_tm := s
+
+PUB SetDHCP_IPRebindTime(s)
+' Set rebinding time for IP address, in seconds
+    _dhcp_rebind_tm := s
+
+PUB SetDHCP_IPRenewalTime(s)
+' Set renewal time for IP address, in seconds
+    _dhcp_renewal_tm := s
+
+PUB SetDHCP_MaxMsgLen(len)
+' Set maximum accepted DHCP message length
+    _dhcp_max_msg_len := len
+
+PUB SetDHCP_MsgType(type)
+' Set DHCP message type
+    _dhcp_msg_t := type
+
+PUB SetDHCP_ParamsReqd(ptr_buff, len)
 ' Set list of parameters to retrieve from DHCP server
     bytemove(@_dhcp_param_req, ptr_buff, (len <# 5))
+
+PUB SetDHCP_RouterIP(addr)
+' Get router IP address
+    bytemove(@_router_ip, @addr, IPV4ADDR_LEN)
+
+PUB SetDHCP_SrvIP(addr)
+' Set DHCP server IP address
+    bytemove(@_dhcp_srv_ip, @addr, IPV4ADDR_LEN)
+
+PUB SetDHCP_SubnetMask(mask)
+' Get subnet mask
+    bytemove(@_subnet_mask, @mask, IPV4ADDR_LEN)
 
 PUB Rd_BOOTP_Msg{}: ptr | i, tmp
 ' Read BOOTP message, as well as DHCP message, if it exists
@@ -344,10 +392,6 @@ PUB Rd_DHCP_Msg{}: ptr | t
     until (t == OPT_END)    'XXX not safeguarded against bad messages missing the OPT_END ($FF) byte
     return currptr{}
 
-PUB SetServerIP(addr)
-' Set server IP address
-    bytemove(@_srv_ip, @addr, IPV4ADDR_LEN)
-
 PUB Wr_BOOTP_Msg{}: ptr | st
 ' Write BOOTP message
 '   Returns: number of bytes written to buffer
@@ -398,14 +442,6 @@ PUB Wr_DHCP_Msg{}: ptr | st
     _dhcp_msg_len := (currptr{} - st)
     return currptr{}-st
 
-PUB SetServerHostname(ptr_str)
-' Set server hostname, up to 64 bytes
-    bytemove(@_srv_hostname, ptr_str, strsize(ptr_str) <# SRV_HOSTN_LEN)
-
-PUB SetTransID(id)
-' Set transaction ID
-    _trans_id := id
-
 PUB WriteTLV(type, len, val): ptr
 ' Write TLV to ptr_buff
 '   len:
@@ -428,10 +464,6 @@ PUB WriteTLV(type, len, val): ptr
                 _dhcp_opts_len += wrblk_msbf(val, len)
         other:                                  ' type only
     return _dhcp_opts_len
-
-PUB SetYourIP(addr)
-' Set 'your' IP address
-    bytemove(@_your_ip, @addr, IPV4ADDR_LEN)
 
 DAT
 

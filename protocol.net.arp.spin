@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Address Resolution Protocol
     Started Feb 27, 2022
-    Updated Mar 21, 2022
+    Updated Mar 23, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -22,7 +22,7 @@ CON
     ARP_PROTO_T     = 2'..3                     ' 16b/2B
     ARP_HWADDR_LEN  = 4                         ' 8b/1B
     ARP_PRADDR_LEN  = 5                         ' 8b/1B
-    ARP_OPCODE      = 6'..7                     ' 16b/2B
+    ARP_OP_CODE     = 6'..7                     ' 16b/2B
     ARP_SNDR_HWADDR = 8'..13                    ' 48b/6B
     ARP_SNDR_PRADDR = 14'..17                   ' 32b/4B
     ARP_TGT_HWADDR  = 18'..23                   ' 48b/6B
@@ -64,30 +64,86 @@ VAR
     byte _arp_sha[MACADDR_LEN]
     byte _arp_tha[MACADDR_LEN]
 
-PUB HWAddrLen{}: len
+PUB ARP_HWAddrLen{}: len
 ' Get hardware address length
 '   Returns: byte
     return _arp_hln
 
-PUB HWType{}: hrd
+PUB ARP_HWType{}: hrd
 ' Get hardware/hardware address type
 '   Returns: word
     return _arp_hrd
 
-PUB ARPOpcode{}: op
+PUB ARP_Opcode{}: op
 ' Get ARP operation code
 '   Returns: byte
     return _arp_op
 
-PUB ProtoAddrLen{}: len
+PUB ARP_ProtoAddrLen{}: len
 ' Get protocol address length
 '   Returns: byte
     return _arp_pln
 
-PUB ProtoType{}: pro
+PUB ARP_ProtoType{}: pro
 ' Get protocol/protocol address type
 '   Returns: word
     return _arp_pro
+
+PUB ARP_SenderHWAddr{}: ptr_addr
+' Get sender hardware address
+'   Returns: pointer to 6-byte MAC address
+    return @_arp_sha
+
+PUB ARP_SenderProtoAddr{}: addr
+' Get sender protocol address
+'   Returns: 4-byte IPv4 address, packed into long
+    return _arp_spa
+
+PUB ARP_TargetHWAddr{}: ptr_addr
+' Get target hardware address
+'   Returns: pointer to 6-byte MAC address
+    return @_arp_tha
+
+PUB ARP_TargetProtoAddr{}: addr
+' Get target protocol address
+'   Returns: 4-byte IPv4 address, packed into long
+    return _arp_tpa
+
+PUB SetARP_HWAddrLen(len)
+' Set hardware address length
+    _arp_hln := len
+
+PUB SetARP_HWType(hrd)
+' Set hardware type
+    _arp_hrd := hrd
+
+PUB SetARP_Opcode(op)
+' Set ARP operation code
+    _arp_op := op
+
+PUB SetARP_ProtoAddrLen(len)
+' Set protocol address length
+    _arp_pln := len
+
+PUB SetARP_ProtoType(pro)
+' Set protocol type
+    _arp_pro := pro
+
+PUB SetARP_SenderHWAddr(ptr_addr)
+' Set sender hardware address
+    bytemove(@_arp_sha, ptr_addr, MACADDR_LEN)
+
+PUB SetARP_SenderProtoAddr(addr)
+' Set sender protocol address
+    _arp_spa := addr
+
+PUB SetARP_TargetHWAddr(ptr_addr)
+' Set target hardware address
+    bytemove(@_arp_tha, ptr_addr, MACADDR_LEN)
+
+PUB SetARP_TargetProtoAddr(addr)
+' Set target protocol address
+    _arp_tpa := addr
 
 PUB Rd_ARP_Msg{}: ptr
 ' Read ARP message
@@ -101,62 +157,6 @@ PUB Rd_ARP_Msg{}: ptr
     rdblk_lsbf(@_arp_tha, MACADDR_LEN)
     rdblk_lsbf(@_arp_tpa, IPV4ADDR_LEN)
     return currptr{}
-
-PUB SenderHWAddr{}: ptr_addr
-' Get sender hardware address
-'   Returns: pointer to 6-byte MAC address
-    return @_arp_sha
-
-PUB SenderProtoAddr{}: addr
-' Get sender protocol address
-'   Returns: 4-byte IPv4 address, packed into long
-    return _arp_spa
-
-PUB SetHWAddrLen(len)
-' Set hardware address length
-    _arp_hln := len
-
-PUB SetHWType(hrd)
-' Set hardware type
-    _arp_hrd := hrd
-
-PUB SetARPOpcode(op)
-' Set ARP operation code
-    _arp_op := op
-
-PUB SetProtoAddrLen(len)
-' Set protocol address length
-    _arp_pln := len
-
-PUB SetProtoType(pro)
-' Set protocol type
-    _arp_pro := pro
-
-PUB SetSenderHWAddr(ptr_addr)
-' Set sender hardware address
-    bytemove(@_arp_sha, ptr_addr, MACADDR_LEN)
-
-PUB SetSenderProtoAddr(addr)
-' Set sender protocol address
-    _arp_spa := addr
-
-PUB SetTargetHWAddr(ptr_addr)
-' Set target hardware address
-    bytemove(@_arp_tha, ptr_addr, MACADDR_LEN)
-
-PUB SetTargetProtoAddr(addr)
-' Set target protocol address
-    _arp_tpa := addr
-
-PUB TargetHWAddr{}: ptr_addr
-' Get target hardware address
-'   Returns: pointer to 6-byte MAC address
-    return @_arp_tha
-
-PUB TargetProtoAddr{}: addr
-' Get target protocol address
-'   Returns: 4-byte IPv4 address, packed into long
-    return _arp_tpa
 
 PUB Wr_ARP_Msg{}: ptr
 ' Write ARP message

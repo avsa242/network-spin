@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Ethernet II protocol
     Started Mar 1, 2022
-    Updated Mar 22, 2022
+    Updated Mar 23, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -19,30 +19,30 @@ VAR
     byte _dest_addr[MACADDR_LEN]
     byte _src_addr[MACADDR_LEN]
 
-PUB DestAddr{}: addr
+PUB ETHII_DestAddr{}: addr
 ' Get destination address of ethernet frame
 '   Returns: pointer to 6-byte MAC address
     return @_dest_addr
 
-PUB Ethertype{}: eth_t
+PUB ETHII_Ethertype{}: eth_t
 ' Get ethertype of ethernet frame
 '   Returns: word
     return _eth_t
 
-PUB SrcAddr{}: addr
+PUB ETHII_SrcAddr{}: addr
 ' Get source address of ethernet frame
 '   Returns: pointer to 6-byte MAC address
     return @_src_addr
 
-PUB SetDestAddr(ptr_addr)
+PUB SetETHII_DestAddr(ptr_addr)
 ' Set destination address of ethernet frame
     bytemove(@_dest_addr, ptr_addr, MACADDR_LEN)
 
-PUB SetEthertype(eth_t)
+PUB SetETHII_Ethertype(eth_t)
 ' Set ethertype of ethernet frame
     _eth_t := eth_t
 
-PUB SetSrcAddr(ptr_addr)
+PUB SetETHII_SrcAddr(ptr_addr)
 ' Set source address of ethernet frame
     bytemove(@_src_addr, ptr_addr, MACADDR_LEN)
 
