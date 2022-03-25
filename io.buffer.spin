@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Generic buffer I/O operations
     Started Mar 21, 2022
-    Updated Mar 22, 2022
+    Updated Mar 25, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -32,6 +32,10 @@ PUB CurrByte{}: b
 PUB CurrPtr{}: p
 ' Get current pointer index/offset
     return _ptr
+
+PUB DecPtr(val)
+' Manually decrement pointer by val
+    _ptr -= val
 
 PUB IncPtr(val)
 ' Manually increment pointer by val
