@@ -41,21 +41,18 @@ PUB IncPtr(val)
 ' Manually increment pointer by val
     _ptr += val
 
-PUB RdBlk_LSBF(ptr_buff, len): ptr | i
+PUB RdBlk_LSBF(ptr_buff, len): ptr
 ' Read block of data from ptr_buff, least-significant (first) byte first
 '   Returns: number of bytes read
-    ptr := 0
-    repeat i from 0 to (len-1)
-        byte[ptr_buff][i] := byte[_ptr_dest][_ptr++]
-        ptr++
+    repeat ptr from 0 to (len-1)
+        byte[ptr_buff][ptr] := byte[_ptr_dest][_ptr++]
 
-PUB RdBlk_MSBF(ptr_buff, len): ptr | i
+PUB RdBlk_MSBF(ptr_buff, len): ptr
 ' Read block of data from ptr_buff, most-significant (last) byte first
 '   Returns: number of bytes read
-    ptr := 0
-    repeat i from (len-1) to 0
-        byte[ptr_buff][i] := byte[_ptr_dest][_ptr++]
-        ptr++
+    repeat ptr from (len-1) to 0
+        byte[ptr_buff][ptr] := byte[_ptr_dest][_ptr++]
+    return len
 
 PUB Rd_Byte{}: b
 ' Read byte from buffer
@@ -85,16 +82,16 @@ PUB SetPtr(p)
 ' Set pointer index/offset
     _ptr := p
 
-PUB WrBlk_LSBF(ptr_buff, len): ptr | i
+PUB WrBlk_LSBF(ptr_buff, len): ptr
 ' Write block of data, least-significant (first) byte first
     bytemove(_ptr_dest+_ptr, ptr_buff, len)
     _ptr += len
     return len
 
-PUB WrBlk_MSBF(ptr_buff, len): ptr | i
+PUB WrBlk_MSBF(ptr_buff, len): ptr
 ' Write block of data, most-significant (last) byte first
-    repeat i from (len-1) to 0
-        byte[_ptr_dest][_ptr++] := byte[ptr_buff][i]
+    repeat ptr from (len-1) to 0
+        byte[_ptr_dest][_ptr++] := byte[ptr_buff][ptr]
     return len
 
 PUB Wr_Byte(b): len
