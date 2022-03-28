@@ -1,0 +1,7 @@
+#include "io.buffer.spin2"
+#include "protocol.net.eth-ii.spin2"
+#include "protocol.net.ip.spin2"
+#include "protocol.net.arp.spin2"
+#include "protocol.net.udp.spin2"
+#include "protocol.net.bootp.spin2"
+
