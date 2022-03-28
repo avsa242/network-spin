@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Ethernet II protocol
     Started Mar 1, 2022
-    Updated Mar 23, 2022
+    Updated Mar 28, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -46,7 +46,7 @@ PUB ETHII_SetSrcAddr(ptr_addr)
 ' Set source address of ethernet frame
     bytemove(@_src_addr, ptr_addr, MACADDR_LEN)
 
-PUB Rd_ETHII_Frame{}: ptr | i
+PUB Rd_ETHII_Frame{}: ptr
 ' Read ethernet-II frame
 '   Returns: number of bytes read
     rdblk_lsbf(@_dest_addr, MACADDR_LEN)
@@ -54,7 +54,7 @@ PUB Rd_ETHII_Frame{}: ptr | i
     _eth_t := rdword_msbf{}
     return currptr{}
 
-PUB Wr_ETHII_Frame{}: ptr | i
+PUB Wr_ETHII_Frame{}: ptr
 ' Write ethernet-II frame
     wrblk_lsbf(@_dest_addr, MACADDR_LEN)
     wrblk_lsbf(@_src_addr, MACADDR_LEN)

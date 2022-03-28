@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Boot Protocol/Dynamic Host Configuration Protocol
     Started Feb 28, 2022
-    Updated Mar 23, 2022
+    Updated Mar 28, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -24,7 +24,11 @@ CON
     FLAG_B              = 15
 
     HDWADDRLEN_MAX      = 16
-    LSE_90DAYS          = (90 * time#DAY)
+    SECOND              = 1
+    MINUTE              = 60 * SECOND
+    HR                  = 60 * MINUTE
+    DAY                 = 24 * HR
+    LSE_90DAYS          = 90 * DAY
 
     SRV_HOSTN_LEN       = 64
     BOOT_FN_LEN         = 128
@@ -100,10 +104,6 @@ VAR
     byte _dhcp_opts_len
     byte _dhcp_param_req[5]
     byte _dhcp_msg_t
-
-OBJ
-
-    time    : "time"
 
 PUB BOOTP_BcastFlag{}: f
 ' Get BOOTP broadcast flag
@@ -303,9 +303,9 @@ PUB DHCP_SetMaxMsgLen(len)
 ' Set maximum accepted DHCP message length
     _dhcp_max_msg_len := len
 
-PUB DHCP_SetMsgType(type)
+PUB DHCP_SetMsgType(msgtype)
 ' Set DHCP message type
-    _dhcp_msg_t := type
+    _dhcp_msg_t := msgtype
 
 PUB DHCP_SetParamsReqd(ptr_buff, len)
 ' Set list of parameters to retrieve from DHCP server
@@ -413,6 +413,11 @@ PUB Wr_BOOTP_Msg{}: ptr | st
     wrblk_lsbf(@_boot_fname, BOOT_FN_LEN)
     return currptr{}-st
 
+CON
+
+    LSBF    = 0
+    MSBF    = 1
+
 PUB Wr_DHCP_Msg{}: ptr | st
 ' Write DHCP message, preceded by BOOTP message
 '   NOTE: Ensure DHCPMsgType() is set, prior to calling this method
@@ -426,23 +431,23 @@ PUB Wr_DHCP_Msg{}: ptr | st
 
     { finally, the DHCP 'options' }
     _dhcp_opts_len := 0
-    writetlv(MSG_TYPE, 1, _dhcp_msg_t)
-    writetlv(PARAM_REQLST, 5, @_dhcp_param_req)
-    writetlv(CLIENT_ID, 7, @_client_hw_t)       ' HW type, then HW addr
+    writetlv(MSG_TYPE, 1, _dhcp_msg_t, LSBF)
+    writetlv(PARAM_REQLST, 5, @_dhcp_param_req, LSBF)
+    writetlv(CLIENT_ID, 7, @_client_hw_t, LSBF)       ' HW type, then HW addr
     if (_dhcp_msg_t == DHCPDISCOVER)
-        writetlv(MAX_DHCP_MSGSZ, 2, _dhcp_max_msg_len)
+        writetlv(MAX_DHCP_MSGSZ, 2, _dhcp_max_msg_len, MSBF)
     elseif (_dhcp_msg_t == DHCPREQUEST)
-        writetlv(REQD_IPADDR, 4, @_your_ip)
-        writetlv(DHCP_SRV_ID, 4, @_dhcp_srv_ip)
-    writetlv(IP_LEASE_TM, 4, @_dhcp_lease_tm)
-    writetlv(OPT_END, 0, 0)
+        writetlv(REQD_IPADDR, 4, @_your_ip, LSBF)
+        writetlv(DHCP_SRV_ID, 4, @_dhcp_srv_ip, LSBF)
+    writetlv(IP_LEASE_TM, 4, @_dhcp_lease_tm, MSBF)
+    writetlv(OPT_END, 0, 0, LSBF)
 
     { pad the end of the message equal to the number of bytes in the options }
     wr_bytex($00, _dhcp_opts_len)
     _dhcp_msg_len := (currptr{} - st)
     return currptr{}-st
 
-PUB WriteTLV(type, len, val): ptr
+PUB WriteTLV(typ, len, val, byte_ord): ptr
 ' Write TLV to ptr_buff
 '   len:
 '       1..2: values will be read (MSByte-first) directly from parameter
@@ -451,14 +456,14 @@ PUB WriteTLV(type, len, val): ptr
 '   Returns: total length of TLV (includes: type, length, and all values)
     { track length of DHCP options; it'll be needed later for padding
         the end of the DHCP message }
-    _dhcp_opts_len += wr_byte(type)
+    _dhcp_opts_len += wr_byte(typ)
     case len
         1..2:                                   ' immediate value
             _dhcp_opts_len += wr_byte(len)
             _dhcp_opts_len += wrblk_msbf(@val, len)
         3..255:                                 ' value pointed to
             _dhcp_opts_len += wr_byte(len)
-            if (type == REQD_IPADDR or type == DHCP_SRV_ID or type == CLIENT_ID) 'XXX temp hack - add byte order param?
+            if (byte_ord == LSBF)
                 _dhcp_opts_len += wrblk_lsbf(val, len)
             else
                 _dhcp_opts_len += wrblk_msbf(val, len)
