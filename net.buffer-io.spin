@@ -4,4 +4,4 @@
 #include "protocol.net.arp.spin"
 #include "protocol.net.udp.spin"
 #include "protocol.net.bootp.spin"
-
+#include "protocol.net.icmp.spin"
