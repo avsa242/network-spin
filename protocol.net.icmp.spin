@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Control Message Protocol
     Started Mar 31, 2022
-    Updated Mar 31, 2022
+    Updated Apr 2, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -98,8 +98,7 @@ PUB Rd_ICMP_Msg{}: ptr
 '   Returns: length of read header, in bytes
     _icmp_type := rd_byte{}
     _icmp_code := rd_byte{}
-    _cksum := rdword_msbf{}
-    rdlong_lsbf{}                               ' discard unused bytes
+    _icmp_cksum := rdword_msbf{}
     return currptr{}
 
 PUB Wr_ICMP_Msg{}: ptr
@@ -107,8 +106,7 @@ PUB Wr_ICMP_Msg{}: ptr
 '   Returns: length of assembled header, in bytes
     wr_byte(_icmp_type)
     wr_byte(_icmp_code)
-    wrword_msbf(_cksum)
-    wr_bytex($00, 4)                            ' unused
+    wrword_msbf(_icmp_cksum)
     return currptr{}
 
 DAT
