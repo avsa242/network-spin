@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Boot Protocol/Dynamic Host Configuration Protocol
     Started Feb 28, 2022
-    Updated Mar 28, 2022
+    Updated Apr 4, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -403,10 +403,10 @@ PUB Wr_BOOTP_Msg{}: ptr | st
     wrlong_msbf(_trans_id)
     wrword_msbf(_lstime_elapsed)
     wrword_msbf(_flags)
-    wrblk_msbf(@_client_ip, IPV4ADDR_LEN)
-    wrblk_msbf(@_your_ip, IPV4ADDR_LEN)
-    wrblk_msbf(@_srv_ip, IPV4ADDR_LEN)
-    wrblk_msbf(@_gwy_ip, IPV4ADDR_LEN)
+    wrblk_lsbf(@_client_ip, IPV4ADDR_LEN)
+    wrblk_lsbf(@_your_ip, IPV4ADDR_LEN)
+    wrblk_lsbf(@_srv_ip, IPV4ADDR_LEN)
+    wrblk_lsbf(@_gwy_ip, IPV4ADDR_LEN)
     wrblk_lsbf(@_client_mac, MACADDR_LEN)
     wr_bytex($00, HDWADDRLEN_MAX-MACADDR_LEN)
     wrblk_lsbf(@_srv_hostname, SRV_HOSTN_LEN)
@@ -445,7 +445,7 @@ PUB Wr_DHCP_Msg{}: ptr | st
     { pad the end of the message equal to the number of bytes in the options }
     wr_bytex($00, _dhcp_opts_len)
     _dhcp_msg_len := (currptr{} - st)
-    return currptr{}-st
+    return _dhcp_msg_len
 
 PUB WriteTLV(typ, len, val, byte_ord): ptr
 ' Write TLV to ptr_buff

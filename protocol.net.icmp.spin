@@ -24,6 +24,7 @@ CON
     IDX_ICMP_T      = 0
     IDX_ICMP_CODE   = 1
     IDX_ICMP_CKSUM  = 2
+    IDX_ICMP_DATA   = 50                        ' data for ECHO messages
 
 { error message types }
     DEST_UNREACH    = 3
@@ -69,6 +70,7 @@ VAR
     word _icmp_cksum
     word _icmp_ident, _icmp_seq_nr
     byte _icmp_type, _icmp_code
+    byte _icmp_msg_len
 
 PUB ICMP_SetChksum(ck)
 ' Set checksum (optional; set to 0 to ignore)
@@ -102,6 +104,10 @@ PUB ICMP_Ident{}: iid
 ' Get ICMP identifier
     return _icmp_ident
 
+PUB ICMP_MsgLen{}: len
+' Get length of currently assembled ICMP message
+    return _icmp_msg_len
+
 PUB ICMP_MsgType{}: msg_t
 ' Get ICMP message type
     return _icmp_type
@@ -121,15 +127,18 @@ PUB Rd_ICMP_Msg{}: ptr
         _icmp_seq_nr := rdword_msbf{}
     return currptr{}
 
-PUB Wr_ICMP_Msg{}: ptr
+PUB Wr_ICMP_Msg{}: ptr | st
 ' Write/assemble ICMP message
 '   Returns: length of assembled message, in bytes
+    st := currptr{}
     wr_byte(_icmp_type)
     wr_byte(_icmp_code)
     wrword_msbf(_icmp_cksum)
     if (_icmp_type == ECHO_REPL)
         wrword_msbf(_icmp_ident)
         wrword_msbf(_icmp_seq_nr)
+
+    _icmp_msg_len := currptr{} - st
     return currptr{}
 
 DAT
