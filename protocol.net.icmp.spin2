@@ -10,7 +10,7 @@
     --------------------------------------------
 }
 #ifndef NET_COMMON
-#include "net-common.spinh"
+#include "net-common.spin2h"
 #endif
 
 CON
@@ -95,51 +95,51 @@ PUB ICMP_SetTimeStamp(tm)
 ' Set timestamp for ICMP message
     _icmp_tm_stamp := tm
 
-PUB ICMP_Chksum{}: ck
+PUB ICMP_Chksum(): ck
 ' Get checksum
     return _icmp_cksum
 
-PUB ICMP_Code{}: icmp_c
+PUB ICMP_Code(): icmp_c
 ' Get ICMP subtype/code
     return _icmp_code
 
-PUB ICMP_Ident{}: iid
+PUB ICMP_Ident(): iid
 ' Get ICMP identifier
     return _icmp_ident
 
-PUB ICMP_MsgLen{}: len
+PUB ICMP_MsgLen(): len
 ' Get length of currently assembled ICMP message
     return _icmp_msg_len
 
-PUB ICMP_MsgType{}: msg_t
+PUB ICMP_MsgType(): msg_t
 ' Get ICMP message type
     return _icmp_type
 
-PUB ICMP_SeqNr{}: seqnr
+PUB ICMP_SeqNr(): seqnr
 ' Get ICMP sequence number
     return _icmp_seq_nr
 
-PUB ICMP_TimeStamp{}: tm
+PUB ICMP_TimeStamp(): tm
 ' Get timestamp from ICMP message
     return _icmp_tm_stamp
 
-PUB Rd_ICMP_Msg{}: ptr
+PUB Rd_ICMP_Msg(): ptr
 ' Read/disassemble ICMP message
 '   Returns: length of read message, in bytes
-    _icmp_type := rd_byte{}
-    _icmp_code := rd_byte{}
-    _icmp_cksum := rdword_msbf{}
+    _icmp_type := rd_byte()
+    _icmp_code := rd_byte()
+    _icmp_cksum := rdword_msbf()
     if (_icmp_type == ECHO_REQ)
-        _icmp_ident := rdword_msbf{}
-        _icmp_seq_nr := rdword_msbf{}
-        _icmp_tm_stamp := rdlong_lsbf{}
-        rdlong_lsbf{}                           ' ignore fraction of a second
-    return currptr{}
+        _icmp_ident := rdword_msbf()
+        _icmp_seq_nr := rdword_msbf()
+        _icmp_tm_stamp := rdlong_lsbf()
+        rdlong_lsbf()                           ' ignore fraction of a second
+    return currptr()
 
-PUB Wr_ICMP_Msg{}: ptr | st
+PUB Wr_ICMP_Msg(): ptr | st
 ' Write/assemble ICMP message
 '   Returns: length of assembled message, in bytes
-    st := currptr{}
+    st := currptr()
     wr_byte(_icmp_type)
     wr_byte(_icmp_code)
     wrword_msbf(_icmp_cksum)
@@ -148,8 +148,8 @@ PUB Wr_ICMP_Msg{}: ptr | st
         wrword_msbf(_icmp_seq_nr)
         wrlong_lsbf(_icmp_tm_stamp)
         wrlong_lsbf($00_00_00_00)               ' ignore fraction of a second
-    _icmp_msg_len := currptr{} - st
-    return currptr{}
+    _icmp_msg_len := currptr() - st
+    return currptr()
 
 DAT
 

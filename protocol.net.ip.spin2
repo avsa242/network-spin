@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Protocol
     Started Mar 28, 2022
-    Updated Mar 28, 2022
+    Updated Apr 4, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -221,9 +221,9 @@ PUB Wr_IP_Header(): ptr   ' TODO: move the shifting/masking to the Set*() method
     wr_byte(_frag_offs & $ff)
     wr_byte(_ttl)
     wr_byte(_proto)
-    wrword_msbf(_hdr_chk)
-    wrblk_msbf(@_ip_src_addr, IPV4ADDR_LEN)
-    wrblk_msbf(@_ip_dest_addr, IPV4ADDR_LEN)
+    wrword_lsbf(_hdr_chk)
+    wrblk_lsbf(@_ip_src_addr, IPV4ADDR_LEN)
+    wrblk_lsbf(@_ip_dest_addr, IPV4ADDR_LEN)
     return currptr()
 
 DAT
