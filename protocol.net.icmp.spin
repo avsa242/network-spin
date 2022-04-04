@@ -67,6 +67,7 @@ CON
 
 VAR
 
+    long _icmp_tm_stamp
     word _icmp_cksum
     word _icmp_ident, _icmp_seq_nr
     byte _icmp_type, _icmp_code
@@ -92,6 +93,10 @@ PUB ICMP_SetSeqNr(seq_nr)
 ' Set ICMP sequence number
     _icmp_seq_nr := seq_nr
 
+PUB ICMP_SetTimeStamp(tm)
+' Set timestamp for ICMP message
+    _icmp_tm_stamp := tm
+
 PUB ICMP_Chksum{}: ck
 ' Get checksum
     return _icmp_cksum
@@ -116,6 +121,10 @@ PUB ICMP_SeqNr{}: seqnr
 ' Get ICMP sequence number
     return _icmp_seq_nr
 
+PUB ICMP_TimeStamp{}: tm
+' Get timestamp from ICMP message
+    return _icmp_tm_stamp
+
 PUB Rd_ICMP_Msg{}: ptr
 ' Read/disassemble ICMP message
 '   Returns: length of read message, in bytes
@@ -125,6 +134,8 @@ PUB Rd_ICMP_Msg{}: ptr
     if (_icmp_type == ECHO_REQ)
         _icmp_ident := rdword_msbf{}
         _icmp_seq_nr := rdword_msbf{}
+        _icmp_tm_stamp := rdlong_lsbf{}
+        rdlong_lsbf{}                           ' ignore fraction of a second
     return currptr{}
 
 PUB Wr_ICMP_Msg{}: ptr | st
@@ -137,7 +148,8 @@ PUB Wr_ICMP_Msg{}: ptr | st
     if (_icmp_type == ECHO_REPL)
         wrword_msbf(_icmp_ident)
         wrword_msbf(_icmp_seq_nr)
-
+        wrlong_lsbf(_icmp_tm_stamp)
+        wrlong_lsbf($00_00_00_00)               ' ignore fraction of a second
     _icmp_msg_len := currptr{} - st
     return currptr{}
 
