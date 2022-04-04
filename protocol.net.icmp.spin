@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Control Message Protocol
     Started Mar 31, 2022
-    Updated Apr 2, 2022
+    Updated Apr 4, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -67,6 +67,7 @@ CON
 VAR
 
     word _icmp_cksum
+    word _icmp_ident, _icmp_seq_nr
     byte _icmp_type, _icmp_code
 
 PUB ICMP_SetChksum(ck)
@@ -77,9 +78,17 @@ PUB ICMP_SetCode(icmp_c)
 ' Set ICMP subtype
     _icmp_code := icmp_c
 
+PUB ICMP_SetIdent(iid)
+' Set ICMP identifier
+    _icmp_ident := iid
+
 PUB ICMP_SetMsgType(icmp_t)
 ' Set ICMP message type
     _icmp_type := icmp_t
+
+PUB ICMP_SetSeqNr(seq_nr)
+' Set ICMP sequence number
+    _icmp_seq_nr := seq_nr
 
 PUB ICMP_Chksum{}: ck
 ' Get checksum
@@ -89,24 +98,38 @@ PUB ICMP_Code{}: icmp_c
 ' Get ICMP subtype/code
     return _icmp_code
 
-PUB ICMP_MsgType{}: icmp_t
+PUB ICMP_Ident{}: iid
+' Get ICMP identifier
+    return _icmp_ident
+
+PUB ICMP_MsgType{}: msg_t
 ' Get ICMP message type
     return _icmp_type
 
+PUB ICMP_SeqNr{}: seqnr
+' Get ICMP sequence number
+    return _icmp_seq_nr
+
 PUB Rd_ICMP_Msg{}: ptr
 ' Read/disassemble ICMP message
-'   Returns: length of read header, in bytes
+'   Returns: length of read message, in bytes
     _icmp_type := rd_byte{}
     _icmp_code := rd_byte{}
     _icmp_cksum := rdword_msbf{}
+    if (_icmp_type == ECHO_REQ)
+        _icmp_ident := rdword_msbf{}
+        _icmp_seq_nr := rdword_msbf{}
     return currptr{}
 
 PUB Wr_ICMP_Msg{}: ptr
 ' Write/assemble ICMP message
-'   Returns: length of assembled header, in bytes
+'   Returns: length of assembled message, in bytes
     wr_byte(_icmp_type)
     wr_byte(_icmp_code)
     wrword_msbf(_icmp_cksum)
+    if (_icmp_type == ECHO_REPL)
+        wrword_msbf(_icmp_ident)
+        wrword_msbf(_icmp_seq_nr)
     return currptr{}
 
 DAT
