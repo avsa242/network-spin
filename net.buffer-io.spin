@@ -5,3 +5,5 @@
 #include "protocol.net.udp.spin"
 #include "protocol.net.bootp.spin"
 #include "protocol.net.icmp.spin"
+#include "protocol.net.tcp.spin"
+
