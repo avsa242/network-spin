@@ -139,7 +139,7 @@ PUB Rd_TCP_Header{} | tmp
     tmp := rd_byte{}
     _tcp_hdrlen := ((tmp >> 4) & $0f)
 
-    _tcp_flags := (tmp & 1) << 9                ' NONCE
+    _tcp_flags := (tmp & 1) << NONCE
     tmp := rd_byte{}
     _tcp_flags |= tmp                           ' remaining flags
     _tcp_win := rdword_msbf{}
@@ -157,7 +157,7 @@ PUB Wr_TCP_Header{}: ptr | st   ' UNTESTED
     wrword_msbf(_tcp_dest_port)
     wrlong_msbf(_seq_nr)
     wrlong_msbf(_ack_nr)
-    wr_byte((_tcp_hdrlen << 4) | ((_tcp_flags >> 9) & 1))
+    wr_byte((_tcp_hdrlen << 4) | ((_tcp_flags >> NONCE) & 1))
     wr_byte(_tcp_flags & $ff)
     wrword_msbf(_tcp_win)
     wrword_msbf(_tcp_cksum)
