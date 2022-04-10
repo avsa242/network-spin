@@ -434,16 +434,16 @@ PUB Wr_DHCP_Msg{}: ptr | st
 
     { finally, the DHCP 'options' }
     _options_len := 0
-    writetlv(MSG_TYPE, 1, _dhcp_msg_t, LSBF)
-    writetlv(PARAM_REQLST, 5, @_dhcp_param_req, LSBF)
-    writetlv(CLIENT_ID, 7, @_client_hw_t, LSBF)       ' HW type, then HW addr
+    writetlv(MSG_TYPE, 1, true, _dhcp_msg_t, LSBF)
+    writetlv(PARAM_REQLST, 5, true, @_dhcp_param_req, LSBF)
+    writetlv(CLIENT_ID, 7, true, @_client_hw_t, LSBF)       ' HW type, then HW addr
     if (_dhcp_msg_t == DHCPDISCOVER)
-        writetlv(MAX_DHCP_MSGSZ, 2, _dhcp_max_msg_len, MSBF)
+        writetlv(MAX_DHCP_MSGSZ, 2, true, _dhcp_max_msg_len, MSBF)
     elseif (_dhcp_msg_t == DHCPREQUEST)
-        writetlv(REQD_IPADDR, 4, _your_ip, LSBF)
-        writetlv(DHCP_SRV_ID, 4, _dhcp_srv_ip, LSBF)
-    writetlv(IP_LEASE_TM, 4, _dhcp_lease_tm, MSBF)
-    writetlv(OPT_END, 0, 0, LSBF)
+        writetlv(REQD_IPADDR, 4, true, _your_ip, LSBF)
+        writetlv(DHCP_SRV_ID, 4, true, _dhcp_srv_ip, LSBF)
+    writetlv(IP_LEASE_TM, 4, true, _dhcp_lease_tm, MSBF)
+    writetlv(OPT_END, 0, false, 0, LSBF)
 
     { pad the end of the message equal to the number of bytes in the options }
     wr_bytex($00, _options_len)

@@ -16,17 +16,21 @@ VAR
 
     word _options_len
 
-PUB WriteTLV(typ, len, val, byte_ord): tlvlen
+PUB WriteTLV(typ, len, wr_val, val, byte_ord): tlvlen
 ' Write TLV to ptr_buff
 '   typ:
 '       option type/kind
 '   len:
-'       1..2: values will be read (MSByte-first) directly from parameter
-'       3..255: values will be read by pointer passed in ptr_val
-'       other values: only the type will be written
+'       length of TLV, 1..255 (includes type/kind byte, length byte, and
+'           number of option bytes)
+'       any other value: only the type will be written
+'   wr_val:
+'       Whether to write the value data (0: ignore, non-zero: write val)
 '   val:
 '       value of option data
-'       (ignored if len is outside valid range)
+'       When len is 1..4, values will be read directly from parameter
+'       When len is 5..255, val is expected to be a pointer to value data
+'       (ignored if len is outside valid range or if wr_val is 0)
 '   byte_ord:
 '       byte order to write option data (LSBF or MSBF)
 '   Returns: total length of TLV (includes: type, length, and all values)
@@ -35,19 +39,26 @@ PUB WriteTLV(typ, len, val, byte_ord): tlvlen
         the end of the message }
     _options_len += wr_byte(typ)
     case len
-        1..4:                                   ' immediate value
+        { immediate value }
+        1..4:
+            _options_len += wr_byte(len)        ' write length byte
+            { only write the value data if explicitly called to; }
+            {   some options only consist of the TYPE and LENGTH fields }
+            if (wr_val)                         ' write value
+                if (byte_ord == LSBF)
+                    _options_len += wrblk_lsbf(@val, len)
+                else
+                    _options_len += wrblk_msbf(@val, len)
+        { values pointed to }
+        5..255:
             _options_len += wr_byte(len)
-            if (byte_ord == LSBF)
-                _options_len += wrblk_lsbf(@val, len)
-            else
-                _options_len += wrblk_msbf(@val, len)
-        5..255:                                 ' value pointed to
-            _options_len += wr_byte(len)
-            if (byte_ord == LSBF)
-                _options_len += wrblk_lsbf(val, len)
-            else
-                _options_len += wrblk_msbf(val, len)
-        other:                                  ' type only
+            if (wr_val)
+                if (byte_ord == LSBF)
+                    _options_len += wrblk_lsbf(val, len)
+                else
+                    _options_len += wrblk_msbf(val, len)
+        { write type only }
+        other:
     return _options_len
 
 DAT
