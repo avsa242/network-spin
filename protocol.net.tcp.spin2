@@ -1,16 +1,16 @@
 {
     --------------------------------------------
-    Filename: protocol.net.tcp.spin
+    Filename: protocol.net.tcp.spin2
     Author: Jesse Burt
     Description: Transmission Control Protocol
-    Started Apr 5, 2022
-    Updated Apr 5, 2022
+    Started Apr 10, 2022
+    Updated Apr 10, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
 }
 #ifndef NET_COMMON
-#include "net-common.spinh"
+#include "net-common.spin2h"
 #endif
 
 CON
@@ -94,70 +94,70 @@ PUB TCP_SetWindow(win)
 ' Set TCP window
     _tcp_win := win
 
-PUB TCP_AckNr{}: ack_nr
+PUB TCP_AckNr(): ack_nr
 ' Get TCP acknowledgement number
     return _ack_nr
 
-PUB TCP_Chksum{}: ck
+PUB TCP_Chksum(): ck
 ' Get checksum
     return _tcp_cksum
 
-PUB TCP_DestPort{}: p
+PUB TCP_DestPort(): p
 ' Get destination port field
     return _tcp_dest_port
 
-PUB TCP_Flags{}: flags
+PUB TCP_Flags(): flags
 ' Get TCP header flags
     return _tcp_flags
 
-PUB TCP_HdrLen{}: len
+PUB TCP_HdrLen(): len
 ' Get current header length
     return _tcp_hdrlen
 
-PUB TCP_MsgLen{}: len
+PUB TCP_MsgLen(): len
 ' Get current message length
     return _tcp_msglen
 
-PUB TCP_SeqNr{}: seq_nr
+PUB TCP_SeqNr(): seq_nr
 ' Get TCP sequence number
     return _seq_nr
 
-PUB TCP_SrcPort{}: p
+PUB TCP_SrcPort(): p
 ' Get source port field
     return _tcp_src_port
 
-PUB TCP_UrgentPtr{}: uptr
+PUB TCP_UrgentPtr(): uptr
 ' Get TCP urgent pointer
     return _urg_ptr
 
-PUB TCP_Window{}: win
+PUB TCP_Window(): win
 ' Get TCP header window
     return _tcp_win
 
-PUB Rd_TCP_Header{} | tmp
+PUB Rd_TCP_Header() | tmp
 ' Read/disassemble TCP header
 '   Returns: length of read header, in bytes
-    _tcp_src_port := rdword_msbf{}
-    _tcp_dest_port := rdword_msbf{}
-    _seq_nr := rdlong_msbf{}
-    _ack_nr := rdlong_msbf{}
-    tmp := rd_byte{}
+    _tcp_src_port := rdword_msbf()
+    _tcp_dest_port := rdword_msbf()
+    _seq_nr := rdlong_msbf()
+    _ack_nr := rdlong_msbf()
+    tmp := rd_byte()
     _tcp_hdrlen := ((tmp >> 4) & $0f)
 
     _tcp_flags := (tmp & 1) << NONCE
-    tmp := rd_byte{}
+    tmp := rd_byte()
     _tcp_flags |= tmp                           ' remaining flags
-    _tcp_win := rdword_msbf{}
-    _tcp_cksum := rdword_msbf{}
-    _urg_ptr := rdword_msbf{}
+    _tcp_win := rdword_msbf()
+    _tcp_cksum := rdword_msbf()
+    _urg_ptr := rdword_msbf()
 
     'TODO: TCP options
-    return currptr{}
+    return currptr()
 
-PUB Wr_TCP_Header{}: ptr | st   ' UNTESTED
+PUB Wr_TCP_Header(): ptr | st   ' UNTESTED
 ' Write/assemble TCP header
 '   Returns: length of assembled header, in bytes
-    st := currptr{}
+    st := currptr()
     wrword_msbf(_tcp_src_port)
     wrword_msbf(_tcp_dest_port)
     wrlong_msbf(_seq_nr)
@@ -168,7 +168,7 @@ PUB Wr_TCP_Header{}: ptr | st   ' UNTESTED
     wrword_msbf(_tcp_cksum)
     wrword_msbf(_urg_ptr)
 
-    _tcp_msglen := currptr{}-st
+    _tcp_msglen := currptr()-st
     'TODO: TCP options
     return _tcp_msglen
 
