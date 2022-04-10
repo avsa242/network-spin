@@ -1,5 +1,4 @@
 {
-    --------------------------------------------
     Filename: protocol.net.common.spinh
     Author: Jesse Burt
     Description: Routines common to networking protocols
@@ -36,10 +35,13 @@ PUB WriteTLV(typ, len, val, byte_ord): tlvlen
         the end of the message }
     _options_len += wr_byte(typ)
     case len
-        1..2:                                   ' immediate value
+        1..4:                                   ' immediate value
             _options_len += wr_byte(len)
-            _options_len += wrblk_msbf(@val, len)
-        3..255:                                 ' value pointed to
+            if (byte_ord == LSBF)
+                _options_len += wrblk_lsbf(@val, len)
+            else
+                _options_len += wrblk_msbf(@val, len)
+        5..255:                                 ' value pointed to
             _options_len += wr_byte(len)
             if (byte_ord == LSBF)
                 _options_len += wrblk_lsbf(val, len)

@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Boot Protocol/Dynamic Host Configuration Protocol
     Started Feb 28, 2022
-    Updated Apr 4, 2022
+    Updated Apr 10, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -440,9 +440,9 @@ PUB Wr_DHCP_Msg{}: ptr | st
     if (_dhcp_msg_t == DHCPDISCOVER)
         writetlv(MAX_DHCP_MSGSZ, 2, _dhcp_max_msg_len, MSBF)
     elseif (_dhcp_msg_t == DHCPREQUEST)
-        writetlv(REQD_IPADDR, 4, @_your_ip, LSBF)
-        writetlv(DHCP_SRV_ID, 4, @_dhcp_srv_ip, LSBF)
-    writetlv(IP_LEASE_TM, 4, @_dhcp_lease_tm, MSBF)
+        writetlv(REQD_IPADDR, 4, _your_ip, LSBF)
+        writetlv(DHCP_SRV_ID, 4, _dhcp_srv_ip, LSBF)
+    writetlv(IP_LEASE_TM, 4, _dhcp_lease_tm, MSBF)
     writetlv(OPT_END, 0, 0, LSBF)
 
     { pad the end of the message equal to the number of bytes in the options }
