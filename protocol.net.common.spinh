@@ -1,0 +1,74 @@
+{
+    --------------------------------------------
+    Filename: protocol.net.common.spinh
+    Author: Jesse Burt
+    Description: Routines common to networking protocols
+    Started Apr 10, 2022
+    Updated Apr 10, 2022
+    Copyright 2022
+    See end of file for terms of use.
+    --------------------------------------------
+}
+{ check for this symbol before attempting to #include, so more than one }
+{   file doesn't try to }
+#define PROTO_COMMON
+
+VAR
+
+    word _options_len
+
+PUB WriteTLV(typ, len, val, byte_ord): tlvlen
+' Write TLV to ptr_buff
+'   typ:
+'       option type/kind
+'   len:
+'       1..2: values will be read (MSByte-first) directly from parameter
+'       3..255: values will be read by pointer passed in ptr_val
+'       other values: only the type will be written
+'   val:
+'       value of option data
+'       (ignored if len is outside valid range)
+'   byte_ord:
+'       byte order to write option data (LSBF or MSBF)
+'   Returns: total length of TLV (includes: type, length, and all values)
+
+    { track length of options; it'll be needed later for padding
+        the end of the message }
+    _options_len += wr_byte(typ)
+    case len
+        1..2:                                   ' immediate value
+            _options_len += wr_byte(len)
+            _options_len += wrblk_msbf(@val, len)
+        3..255:                                 ' value pointed to
+            _options_len += wr_byte(len)
+            if (byte_ord == LSBF)
+                _options_len += wrblk_lsbf(val, len)
+            else
+                _options_len += wrblk_msbf(val, len)
+        other:                                  ' type only
+    return _options_len
+
+DAT
+
+{
+TERMS OF USE: MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+}
+

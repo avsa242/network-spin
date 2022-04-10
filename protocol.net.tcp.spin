@@ -13,6 +13,10 @@
 #include "net-common.spinh"
 #endif
 
+#ifndef PROTO_COMMON
+#include "protocol.net.common.spinh"
+#endif
+
 CON
 
 { Limits }
