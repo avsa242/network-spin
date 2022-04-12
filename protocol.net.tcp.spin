@@ -13,10 +13,6 @@
 #include "net-common.spinh"
 #endif
 
-#ifndef PROTO_COMMON
-#include "protocol.net.common.spinh"
-#endif
-
 CON
 
 { Limits }
@@ -172,9 +168,60 @@ PUB Wr_TCP_Header{}: ptr | st   ' UNTESTED
     wrword_msbf(_tcp_cksum)
     wrword_msbf(_urg_ptr)
 
+    { TCP options }
+    writeklv(MSS, 2, true, 1460, MSBF)
+    writeklv(SACK_PRMIT, 2, false, 0, 0)
+    writeklv(TMSTAMPS, 10, true, @_tmstamps, MSBF)
+    writeklv(NOOP, 0, false, 0, 0)
+    writeklv(WIN_SCALE, 3, true, 10, 0)
     _tcp_msglen := currptr{}-st
     'TODO: TCP options
     return _tcp_msglen
+
+PUB WriteKLV(kind, len, wr_val, val, byte_ord): tlvlen
+' Write KLV to ptr_buff
+'   kind:
+'       option kind
+'   len:
+'       length of KLV, 1..255 (includes kind byte, length byte, and
+'           number of option bytes)
+'       any other value: only the type will be written
+'   wr_val:
+'       Whether to write the value data (0: ignore, non-zero: write val)
+'   val:
+'       value of option data
+'       When len is 1..4, values will be read directly from parameter
+'       When len is 5..255, val is expected to be a pointer to value data
+'       (ignored if len is outside valid range or if wr_val is 0)
+'   byte_ord:
+'       byte order to write option data (LSBF or MSBF)
+'   Returns: total length of KLV (includes: kind, length, and all values)
+
+    { track length of options; it'll be needed later for padding
+        the end of the message }
+    _options_len += wr_byte(kind)
+    case len
+        { immediate value }
+        1..4:
+            _options_len += wr_byte(len)        ' write length byte
+            { only write the value data if explicitly called to; }
+            {   some options only consist of the TYPE and LENGTH fields }
+            if (wr_val)                         ' write value
+                if (byte_ord == LSBF)
+                    _options_len += wrblk_lsbf(@val, len)
+                else
+                    _options_len += wrblk_msbf(@val, len)
+        { values pointed to }
+        5..255:
+            _options_len += wr_byte(len)
+            if (wr_val)
+                if (byte_ord == LSBF)
+                    _options_len += wrblk_lsbf(val, len)
+                else
+                    _options_len += wrblk_msbf(val, len)
+        { write type only }
+        other:
+    return _options_len
 
 DAT
 

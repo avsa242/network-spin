@@ -4,17 +4,13 @@
     Author: Jesse Burt
     Description: Boot Protocol/Dynamic Host Configuration Protocol
     Started Feb 28, 2022
-    Updated Apr 10, 2022
+    Updated Apr 4, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
 }
 #ifndef NET_COMMON
 #include "net-common.spinh"
-#endif
-
-#ifndef PROTO_COMMON
-#include "protocol.net.common.spinh"
 #endif
 
 CON
@@ -105,6 +101,7 @@ VAR
     byte _srv_hostname[SRV_HOSTN_LEN+1]         ' str + 0
     byte _boot_fname[BOOT_FN_LEN+1]             ' str + 0
 
+    byte _dhcp_opts_len
     byte _dhcp_param_req[5]
     byte _dhcp_msg_t
 
@@ -433,22 +430,45 @@ PUB Wr_DHCP_Msg{}: ptr | st
     wrlong_msbf(DHCP_MAGIC_COOKIE)
 
     { finally, the DHCP 'options' }
-    _options_len := 0
-    writetlv(MSG_TYPE, 1, true, _dhcp_msg_t, LSBF)
-    writetlv(PARAM_REQLST, 5, true, @_dhcp_param_req, LSBF)
-    writetlv(CLIENT_ID, 7, true, @_client_hw_t, LSBF)       ' HW type, then HW addr
+    _dhcp_opts_len := 0
+    writetlv(MSG_TYPE, 1, _dhcp_msg_t, LSBF)
+    writetlv(PARAM_REQLST, 5, @_dhcp_param_req, LSBF)
+    writetlv(CLIENT_ID, 7, @_client_hw_t, LSBF)       ' HW type, then HW addr
     if (_dhcp_msg_t == DHCPDISCOVER)
-        writetlv(MAX_DHCP_MSGSZ, 2, true, _dhcp_max_msg_len, MSBF)
+        writetlv(MAX_DHCP_MSGSZ, 2, _dhcp_max_msg_len, MSBF)
     elseif (_dhcp_msg_t == DHCPREQUEST)
-        writetlv(REQD_IPADDR, 4, true, _your_ip, LSBF)
-        writetlv(DHCP_SRV_ID, 4, true, _dhcp_srv_ip, LSBF)
-    writetlv(IP_LEASE_TM, 4, true, _dhcp_lease_tm, MSBF)
-    writetlv(OPT_END, 0, false, 0, LSBF)
+        writetlv(REQD_IPADDR, 4, @_your_ip, LSBF)
+        writetlv(DHCP_SRV_ID, 4, @_dhcp_srv_ip, LSBF)
+    writetlv(IP_LEASE_TM, 4, @_dhcp_lease_tm, MSBF)
+    writetlv(OPT_END, 0, 0, LSBF)
 
     { pad the end of the message equal to the number of bytes in the options }
-    wr_bytex($00, _options_len)
+    wr_bytex($00, _dhcp_opts_len)
     _dhcp_msg_len := (currptr{} - st)
     return _dhcp_msg_len
+
+PUB WriteTLV(typ, len, val, byte_ord): ptr
+' Write TLV to ptr_buff
+'   len:
+'       1..2: values will be read (MSByte-first) directly from parameter
+'       3..255: values will be read by pointer passed in ptr_val
+'       other values: only the type will be written
+'   Returns: total length of TLV (includes: type, length, and all values)
+    { track length of DHCP options; it'll be needed later for padding
+        the end of the DHCP message }
+    _dhcp_opts_len += wr_byte(typ)
+    case len
+        1..2:                                   ' immediate value
+            _dhcp_opts_len += wr_byte(len)
+            _dhcp_opts_len += wrblk_msbf(@val, len)
+        3..255:                                 ' value pointed to
+            _dhcp_opts_len += wr_byte(len)
+            if (byte_ord == LSBF)
+                _dhcp_opts_len += wrblk_lsbf(val, len)
+            else
+                _dhcp_opts_len += wrblk_msbf(val, len)
+        other:                                  ' type only
+    return _dhcp_opts_len
 
 DAT
 
