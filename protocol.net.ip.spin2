@@ -97,12 +97,12 @@ PUB IP_HdrChk(): cksum
     return _hdr_chk
 
 PUB IP_HdrLen(): len
-' Get header length, in longwords
+' Get header length, in bytes
 '   Returns: byte
-    return _hdr_len
+    return _hdr_len * 4
 
 PUB IP_L4Proto(): proto
-' Get protocol carried in datagram
+' Get layer 4/transport protocol carried in datagram
 '   Returns: byte
     return _proto
 
@@ -119,6 +119,7 @@ PUB IP_SrcAddr(): addr
 PUB IP_TTL(): ttl
 ' Get number of router hops datagram is allowed to traverse
 '   Returns: byte
+    return _ttl
 
 PUB IP_Version(): ver
 ' Get IP version
@@ -126,68 +127,57 @@ PUB IP_Version(): ver
     return _ver
 
 PUB IP_SetDestAddr(addr)
-' Get destination address of IP datagram
-'   Returns: 4 IPv4 address bytes packed into long
+' Set destination address of IP datagram
     _ip_dest_addr := addr
 
 PUB IP_SetDgramLen(len)
-' Return total length of IP datagram, in bytes
-'   Returns: word
+' Set total length of IP datagram, in bytes
+'   IP header length + L4 header length + data length
     _tot_len := len
 
 PUB IP_SetDSCP(cp)
-' Differentiated services code point
-'   Returns: 6-bit code point
+' Set Differentiated services code point
     _dsvc := cp
 
 PUB IP_SetECN(state)
-' Explicit Congestion Notification
-'   Returns: 2-bit ECN state
+' Set Explicit Congestion Notification state
     _ecn := state
 
 PUB IP_SetFlags(f)  'XXX methods to set DF and MF
-' Get fragmentation control flags
-'   Returns: 3-bit field
+' Set fragmentation control flags
     _ip_flags := f
 
 PUB IP_SetFragOffset(o)
-' Get offset in overall message of this fragment
-'   Returns: 13-bit offset
+' Set offset in overall message of this fragment
     _frag_offs := o
 
 PUB IP_SetHdrChk(cksum)
-' Get header checksum
-'   Returns: word
+' Set header checksum
     _hdr_chk := cksum
 
 PUB IP_SetHdrLen(len)
-' Get header length, in longwords
-'   Returns: byte
-    _hdr_len := len
+' Set header length, in bytes
+'   NOTE: len must be a multiple of 4
+    _hdr_len := len / 4                         ' convert to longs
 
 PUB IP_SetL4Proto(proto)
-' Get protocol carried in datagram
-'   Returns: byte
+' Set layer 4 protocol carried in datagram
     _proto := proto
 
 PUB IP_SetMsgIdent(id)
-' Get identification common to all fragments in a message
-'   Returns: word
+' Set identification common to all fragments in a message
     _ident := id
 
 PUB IP_SetSrcAddr(addr)
-' Get source/originator of IP datagram
-'   Returns: 4 IPv4 address bytes packed into long
+' Set source/originator of IP datagram
     _ip_src_addr := addr
 
 PUB IP_SetTTL(ttl)
-' Get number of router hops datagram is allowed to traverse
-'   Returns: byte
+' Set number of router hops datagram is allowed to traverse
     _ttl := ttl
 
 PUB IP_SetVersion(ver)
-' Get IP version
-'   Returns: byte
+' Set IP version
     _ver := ver
 
 PUB Rd_IP_Header(): ptr | tmp
