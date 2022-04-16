@@ -104,7 +104,7 @@ PUB TCP_SetTimeSt(tm)
 ' Set timestamp (TCP option)
     _tmstamps[0] := tm
 
-PUB TCP_TimeSt_Echo(tm)
+PUB TCP_SetTimeSt_Echo(tm)
 ' Set timestamp echo (TCP option)
     _tmstamps[1] := tm
 
