@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Transmission Control Protocol
     Started Apr 5, 2022
-    Updated Apr 5, 2022
+    Updated Apr 16, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -23,7 +23,7 @@ CON
     IDX_TCP_SEQNR   = IDX_TCP_DESTP+2
     IDX_TCP_ACKNR   = IDX_TCP_SEQNR+4
     IDX_TCP_HDRLEN  = IDX_TCP_ACKNR+4
-    IDX_TCP_FLAGS   = IDX_TCP_HDRLEN+1
+    IDX_TCP_FLAGS   = IDX_TCP_ACKNR+4
     IDX_TCP_WIN     = IDX_TCP_FLAGS+2
     IDX_TCP_CKSUM   = IDX_TCP_WIN+2
     IDX_TCP_URGPTR  = IDX_TCP_CKSUM+2
@@ -50,13 +50,18 @@ CON
 VAR
 
     long _seq_nr, _ack_nr
+    long _tmstamps[2]
     word _tcp_src_port, _tcp_dest_port
     word _tcp_cksum
     word _tcp_win
     word _urg_ptr
     word _tcp_flags
     word _tcp_msglen
+    word _tcp_mss
     byte _tcp_hdrlen
+    byte _options_len
+    byte _tcp_winscale
+    byte _tcp_sack_perm
 
 PUB TCP_SetAckNr(ack_nr)
 ' Set TCP acknowledgement number
@@ -78,6 +83,15 @@ PUB TCP_SetHdrLen(length)
 ' Set TCP header length (must be a multiple of 4)
     _tcp_hdrlen := length/4
 
+PUB TCP_SetMSS(sz)
+' Set TCP maximum segment size
+    _tcp_mss := sz
+
+PUB TCP_SetSACKPerm(sp)
+' Set selective-acknowledge permitted flag
+    { equal to the length in a SACK_PERMIT KLV option? }
+    _tcp_sack_perm := (sp <> 0)
+
 PUB TCP_SetSeqNr(seq_nr)
 ' Set TCP sequence number
     _seq_nr := seq_nr
@@ -85,6 +99,14 @@ PUB TCP_SetSeqNr(seq_nr)
 PUB TCP_SetSrcPort(p)
 ' Set source port field
     _tcp_src_port := p
+
+PUB TCP_SetTimeSt(tm)
+' Set timestamp (TCP option)
+    _tmstamps[0] := tm
+
+PUB TCP_TimeSt_Echo(tm)
+' Set timestamp echo (TCP option)
+    _tmstamps[1] := tm
 
 PUB TCP_SetUrgentPtr(uptr)
 ' Set TCP urgent pointer
@@ -99,7 +121,7 @@ PUB TCP_AckNr{}: ack_nr
     return _ack_nr
 
 PUB TCP_Chksum{}: ck
-' Get checksum
+' Get TCP header checksum
     return _tcp_cksum
 
 PUB TCP_DestPort{}: p
@@ -112,11 +134,20 @@ PUB TCP_Flags{}: flags
 
 PUB TCP_HdrLen{}: len
 ' Get current header length
-    return _tcp_hdrlen
+    return _tcp_hdrlen * 4
 
 PUB TCP_MsgLen{}: len
 ' Get current message length
     return _tcp_msglen
+
+PUB TCP_MSS{}: mss
+' Get current maximum segment size (TCP option)
+    return _tcp_mss
+
+PUB TCP_SACKPerm{}: sp
+' Get selective-acknowledge permitted flag (TCP option)
+    { equal to the length in a SACK_PERMIT KLV option? }
+    return (_tcp_sack_perm == 2)
 
 PUB TCP_SeqNr{}: seq_nr
 ' Get TCP sequence number
@@ -125,6 +156,14 @@ PUB TCP_SeqNr{}: seq_nr
 PUB TCP_SrcPort{}: p
 ' Get source port field
     return _tcp_src_port
+
+PUB TCP_TimeSt{}: tm
+' Get timestamp (TCP option)
+    return _tmstamps[0]
+
+PUB TCP_TimeSt_Echo{}: tm
+' Get timestamp echo (TCP option)
+    return _tmstamps[1]
 
 PUB TCP_UrgentPtr{}: uptr
 ' Get TCP urgent pointer
@@ -154,7 +193,30 @@ PUB Rd_TCP_Header{} | tmp
     'TODO: TCP options
     return currptr{}
 
-PUB Wr_TCP_Header{}: ptr | st   ' UNTESTED
+PUB Rd_TCP_Opts{}: ptr | kind, st
+' Read TCP options
+    st := currptr{}
+    { read through all KLVs }
+    repeat
+        kind := rd_byte{}
+        case kind
+            MSS:
+                rd_byte{}                       ' skip over the length byte
+                _tcp_mss := rdword_msbf{}
+            SACK_PRMIT:
+                _tcp_sack_perm := rd_byte{}
+            TMSTAMPS:
+                rd_byte{}
+                _tmstamps[0] := rdlong_msbf{}
+                _tmstamps[1] := rdlong_msbf{}
+            NOOP:
+                ' only one byte - do nothing
+            WIN_SCALE:
+                _tcp_winscale := rd_byte{}
+    until (currptr-st) > (tcp_hdrlen{}-20)
+    return currptr{}
+
+PUB Wr_TCP_Header{}: ptr | st
 ' Write/assemble TCP header
 '   Returns: length of assembled header, in bytes
     st := currptr{}
@@ -169,7 +231,7 @@ PUB Wr_TCP_Header{}: ptr | st   ' UNTESTED
     wrword_msbf(_urg_ptr)
 
     { TCP options }
-    writeklv(MSS, 2, true, 1460, MSBF)
+    writeklv(MSS, 4, true, _tcp_mss, MSBF)
     writeklv(SACK_PRMIT, 2, false, 0, 0)
     writeklv(TMSTAMPS, 10, true, @_tmstamps, MSBF)
     writeklv(NOOP, 0, false, 0, 0)
@@ -208,17 +270,17 @@ PUB WriteKLV(kind, len, wr_val, val, byte_ord): tlvlen
             {   some options only consist of the TYPE and LENGTH fields }
             if (wr_val)                         ' write value
                 if (byte_ord == LSBF)
-                    _options_len += wrblk_lsbf(@val, len)
+                    _options_len += wrblk_lsbf(@val, len-2)
                 else
-                    _options_len += wrblk_msbf(@val, len)
+                    _options_len += wrblk_msbf(@val, len-2)
         { values pointed to }
         5..255:
             _options_len += wr_byte(len)
             if (wr_val)
                 if (byte_ord == LSBF)
-                    _options_len += wrblk_lsbf(val, len)
+                    _options_len += wrblk_lsbf(val, len-2)
                 else
-                    _options_len += wrblk_msbf(val, len)
+                    _options_len += wrblk_msbf(val, len-2)
         { write type only }
         other:
     return _options_len
