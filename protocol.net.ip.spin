@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Protocol
     Started Feb 27, 2022
-    Updated Apr 4, 2022
+    Updated Apr 18, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -188,7 +188,7 @@ PUB Rd_IP_Header{}: ptr | tmp
     tmp := rd_byte{}
         _dsvc := ((tmp >> 2) & $3f)
         _ecn := (tmp & $03)
-    _tot_len := rdword_lsbf{}
+    _tot_len := rdword_msbf{}
     _ident := rdword_lsbf{}
     tmp := rdword_lsbf{}
         _ip_flags := ((tmp.byte[0] >> 5) & $03)
