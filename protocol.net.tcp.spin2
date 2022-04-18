@@ -15,21 +15,22 @@
 
 CON
 
-{ Limits }
+    { limits }
+    TCP_HDR_SZ      = 20
 
-{ offsets within header }
-    IDX_TCP_SRCP    = 0
-    IDX_TCP_DESTP   = IDX_TCP_SRCP+2
-    IDX_TCP_SEQNR   = IDX_TCP_DESTP+2
-    IDX_TCP_ACKNR   = IDX_TCP_SEQNR+4
-    IDX_TCP_HDRLEN  = IDX_TCP_ACKNR+4
-    IDX_TCP_FLAGS   = IDX_TCP_ACKNR+4
-    IDX_TCP_WIN     = IDX_TCP_FLAGS+2
-    IDX_TCP_CKSUM   = IDX_TCP_WIN+2
-    IDX_TCP_URGPTR  = IDX_TCP_CKSUM+2
-    IDX_TCP_OPTS    = IDX_TCP_URGPTR+2
+    { offsets within header }
+    TCPH_SRCP        = 0
+    TCPH_DESTP       = TCPH_SRCP+2
+    TCPH_SEQNR       = TCPH_DESTP+2
+    TCPH_ACKNR       = TCPH_SEQNR+4
+    TCPH_HDRLEN      = TCPH_ACKNR+4
+    TCPH_FLAGS       = TCPH_ACKNR+4
+    TCPH_WIN         = TCPH_FLAGS+2
+    TCPH_CKSUM       = TCPH_WIN+2
+    TCPH_URGPTR      = TCPH_CKSUM+2
+    TCPH_OPTS        = TCPH_URGPTR+2
 
-{ TCP flags/control bits }
+    { TCP flags/control bits }
     NONCE           = 8
     CWR             = 7
     ECN_ECHO        = 6
@@ -50,7 +51,7 @@ CON
     SYN_BIT         = 1 << SYN
     FIN_BIT         = 1 << FIN
 
-{ TCP options }
+    { TCP options }
     NOOP            = $01
     MSS             = $02
     WIN_SCALE       = $03

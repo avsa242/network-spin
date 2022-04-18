@@ -84,9 +84,9 @@ PUB ICMP_SetIdent(iid)
 ' Set ICMP identifier
     _icmp_ident := iid
 
-PUB ICMP_SetMsgType(icmp_t)
+PUB ICMP_SetMsgType(msg_t)
 ' Set ICMP message type
-    _icmp_type := icmp_t
+    _icmp_type := msg_t
 
 PUB ICMP_SetSeqNr(seq_nr)
 ' Set ICMP sequence number
