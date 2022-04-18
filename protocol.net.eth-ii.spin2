@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Ethernet II protocol
     Started Mar 28, 2022
-    Updated Mar 28, 2022
+    Updated Apr 18, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -12,6 +12,11 @@
 #ifndef NET_COMMON
 #include "net-common.spin2h"
 #endif
+
+CON
+
+    { limits }
+    ETH_FRM_SZ      = 14
 
 VAR
 
