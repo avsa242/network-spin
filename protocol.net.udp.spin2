@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Universal Datagram Protocol
     Started Mar 28, 2022
-    Updated Mar 28, 2022
+    Updated Apr 18, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -15,10 +15,12 @@
 
 CON
 
-{ Limits }
-    UDP_MSG_LEN     = 8
+    { limits }
+    UDP_MSG_SZ      = 8                         ' message length
 
-{ offsets within header }
+    { offsets within header }
+    UDP_ABS_ST      = IP_DSTIP + 4              ' add to the below for abs. position within frame
+
     UDP_SRC_PORT    = 0
     UDP_DEST_PORT   = 2
     UDP_DGRAM_LEN   = 4
@@ -60,7 +62,7 @@ PUB UDP_DgramLen(): len
 
 PUB UDP_HdrLen(): len
 ' Get current header length
-    return UDP_MSG_LEN
+    return UDP_MSG_SZ
 
 PUB UDP_SrcPort(): p
 ' Get source port field

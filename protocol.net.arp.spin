@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Address Resolution Protocol
     Started Feb 27, 2022
-    Updated Mar 23, 2022
+    Updated Apr 18, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -15,8 +15,11 @@
 
 CON
 
-{ ARP message indices }
-    ARP_LEN         = 28                        ' message length
+    { limits }
+    ARP_MSG_SZ      = 28                        ' message length
+
+    { offsets within message }
+    ARP_ABS_ST      = ETH_TYPE+2                ' add to the below for abs. position within frame
 
     ARP_HW_T        = 0'..1                     ' 16b/2B
     ARP_PROTO_T     = 2'..3                     ' 16b/2B
@@ -28,7 +31,7 @@ CON
     ARP_TGT_HWADDR  = 18'..23                   ' 48b/6B
     ARP_TGT_PRADDR  = 24'..27                   ' 32b/4B
 
-{ hardware types }
+    { hardware types }
     HRD_ETH         = 1                         ' only these first two are
     HRD_IEEE802     = 6                         '   officially supported
 
@@ -40,7 +43,7 @@ CON
     HRD_ATM2        = 19
     HRD_SERIAL      = 20
 
-{ opcodes }
+    { opcodes }
     ARP_REQ         = 1
     ARP_REPL        = 2
     RARP_REQ        = 3

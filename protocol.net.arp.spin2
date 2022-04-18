@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Address Resolution Protocol
     Started Mar 28, 2022
-    Updated Mar 28, 2022
+    Updated Apr 18, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -15,8 +15,11 @@
 
 CON
 
-{ ARP message indices }
-    ARP_LEN         = 28                        ' message length
+    { limits }
+    ARP_MSG_SZ      = 28                        ' message length
+
+    { offsets within message }
+    ARP_ABS_ST      = ETH_TYPE+2                ' add to the below for abs. position within frame
 
     ARP_HW_T        = 0'..1                     ' 16b/2B
     ARP_PROTO_T     = 2'..3                     ' 16b/2B

@@ -18,6 +18,11 @@ CON
     { limits }
     ETH_FRM_SZ      = 14
 
+    { offsets within frame }
+    ETH_DEST        = 0
+    ETH_SRC         = ETH_DEST+MACADDR_LEN
+    ETH_TYPE        = ETH_SRC+MACADDR_LEN
+
 VAR
 
     word _eth_t

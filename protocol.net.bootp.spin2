@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Boot Protocol/Dynamic Host Configuration Protocol
     Started Mar 28, 2022
-    Updated Apr 4, 2022
+    Updated Apr 18, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -15,6 +15,30 @@
 
 CON
 
+    { limits }
+    BOOTP_MSG_SZ        = 236
+    SRV_HOSTN_LEN       = 64
+    BOOT_FN_LEN         = 128
+    HDWADDRLEN_MAX      = 16
+
+    { offsets within message }
+    BOOTP_ABS_ST        = UDP_CKSUM + 2         ' add to the below for abs. position within frame
+
+    BOOTP_OP            = 0
+    BOOTP_CLI_HW_T      = 1
+    BOOTP_HW_ADDR_LEN   = 2
+    BOOTP_HOP           = 3
+    BOOTP_XID           = 4
+    BOOTP_LSTM_EL       = 8
+    BOOTP_FLAGS         = 10
+    BOOTP_CIP           = 12
+    BOOTP_YIP           = BOOTP_CIP+IPV4ADDR_LEN
+    BOOTP_SIP           = BOOTP_YIP+IPV4ADDR_LEN
+    BOOTP_GIP           = BOOTP_SIP+IPV4ADDR_LEN
+    BOOTP_CLI_MAC       = BOOTP_GIP+IPV4ADDR_LEN
+    BOOTP_HOSTNM        = BOOTP_CLI_MAC + (HDWADDRLEN_MAX-MACADDR_LEN)
+    BOOTP_FILENM        = BOOTP_HOSTNM + SRV_HOSTN_LEN
+
     DHCP_MAGIC_COOKIE   = $63_82_53_63
     DHCP_MAGIC_COOKIE3  = ((DHCP_MAGIC_COOKIE >> 24) & $FF)
     DHCP_MAGIC_COOKIE2  = ((DHCP_MAGIC_COOKIE >> 16) & $FF)
@@ -23,15 +47,11 @@ CON
 
     FLAG_B              = 15
 
-    HDWADDRLEN_MAX      = 16
     SECOND              = 1
     MINUTE              = 60 * SECOND
     HR                  = 60 * MINUTE
     DAY                 = 24 * HR
     LSE_90DAYS          = 90 * DAY
-
-    SRV_HOSTN_LEN       = 64
-    BOOT_FN_LEN         = 128
 
 { BOOTP Opcodes }
     BOOT_REQ            = $01

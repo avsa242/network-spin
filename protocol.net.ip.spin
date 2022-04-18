@@ -15,7 +15,12 @@
 
 CON
 
-{ offsets within header}
+    { limits }
+    IP_HDR_SZ       = 20                        ' header length
+
+    { offsets within header}
+    IP_ABS_ST       = ETH_TYPE+2                ' add to the below for abs. position within frame
+
     IP_VERS         = 0
     IP_HDR_LEN      = 0
     IP_DSCP_ECN     = 1
@@ -29,7 +34,7 @@ CON
     IP_SRCIP        = 12'..15
     IP_DSTIP        = 16'..19
 
-{ layer 4 protocols }
+    { layer 4 protocols }
     RSVD            = $00
     ICMP            = $01
     IGMP            = $02
@@ -41,7 +46,7 @@ CON
     ESP             = $32
     AH              = $33
 
-{ Differentiated Services Codepoints }
+    { Differentiated Services Codepoints }
     CS6             = $30
 
 VAR

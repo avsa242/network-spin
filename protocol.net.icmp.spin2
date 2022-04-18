@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Control Message Protocol
     Started Mar 31, 2022
-    Updated Apr 4, 2022
+    Updated Apr 18, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -15,23 +15,25 @@
 
 CON
 
-{ Limits }
-    ICMP_MSG_LEN    = 8
+    { limits }
+    ICMP_MSG_SZ     = 8                         ' message length
 
-{ offsets within header }
-    IDX_ICMP_T      = 0
-    IDX_ICMP_CODE   = 1
-    IDX_ICMP_CKSUM  = 2
-    IDX_ICMP_DATA   = 50                        ' data for ECHO messages
+    { offsets within header }
+    ICMP_ABS_ST     = IP_DSTIP + 4
 
-{ error message types }
+    ICMP_T          = 0
+    ICMP_CD         = 1
+    ICMP_CKSUM      = 2
+    ICMP_DATA       = 50                        ' data for ECHO messages
+
+    { error message types }
     DEST_UNREACH    = 3
     SRC_QUENCH      = 4
     REDIRECT        = 5
     TM_EXCEEDED     = 11
     PARAM_PROB      = 12
 
-{ info message types }
+    { info message types }
     ECHO_REPL       = 0
     ECHO_REQ        = 8
     ROUTER_ADV      = 9
@@ -44,7 +46,7 @@ CON
     ADDRMASK_REPL   = 18
     TRACERT         = 30
 
-{ message codes/subtypes }
+    { message codes/subtypes }
     NET_UNREACH     = 0                         ' unreachable (net)
     HOST_UNREACH    = 1                         ' unreachable (host)
     PROTO_UNREACH   = 2                         ' unreachable (protocol)
@@ -61,7 +63,6 @@ CON
     FILTERED        = 13                        ' comm. prohibited
     NOPERM_PREC     = 14                        ' host precedence violation
     PREC_CUTOFF     = 15                        ' precedence cutoff in effect
-
 
 VAR
 
