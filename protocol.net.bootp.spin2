@@ -347,7 +347,16 @@ PUB DHCP_SetSubnetMask(mask)
 ' Set subnet mask
     bytemove(@_subnet_mask, @mask, IPV4ADDR_LEN)
 
-PUB Rd_BOOTP_Msg(): ptr | i, tmp
+PUB Reset_BOOTP{}
+' Reset all values to defaults
+    longfill(@_bootp_xid, 0, 13)
+    wordfill(@_lstime_elapsed, 0, 4)
+    bytefill(@_bootp_opcode, 0, 136)
+    _client_hw_t := ETHERNET
+    _hdw_addr_len := MACADDR_LEN
+    _lstime_elapsed := 1
+
+PUB Rd_BOOTP_Msg(): ptr
 ' Read BOOTP message, as well as DHCP message, if it exists
     _bootp_opcode := rd_byte()
     _client_hw_t := rd_byte()
