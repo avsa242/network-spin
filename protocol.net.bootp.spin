@@ -363,7 +363,7 @@ PUB Rd_BOOTP_Msg{}: ptr
     _hdw_addr_len := rd_byte{}
     _hops := rd_byte
     _bootp_xid := rdlong_msbf{}
-    _lstime_elapsed := rdword_lsbf{}
+    _lstime_elapsed := rdword_msbf{}
     _flags := rdword_lsbf{}
     rdblk_lsbf(@_client_ip, IPV4ADDR_LEN)
     rdblk_lsbf(@_your_ip, IPV4ADDR_LEN)
