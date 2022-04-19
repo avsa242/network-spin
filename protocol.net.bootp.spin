@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Boot Protocol/Dynamic Host Configuration Protocol
     Started Feb 28, 2022
-    Updated Apr 18, 2022
+    Updated Apr 19, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -24,20 +24,20 @@ CON
     { offsets within message }
     BOOTP_ABS_ST        = UDP_CKSUM + 2         ' add to the below for abs. position within frame
 
-    BOOTP_OP            = 0
-    BOOTP_CLI_HW_T      = 1
-    BOOTP_HW_ADDR_LEN   = 2
-    BOOTP_HOP           = 3
-    BOOTP_XID           = 4
-    BOOTP_LSTM_EL       = 8
-    BOOTP_FLAGS         = 10
-    BOOTP_CIP           = 12
-    BOOTP_YIP           = BOOTP_CIP+IPV4ADDR_LEN
-    BOOTP_SIP           = BOOTP_YIP+IPV4ADDR_LEN
-    BOOTP_GIP           = BOOTP_SIP+IPV4ADDR_LEN
-    BOOTP_CLI_MAC       = BOOTP_GIP+IPV4ADDR_LEN
-    BOOTP_HOSTNM        = BOOTP_CLI_MAC + (HDWADDRLEN_MAX-MACADDR_LEN)
-    BOOTP_FILENM        = BOOTP_HOSTNM + SRV_HOSTN_LEN
+    BOOTPM_OP           = 0
+    BOOTPM_CLI_HW_T     = 1
+    BOOTPM_HW_ADDR_LEN  = 2
+    BOOTPM_HOP          = 3
+    BOOTPM_XID          = 4
+    BOOTPM_LSTM_EL      = 8
+    BOOTPM_FLAGS        = 10
+    BOOTPM_CIP          = 12
+    BOOTPM_YIP          = BOOTPM_CIP+IPV4ADDR_LEN
+    BOOTPM_SIP          = BOOTPM_YIP+IPV4ADDR_LEN
+    BOOTPM_GIP          = BOOTPM_SIP+IPV4ADDR_LEN
+    BOOTPM_CLI_MAC      = BOOTPM_GIP+IPV4ADDR_LEN
+    BOOTPM_HOSTNM       = BOOTPM_CLI_MAC + (HDWADDRLEN_MAX-MACADDR_LEN)
+    BOOTPM_FILENM       = BOOTPM_HOSTNM + SRV_HOSTN_LEN
 
     DHCP_MAGIC_COOKIE   = $63_82_53_63
     DHCP_MAGIC_COOKIE3  = ((DHCP_MAGIC_COOKIE >> 24) & $FF)
@@ -91,7 +91,7 @@ CON
 
 VAR
 
-    long _trans_id
+    long _bootp_xid
     long _dhcp_lease_tm
     long _dhcp_renewal_tm
     long _dhcp_rebind_tm
@@ -169,6 +169,10 @@ PUB BOOTP_Hops{}: h
 ' Get number of hops
     return _hops
 
+PUB BOOTP_Inc_XID{}
+' Increment xid/transaction ID by 1
+    _bootp_xid++
+
 PUB BOOTP_LeaseElapsed{}: s
 ' Get time elapsed since start of attempt to acquire or renew lease
     return _lstime_elapsed
@@ -189,9 +193,9 @@ PUB BOOTP_SrvIP{}: addr
 ' Get next server IP address
     return _srv_ip
 
-PUB BOOTP_TransID{}: id
+PUB BOOTP_XID{}: id
 ' Get transaction ID
-    return _trans_id
+    return _bootp_xid
 
 PUB BOOTP_YourIP{}: addr | i
 ' Get your IP address
@@ -299,9 +303,9 @@ PUB BOOTP_SetSrvIP(addr)
 ' Set server IP address
     bytemove(@_srv_ip, @addr, IPV4ADDR_LEN)
 
-PUB BOOTP_SetTransID(id)
+PUB BOOTP_SetXID(id)
 ' Set transaction ID
-    _trans_id := id
+    _bootp_xid := id
 
 PUB BOOTP_SetYourIP(addr)
 ' Set 'your' IP address
@@ -349,7 +353,7 @@ PUB Rd_BOOTP_Msg{}: ptr | i, tmp
     _client_hw_t := rd_byte{}
     _hdw_addr_len := rd_byte{}
     _hops := rd_byte
-    _trans_id := rdlong_lsbf{}
+    _bootp_xid := rdlong_msbf{}
     _lstime_elapsed := rdword_lsbf{}
     _flags := rdword_lsbf{}
     rdblk_lsbf(@_client_ip, IPV4ADDR_LEN)
@@ -420,7 +424,7 @@ PUB Wr_BOOTP_Msg{}: ptr | st
     wr_byte(_client_hw_t)
     wr_byte(_hdw_addr_len)
     wr_byte(_hops)
-    wrlong_msbf(_trans_id)
+    wrlong_msbf(_bootp_xid)
     wrword_msbf(_lstime_elapsed)
     wrword_msbf(_flags)
     wrblk_lsbf(@_client_ip, IPV4ADDR_LEN)
