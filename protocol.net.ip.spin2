@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Protocol
     Started Mar 28, 2022
-    Updated Apr 18, 2022
+    Updated Apr 19, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -184,6 +184,17 @@ PUB IP_SetTTL(ttl)
 PUB IP_SetVersion(ver)
 ' Set IP version
     _ver := ver
+
+PUB Reset_IPV4()
+' Reset all values defaults for an IPV4 header
+    longfill(@_ip_src_addr, 0, 2)
+    wordfill(@_tot_len, 0, 4)
+    bytefill(@_ver, 0, 7)
+    _ver := 4
+    _hdr_len := 5 { 20 / 4 }
+    _ip_flags := %010
+    _ttl := 128
+    _ident := $0001
 
 PUB Rd_IP_Header(): ptr | tmp
 ' Read IP header from buffer
