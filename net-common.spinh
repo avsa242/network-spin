@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Constants common to multiple networking objects
     Started Mar 12, 2022
-    Updated Mar 20, 2022
+    Updated Apr 19, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -13,13 +13,15 @@
 
 CON
 
-{ Limits }
+    { limits }
     MACADDR_LEN             = 6                 ' xx:xx:xx:xx:xx:xx
     IPV4ADDR_LEN            = 4                 ' ddd.ddd.ddd.ddd
 
-{ Ethertypes }
+    { ethertypes }
     ETYP_IPV4               = $0800
     ETYP_ARP                = $0806
+
+    BCAST_IP                = $FF_FF_FF_FF      ' broadcast IP
 
 DAT
 
