@@ -141,6 +141,14 @@ PUB TCP_SetWindow(win)
 ' Set TCP window
     _tcp_win := win
 
+PUB TCP_IncAckNr(amt)
+' Increment acknowledgement number by amt
+    _ack_nr += amt
+
+PUB TCP_IncSeqNr(amt)
+' Increment sequence number by amt
+    _seq_nr += amt
+
 PUB TCP_AckNr{}: ack_nr
 ' Get TCP acknowledgement number
     return _ack_nr
@@ -190,6 +198,12 @@ PUB TCP_SrcPort{}: p
 PUB TCP_SwapPorts{}
 ' Swap source and destination ports, for use when sending a response
     _tcp_port ->= 16
+
+PUB TCP_SwapSeqNrs{} | tmp
+' Swap sequence and acknowledgement numbers, for use when sending a response
+    tmp := _seq_nr
+    _seq_nr := _ack_nr
+    _ack_nr := tmp
 
 PUB TCP_TimeSt{}: tm
 ' Get timestamp (TCP option)
