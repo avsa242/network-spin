@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Transmission Control Protocol
     Started Apr 10, 2022
-    Updated Apr 18, 2022
+    Updated Apr 19, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -58,11 +58,14 @@ CON
     SACK_PRMIT      = $04
     TMSTAMPS        = $08
 
+    PSRC            = 0                         ' _tcp_port.word[n]
+    PDEST           = 1
+
 VAR
 
     long _seq_nr, _ack_nr
     long _tmstamps[2]
-    word _tcp_src_port, _tcp_dest_port
+    long _tcp_port
     word _tcp_cksum
     word _tcp_win
     word _urg_ptr
@@ -76,8 +79,8 @@ VAR
 
 PUB TCP_Reset()
 ' Reset/initialize all stored data to 0
-    longfill(@_seq_nr, 0, 2)
-    wordfill(@_tcp_src_port, 0, 8)
+    longfill(@_seq_nr, 0, 5)
+    wordfill(@_tcp_cksum, 0, 6)
     bytefill(@_tcp_hdrlen, 0, 4)
 
 PUB TCP_SetAckNr(ack_nr)
@@ -90,7 +93,7 @@ PUB TCP_SetChksum(ck)
 
 PUB TCP_SetDestPort(p)
 ' Set destination port field
-    _tcp_dest_port := p
+    _tcp_port.word[PDEST] := p
 
 PUB TCP_SetFlags(flags)
 ' Set TCP header flags
@@ -120,7 +123,7 @@ PUB TCP_SetSeqNr(seq_nr)
 
 PUB TCP_SetSrcPort(p)
 ' Set source port field
-    _tcp_src_port := p
+    _tcp_port.word[PSRC] := p
 
 PUB TCP_SetTimeSt(tm)
 ' Set timestamp (TCP option)
@@ -148,7 +151,7 @@ PUB TCP_Chksum(): ck
 
 PUB TCP_DestPort(): p
 ' Get destination port field
-    return _tcp_dest_port
+    return _tcp_port.word[PDEST]
 
 PUB TCP_Flags(): flags
 ' Get TCP header flags
@@ -182,7 +185,11 @@ PUB TCP_SeqNr(): seq_nr
 
 PUB TCP_SrcPort(): p
 ' Get source port field
-    return _tcp_src_port
+    return _tcp_port.word[PSRC]
+
+PUB TCP_SwapPorts()
+' Swap source and destination ports, for use when sending a response
+    _tcp_port ror= 16
 
 PUB TCP_TimeSt(): tm
 ' Get timestamp (TCP option)
@@ -207,8 +214,8 @@ PUB TCP_Window(): win
 PUB Rd_TCP_Header() | tmp
 ' Read/disassemble TCP header
 '   Returns: length of read header, in bytes
-    _tcp_src_port := rdword_msbf()
-    _tcp_dest_port := rdword_msbf()
+    _tcp_port.word[PSRC] := rdword_msbf()
+    _tcp_port.word[PDEST] := rdword_msbf()
     _seq_nr := rdlong_msbf()
     _ack_nr := rdlong_msbf()
     tmp := rd_byte()
@@ -255,8 +262,8 @@ PUB Wr_TCP_Header(): ptr | st
 ' Write/assemble TCP header
 '   Returns: length of assembled header, in bytes
     st := currptr()
-    wrword_msbf(_tcp_src_port)
-    wrword_msbf(_tcp_dest_port)
+    wrword_msbf(_tcp_port.word[PSRC])
+    wrword_msbf(_tcp_port.word[PDEST])
     wrlong_msbf(_seq_nr)
     wrlong_msbf(_ack_nr)
     wr_byte(_tcp_hdrlen | ((_tcp_flags >> NONCE) & 1))   ' XXX | _tcp_flags.byte[1] ?
