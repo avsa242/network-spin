@@ -186,7 +186,7 @@ PUB IP_SetVersion(ver)
     _ver := ver
 
 PUB Reset_IPV4()
-' Reset all values defaults for an IPV4 header
+' Reset all values to defaults for an IPV4 header
     longfill(@_ip_src_addr, 0, 2)
     wordfill(@_tot_len, 0, 4)
     bytefill(@_ver, 0, 7)

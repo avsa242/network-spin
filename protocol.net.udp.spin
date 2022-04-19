@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Universal Datagram Protocol
     Started Feb 28, 2022
-    Updated Apr 18, 2022
+    Updated Apr 19, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -67,6 +67,10 @@ PUB UDP_HdrLen{}: len
 PUB UDP_SrcPort{}: p
 ' Get source port field
     return _src_port
+
+PUB Reset_UDP{}
+' Reset all values to defaults
+    wordfill(@_src_port, 0, 4)
 
 PUB Rd_UDP_Header{}
 ' Read/disassemble UDP header
