@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Address Resolution Protocol
     Started Feb 27, 2022
-    Updated Apr 18, 2022
+    Updated Apr 21, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -56,16 +56,7 @@ CON
 
 VAR
 
-    long _arp_spa
-    long _arp_tpa
-
-    word _arp_hrd
-    word _arp_pro
-    word _arp_op
-    byte _arp_hln
-    byte _arp_pln
-    byte _arp_sha[MACADDR_LEN]
-    byte _arp_tha[MACADDR_LEN]
+    byte _arp_data[ARP_MSG_SZ]
 
 PUB ARP_HWAddrLen{}: len
 ' Get hardware address length
@@ -75,103 +66,97 @@ PUB ARP_HWAddrLen{}: len
 PUB ARP_HWType{}: hrd
 ' Get hardware/hardware address type
 '   Returns: word
-    return _arp_hrd
+    hrd.byte[0] := _arp_data[ARP_HW_T+1]
+    hrd.byte[1] := _arp_data[ARP_HW_T]
 
 PUB ARP_Opcode{}: op
 ' Get ARP operation code
 '   Returns: byte
-    return _arp_op
+    op.byte[0] := _arp_data[ARP_OP_CODE+1]
+    op.byte[1] := _arp_data[ARP_OP_CODE]
 
 PUB ARP_ProtoAddrLen{}: len
 ' Get protocol address length
 '   Returns: byte
-    return _arp_pln
+    return _arp_data[ARP_PRADDR_LEN]
 
 PUB ARP_ProtoType{}: pro
 ' Get protocol/protocol address type
 '   Returns: word
-    return _arp_pro
+    pro.byte[0] := _arp_data[ARP_PROTO_T+1]
+    pro.byte[1] := _arp_data[ARP_PROTO_T]
 
 PUB ARP_SenderHWAddr{}: ptr_addr
 ' Get sender hardware address
 '   Returns: pointer to 6-byte MAC address
-    return @_arp_sha
+    return @_arp_data[ARP_SNDR_HWADDR]
 
-PUB ARP_SenderProtoAddr{}: addr
+PUB ARP_SenderProtoAddr{}: addr | i
 ' Get sender protocol address
 '   Returns: 4-byte IPv4 address, packed into long
-    return _arp_spa
+    repeat i from 0 to 3
+        addr.byte[i] := _arp_data[ARP_SNDR_PRADDR+i]
 
 PUB ARP_TargetHWAddr{}: ptr_addr
 ' Get target hardware address
 '   Returns: pointer to 6-byte MAC address
-    return @_arp_tha
+    return @_arp_data[ARP_TGT_HWADDR]
 
-PUB ARP_TargetProtoAddr{}: addr
+PUB ARP_TargetProtoAddr{}: addr | i
 ' Get target protocol address
 '   Returns: 4-byte IPv4 address, packed into long
-    return _arp_tpa
+    repeat i from 0 to 3
+        addr.byte[i] := _arp_data[ARP_TGT_PRADDR+i]
 
 PUB ARP_SetHWAddrLen(len)
 ' Set hardware address length
-    _arp_hln := len
+    _arp_data[ARP_HWADDR_LEN] := len
 
 PUB ARP_SetHWType(hrd)
 ' Set hardware type
-    _arp_hrd := hrd
+    _arp_data[ARP_HW_T] := hrd.byte[1]
+    _arp_data[ARP_HW_T+1] := hrd.byte[0]
 
 PUB ARP_SetOpcode(op)
 ' Set ARP operation code
-    _arp_op := op
+    _arp_data[ARP_OP_CODE] := op.byte[1]
+    _arp_data[ARP_OP_CODE+1] := op.byte[0]
 
 PUB ARP_SetProtoAddrLen(len)
 ' Set protocol address length
-    _arp_pln := len
+    _arp_data[ARP_PRADDR_LEN] := len
 
 PUB ARP_SetProtoType(pro)
 ' Set protocol type
-    _arp_pro := pro
+    _arp_data[ARP_PROTO_T] := pro.byte[1]
+    _arp_data[ARP_PROTO_T+1] := pro.byte[0]
 
 PUB ARP_SetSenderHWAddr(ptr_addr)
 ' Set sender hardware address
-    bytemove(@_arp_sha, ptr_addr, MACADDR_LEN)
+    bytemove(@_arp_data[ARP_SNDR_HWADDR], ptr_addr, MACADDR_LEN)
 
-PUB ARP_SetSenderProtoAddr(addr)
+PUB ARP_SetSenderProtoAddr(addr) | i
 ' Set sender protocol address
-    _arp_spa := addr
+    repeat i from 0 to 3
+        _arp_data[ARP_SNDR_PRADDR+i] := addr.byte[i]
 
 PUB ARP_SetTargetHWAddr(ptr_addr)
 ' Set target hardware address
-    bytemove(@_arp_tha, ptr_addr, MACADDR_LEN)
+    bytemove(@_arp_data[ARP_TGT_HWADDR], ptr_addr, MACADDR_LEN)
 
-PUB ARP_SetTargetProtoAddr(addr)
+PUB ARP_SetTargetProtoAddr(addr) | i
 ' Set target protocol address
-    _arp_tpa := addr
+    repeat i from 0 to 3
+        _arp_data[ARP_TGT_PRADDR+i] := addr.byte[i]
 
 PUB Rd_ARP_Msg{}: ptr
 ' Read ARP message
-    _arp_hrd := rdword_msbf{}
-    _arp_pro := rdword_msbf{}
-    _arp_hln := rd_byte{}
-    _arp_pln := rd_byte{}
-    _arp_op := rdword_msbf{}
-    rdblk_lsbf(@_arp_sha, MACADDR_LEN)
-    rdblk_lsbf(@_arp_spa, IPV4ADDR_LEN)
-    rdblk_lsbf(@_arp_tha, MACADDR_LEN)
-    rdblk_lsbf(@_arp_tpa, IPV4ADDR_LEN)
+    rdblk_lsbf(@_arp_data, ARP_MSG_SZ)
     return currptr{}
 
 PUB Wr_ARP_Msg{}: ptr
 ' Write ARP message
-    wrword_msbf(_arp_hrd)
-    wrword_msbf(_arp_pro)
-    wr_byte(_arp_hln)
-    wr_byte(_arp_pln)
-    wrword_msbf(_arp_op)
-    wrblk_lsbf(@_arp_sha, MACADDR_LEN)
-    wrblk_lsbf(@_arp_spa, IPV4ADDR_LEN)
-    wrblk_lsbf(@_arp_tha, MACADDR_LEN)
-    wrblk_lsbf(@_arp_tpa, IPV4ADDR_LEN)
+    wrblk_lsbf(@_arp_data, ARP_MSG_SZ)
     return currptr{}
 
 DAT
