@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Universal Datagram Protocol
     Started Mar 28, 2022
-    Updated Apr 19, 2022
+    Updated Apr 21, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -22,43 +22,52 @@ CON
     UDP_ABS_ST      = IP_DSTIP + 4              ' add to the below for abs. position within frame
 
     UDP_SRC_PORT    = 0
+     UDP_SRC_PORT_L = 1
     UDP_DEST_PORT   = 2
+     UDP_DEST_PORT_L= 3
     UDP_DGRAM_LEN   = 4
+     UDP_DGRAM_LEN_L= 5
     UDP_CKSUM       = 6
+     UDP_CKSUM_L    = 7
 
 VAR
 
-    word _src_port, _dest_port
-    word _length
-    word _cksum
+    byte _udp_data[UDP_MSG_SZ]
 
 PUB UDP_SetChksum(ck)
 ' Set checksum (optional; set to 0 to ignore)
-    _cksum := ck
+    _udp_data[UDP_CKSUM] := ck.byte[1]
+    _udp_data[UDP_CKSUM_L] := ck.byte[0]
 
 PUB UDP_SetDestPort(p)
 ' Set destination port field
-    _dest_port := p
+    _udp_data[UDP_DEST_PORT] := p.byte[1]
+    _udp_data[UDP_DEST_PORT_L] := p.byte[0]
 
 PUB UDP_SetDgramLen(len)
 ' Set length of UDP datagram
-    _length := len
+    _udp_data[UDP_DGRAM_LEN] := len.byte[1]
+    _udp_data[UDP_DGRAM_LEN_L] := len.byte[0]
 
 PUB UDP_SetSrcPort(p)
 ' Set source port field
-    _src_port := p
+    _udp_data[UDP_SRC_PORT] := p.byte[1]
+    _udp_data[UDP_SRC_PORT_L] := p.byte[0]
 
 PUB UDP_Chksum(): ck
 ' Get checksum
-    return _cksum
+    ck.byte[1] := _udp_data[UDP_CKSUM]
+    ck.byte[0] := _udp_data[UDP_CKSUM_L]
 
 PUB UDP_DestPort(): p
 ' Get destination port field
-    return _dest_port
+    p.byte[1] := _udp_data[UDP_DEST_PORT]
+    p.byte[0] := _udp_data[UDP_DEST_PORT_L]
 
 PUB UDP_DgramLen(): len
 ' Get length of UDP datagram
-    return _length
+    len.byte[1] := _udp_data[UDP_DGRAM_LEN]
+    len.byte[0] := _udp_data[UDP_DGRAM_LEN_L]
 
 PUB UDP_HdrLen(): len
 ' Get current header length
@@ -66,28 +75,23 @@ PUB UDP_HdrLen(): len
 
 PUB UDP_SrcPort(): p
 ' Get source port field
-    return _src_port
+    p.byte[1] := _udp_data[UDP_SRC_PORT]
+    p.byte[0] := _udp_data[UDP_SRC_PORT_L]
 
 PUB Reset_UDP()
 ' Reset all values to defaults
-    wordfill(@_src_port, 0, 4)
+    bytefill(@_udp_data, 0, UDP_MSG_SZ)
 
 PUB Rd_UDP_Header()
 ' Read/disassemble UDP header
 '   Returns: length of read header, in bytes
-    _src_port := rdword_msbf()
-    _dest_port := rdword_msbf()
-    _length := rdword_msbf()
-    _cksum := rdword_msbf()
+    rdblk_lsbf(@_udp_data, UDP_MSG_SZ)
     return currptr()
 
 PUB Wr_UDP_Header(): ptr
 ' Write/assemble UDP header
 '   Returns: length of assembled header, in bytes
-    wrword_msbf(_src_port)
-    wrword_msbf(_dest_port)
-    wrword_msbf(_length)
-    wrword_msbf(_cksum)
+    wrblk_lsbf(@_udp_data, UDP_MSG_SZ)
     return currptr()
 
 DAT
