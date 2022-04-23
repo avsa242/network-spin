@@ -19,16 +19,16 @@ CON
     TCP_HDR_SZ      = 20
 
     { offsets within header }
-    TCPH_SRCP        = 0
-    TCPH_DESTP       = TCPH_SRCP+2
-    TCPH_SEQNR       = TCPH_DESTP+2
-    TCPH_ACKNR       = TCPH_SEQNR+4
-    TCPH_HDRLEN      = TCPH_ACKNR+4
-    TCPH_FLAGS       = TCPH_ACKNR+4
-    TCPH_WIN         = TCPH_FLAGS+2
-    TCPH_CKSUM       = TCPH_WIN+2
-    TCPH_URGPTR      = TCPH_CKSUM+2
-    TCPH_OPTS        = TCPH_URGPTR+2
+    TCPH_SRCP       = 0
+    TCPH_DESTP      = TCPH_SRCP+2
+    TCPH_SEQNR      = TCPH_DESTP+2
+    TCPH_ACKNR      = TCPH_SEQNR+4
+    TCPH_HDRLEN     = TCPH_ACKNR+4
+    TCPH_FLAGS      = TCPH_ACKNR+4
+    TCPH_WIN        = TCPH_FLAGS+2
+    TCPH_CKSUM      = TCPH_WIN+2
+    TCPH_URGPTR     = TCPH_CKSUM+2
+    TCPH_OPTS       = TCPH_URGPTR+2
 
     { TCP flags/control bits }
     NONCE           = 8
