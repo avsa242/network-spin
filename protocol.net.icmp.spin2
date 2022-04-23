@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Control Message Protocol
     Started Mar 31, 2022
-    Updated Apr 18, 2022
+    Updated Apr 23, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -17,14 +17,24 @@ CON
 
     { limits }
     ICMP_MSG_SZ     = 8                         ' message length
+    ICMP_ECHO_MSG_SZ= 12                        ' echo metadata (_not_ echoed data)
 
     { offsets within header }
-    ICMP_ABS_ST     = IP_DSTIP + 4
+    ICMP_ABS_ST     = IP_DSTIP + 4              ' add to the below for abs. position within frame
 
     ICMP_T          = 0
     ICMP_CD         = 1
     ICMP_CKSUM      = 2
+     ICMP_CKSUM_L   = 3
     ICMP_DATA       = 50                        ' data for ECHO messages
+
+    { ECHO: offsets within metadata }
+    ICMP_IDENT_M    = 0
+    ICMP_IDENT_L    = 1
+    ICMP_SEQNR_M    = 2
+    ICMP_SEQNR_L    = 3
+    ICMP_TMSTMP_M   = 4
+    ICMP_TMSTMPF_M  = 8
 
     { error message types }
     DEST_UNREACH    = 3
@@ -67,46 +77,53 @@ CON
 VAR
 
     long _icmp_tm_stamp
-    word _icmp_cksum
     word _icmp_ident, _icmp_seq_nr
-    byte _icmp_type, _icmp_code
     byte _icmp_msg_len
+
+    byte _icmp_data[ICMP_MSG_SZ]
+    byte _icmp_echo[ICMP_ECHO_MSG_SZ]
 
 PUB ICMP_SetChksum(ck)
 ' Set checksum (optional; set to 0 to ignore)
-    _icmp_cksum := ck
+    _icmp_data[ICMP_CKSUM] := ck.byte[0]
+    _icmp_data[ICMP_CKSUM_L] := ck.byte[1]
 
 PUB ICMP_SetCode(icmp_c)
 ' Set ICMP subtype
-    _icmp_code := icmp_c
+    _icmp_data[ICMP_CD] := icmp_c
 
 PUB ICMP_SetIdent(iid)
 ' Set ICMP identifier
-    _icmp_ident := iid
+    _icmp_echo[ICMP_IDENT_M] := iid.byte[0]
+    _icmp_echo[ICMP_IDENT_L] := iid.byte[1]
 
 PUB ICMP_SetMsgType(msg_t)
 ' Set ICMP message type
-    _icmp_type := msg_t
+    _icmp_data[ICMP_T] := msg_t
 
 PUB ICMP_SetSeqNr(seq_nr)
 ' Set ICMP sequence number
-    _icmp_seq_nr := seq_nr
+    _icmp_echo[ICMP_SEQNR_M] := seq_nr.byte[0]
+    _icmp_echo[ICMP_SEQNR_L] := seq_nr.byte[1]
 
-PUB ICMP_SetTimeStamp(tm)
+PUB ICMP_SetTimeStamp(tm) | i
 ' Set timestamp for ICMP message
-    _icmp_tm_stamp := tm
+    repeat i from 0 to 3
+        _icmp_echo[ICMP_TMSTMP_M+i] := tm.byte[i]
 
 PUB ICMP_Chksum(): ck
 ' Get checksum
-    return _icmp_cksum
+    ck.byte[0] := _icmp_data[ICMP_CKSUM]
+    ck.byte[1] := _icmp_data[ICMP_CKSUM_L]
 
 PUB ICMP_Code(): icmp_c
 ' Get ICMP subtype/code
-    return _icmp_code
+    icmp_c := _icmp_data[ICMP_CD]
 
 PUB ICMP_Ident(): iid
 ' Get ICMP identifier
-    return _icmp_ident
+    iid.byte[0] := _icmp_echo[ICMP_IDENT_M]
+    iid.byte[1] := _icmp_echo[ICMP_IDENT_L]
 
 PUB ICMP_MsgLen(): len
 ' Get length of currently assembled ICMP message
@@ -114,11 +131,12 @@ PUB ICMP_MsgLen(): len
 
 PUB ICMP_MsgType(): msg_t
 ' Get ICMP message type
-    return _icmp_type
+    msg_t := _icmp_data[ICMP_T]
 
-PUB ICMP_SeqNr(): seqnr
+PUB ICMP_SeqNr(): seq_nr
 ' Get ICMP sequence number
-    return _icmp_seq_nr
+    seq_nr.byte[0] := _icmp_echo[ICMP_SEQNR_M]
+    seq_nr.byte[1] := _icmp_echo[ICMP_SEQNR_L]
 
 PUB ICMP_TimeStamp(): tm
 ' Get timestamp from ICMP message
@@ -127,28 +145,18 @@ PUB ICMP_TimeStamp(): tm
 PUB Rd_ICMP_Msg(): ptr
 ' Read/disassemble ICMP message
 '   Returns: length of read message, in bytes
-    _icmp_type := rd_byte()
-    _icmp_code := rd_byte()
-    _icmp_cksum := rdword_msbf()
-    if (_icmp_type == ECHO_REQ)
-        _icmp_ident := rdword_msbf()
-        _icmp_seq_nr := rdword_msbf()
-        _icmp_tm_stamp := rdlong_lsbf()
-        rdlong_lsbf()                           ' ignore fraction of a second
+    rdblk_lsbf(@_icmp_data, 4)
+    if (_icmp_data[ICMP_T] == ECHO_REQ)
+        rdblk_lsbf(@_icmp_echo, ICMP_ECHO_MSG_SZ)
     return currptr()
 
 PUB Wr_ICMP_Msg(): ptr | st
 ' Write/assemble ICMP message
 '   Returns: length of assembled message, in bytes
     st := currptr()
-    wr_byte(_icmp_type)
-    wr_byte(_icmp_code)
-    wrword_msbf(_icmp_cksum)
-    if (_icmp_type == ECHO_REPL)
-        wrword_msbf(_icmp_ident)
-        wrword_msbf(_icmp_seq_nr)
-        wrlong_lsbf(_icmp_tm_stamp)
-        wrlong_lsbf($00_00_00_00)               ' ignore fraction of a second
+    wrblk_lsbf(@_icmp_data, 4)
+    if (_icmp_data[ICMP_T] == ECHO_REPL)
+        wrblk_lsbf(@_icmp_echo, ICMP_ECHO_MSG_SZ)
     _icmp_msg_len := currptr() - st
     return currptr()
 

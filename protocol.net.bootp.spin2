@@ -236,7 +236,7 @@ PUB BOOTP_SetBcastFlag(flag)
 ' Set BOOTP broadcast flag
 '   Valid values:
 '       TRUE (any non-zero value), FALSE (0)
-    _bootp_data[BOOTPM_FLAGS] := (||(flag <> 0)) << BCAST_BIT
+    _bootp_data[BOOTPM_FLAGS] := (abs(flag <> 0)) << BCAST_BIT
 
 PUB BOOTP_SetBootFN(ptr_str)
 ' Set boot filename
