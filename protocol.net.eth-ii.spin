@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Ethernet II protocol
     Started Mar 1, 2022
-    Updated Apr 21, 2022
+    Updated Sep 10, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -27,45 +27,45 @@ VAR
 
     byte _ethii_data[ETH_FRM_SZ]
 
-PUB ETHII_DestAddr{}: addr
+PUB ethii_dest_addr{}: addr
 ' Get destination address of ethernet frame
 '   Returns: pointer to 6-byte MAC address
     return @_ethii_data[ETH_DEST]
 
-PUB ETHII_Ethertype{}: eth_t
+PUB ethii_ethertype{}: eth_t
 ' Get ethertype of ethernet frame
 '   Returns: word
     eth_t.byte[0] := _ethii_data[ETH_TYPE+1]
     eth_t.byte[1] := _ethii_data[ETH_TYPE]
 
-PUB ETHII_SrcAddr{}: addr
+PUB ethii_src_addr{}: addr
 ' Get source address of ethernet frame
 '   Returns: pointer to 6-byte MAC address
     return @_ethii_data[ETH_SRC]
 
-PUB ETHII_SetDestAddr(ptr_addr)
+PUB ethii_set_dest_addr(ptr_addr)
 ' Set destination address of ethernet frame
     bytemove(@_ethii_data, ptr_addr, MACADDR_LEN)
 
-PUB ETHII_SetEthertype(eth_t)
+PUB ethii_set_ethertype(eth_t)
 ' Set ethertype of ethernet frame
     _ethii_data[ETH_TYPE] := eth_t.byte[1]
     _ethii_data[ETH_TYPE+1] := eth_t.byte[0]
 
-PUB ETHII_SetSrcAddr(ptr_addr)
+PUB ethii_set_src_addr(ptr_addr)
 ' Set source address of ethernet frame
     bytemove(@_ethii_data + ETH_SRC, ptr_addr, MACADDR_LEN)
 
-PUB Rd_ETHII_Frame{}: ptr
+PUB rd_ethii_frame{}: ptr
 ' Read ethernet-II frame
 '   Returns: number of bytes read
     rdblk_lsbf(@_ethii_data, ETH_FRM_SZ)
-    return currptr{}
+    return fifo_wr_ptr(-2)
 
-PUB Wr_ETHII_Frame{}: ptr
+PUB wr_ethii_frame{}: ptr
 ' Write ethernet-II frame
     wrblk_lsbf(@_ethii_data, ETH_FRM_SZ)
-    return currptr{}
+    return fifo_wr_ptr(-2)
 
 DAT
 {

@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Control Message Protocol
     Started Mar 31, 2022
-    Updated Apr 23, 2022
+    Updated Sep 10, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -17,7 +17,7 @@ CON
 
     { limits }
     ICMP_MSG_SZ     = 8                         ' message length
-    ICMP_ECHO_MSG_SZ= 12                        ' echo metadata (_not_ echoed data)
+    ICMP_ECHO_SZ    = 12                        ' echo metadata (_not_ echoed data)
 
     { offsets within header }
     ICMP_ABS_ST     = IP_DSTIP + 4              ' add to the below for abs. position within frame
@@ -81,84 +81,84 @@ VAR
     byte _icmp_msg_len
 
     byte _icmp_data[ICMP_MSG_SZ]
-    byte _icmp_echo[ICMP_ECHO_MSG_SZ]
+    byte _icmp_echo[ICMP_ECHO_SZ]
 
-PUB ICMP_SetChksum(ck)
+PUB icmp_set_chksum(ck)
 ' Set checksum (optional; set to 0 to ignore)
     _icmp_data[ICMP_CKSUM] := ck.byte[0]
     _icmp_data[ICMP_CKSUM_L] := ck.byte[1]
 
-PUB ICMP_SetCode(icmp_c)
+PUB icmp_set_code(icmp_c)
 ' Set ICMP subtype
     _icmp_data[ICMP_CD] := icmp_c
 
-PUB ICMP_SetIdent(iid)
+PUB icmp_set_ident(iid)
 ' Set ICMP identifier
     _icmp_echo[ICMP_IDENT_M] := iid.byte[0]
     _icmp_echo[ICMP_IDENT_L] := iid.byte[1]
 
-PUB ICMP_SetMsgType(msg_t)
+PUB icmp_set_msg_type(msg_t)
 ' Set ICMP message type
     _icmp_data[ICMP_T] := msg_t
 
-PUB ICMP_SetSeqNr(seq_nr)
+PUB icmp_set_seq_nr(seq_nr)
 ' Set ICMP sequence number
     _icmp_echo[ICMP_SEQNR_M] := seq_nr.byte[0]
     _icmp_echo[ICMP_SEQNR_L] := seq_nr.byte[1]
 
-PUB ICMP_SetTimeStamp(tm) | i
+PUB icmp_set_timestamp(tm) | i
 ' Set timestamp for ICMP message
     repeat i from 0 to 3
         _icmp_echo[ICMP_TMSTMP_M+i] := tm.byte[i]
 
-PUB ICMP_Chksum(): ck
+PUB icmp_chksum(): ck
 ' Get checksum
     ck.byte[0] := _icmp_data[ICMP_CKSUM]
     ck.byte[1] := _icmp_data[ICMP_CKSUM_L]
 
-PUB ICMP_Code(): icmp_c
+PUB icmp_code(): icmp_c
 ' Get ICMP subtype/code
     icmp_c := _icmp_data[ICMP_CD]
 
-PUB ICMP_Ident(): iid
+PUB icmp_ident(): iid
 ' Get ICMP identifier
     iid.byte[0] := _icmp_echo[ICMP_IDENT_M]
     iid.byte[1] := _icmp_echo[ICMP_IDENT_L]
 
-PUB ICMP_MsgLen(): len
+PUB icmp_msg_len(): len
 ' Get length of currently assembled ICMP message
     return _icmp_msg_len
 
-PUB ICMP_MsgType(): msg_t
+PUB icmp_msg_type(): msg_t
 ' Get ICMP message type
     msg_t := _icmp_data[ICMP_T]
 
-PUB ICMP_SeqNr(): seq_nr
+PUB icmp_seq_nr(): seq_nr
 ' Get ICMP sequence number
     seq_nr.byte[0] := _icmp_echo[ICMP_SEQNR_M]
     seq_nr.byte[1] := _icmp_echo[ICMP_SEQNR_L]
 
-PUB ICMP_TimeStamp(): tm
+PUB icmp_timestamp(): tm
 ' Get timestamp from ICMP message
     return _icmp_tm_stamp
 
-PUB Rd_ICMP_Msg(): ptr
+PUB rd_icmp_msg(): ptr
 ' Read/disassemble ICMP message
 '   Returns: length of read message, in bytes
     rdblk_lsbf(@_icmp_data, 4)
     if (_icmp_data[ICMP_T] == ECHO_REQ)
-        rdblk_lsbf(@_icmp_echo, ICMP_ECHO_MSG_SZ)
-    return currptr()
+        rdblk_lsbf(@_icmp_echo, ICMP_ECHO_SZ)
+    return fifo_wr_ptr()
 
-PUB Wr_ICMP_Msg(): ptr | st
+PUB wr_icmp_msg(): ptr | st
 ' Write/assemble ICMP message
 '   Returns: length of assembled message, in bytes
-    st := currptr()
+    st := fifo_wr_ptr()
     wrblk_lsbf(@_icmp_data, 4)
     if (_icmp_data[ICMP_T] == ECHO_REPL)
-        wrblk_lsbf(@_icmp_echo, ICMP_ECHO_MSG_SZ)
-    _icmp_msg_len := currptr() - st
-    return currptr()
+        wrblk_lsbf(@_icmp_echo, ICMP_ECHO_SZ)
+    _icmp_msg_len := fifo_wr_ptr() - st
+    return fifo_wr_ptr()
 
 DAT
 
