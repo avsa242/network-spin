@@ -148,17 +148,17 @@ PUB rd_icmp_msg{}: ptr
     rdblk_lsbf(@_icmp_data, 4)
     if (_icmp_data[ICMP_T] == ECHO_REQ)
         rdblk_lsbf(@_icmp_echo, ICMP_ECHO_MSG_SZ)
-    return fifo_wr_ptr(-2)
+    return fifo_wr_ptr{}
 
 PUB wr_icmp_msg{}: ptr | st
 ' Write/assemble ICMP message
 '   Returns: length of assembled message, in bytes
-    st := fifo_wr_ptr(-2)
+    st := fifo_wr_ptr{}
     wrblk_lsbf(@_icmp_data, 4)
     if (_icmp_data[ICMP_T] == ECHO_REPL)
         wrblk_lsbf(@_icmp_echo, ICMP_ECHO_MSG_SZ)
-    _icmp_msg_len := fifo_wr_ptr(-2) - st
-    return fifo_wr_ptr(-2)
+    _icmp_msg_len := fifo_wr_ptr{} - st
+    return fifo_wr_ptr{}
 
 DAT
 

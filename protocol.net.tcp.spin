@@ -242,11 +242,11 @@ PUB rd_tcp_header{} | tmp
     _tcp_cksum := rdword_msbf{}
     _urg_ptr := rdword_msbf{}
 
-    return fifo_wr_ptr(-2)
+    return fifo_wr_ptr{}
 
 PUB rd_tcp_opts{}: ptr | kind, st, opts_len
 ' Read TCP options
-    st := fifo_wr_ptr(-2)
+    st := fifo_wr_ptr{}
 
     { TCP header length is the header itself plus the options; }
     {   subtract out the header to get the length of the options }
@@ -269,13 +269,13 @@ PUB rd_tcp_opts{}: ptr | kind, st, opts_len
                 ' only one byte - do nothing
             WIN_SCALE:
                 _tcp_winscale := rd_byte{}
-    until (fifo_wr_ptr(-2)-st) > opts_len
-    return fifo_wr_ptr(-2)
+    until (fifo_wr_ptr{}-st) > opts_len
+    return fifo_wr_ptr{}
 
 PUB wr_tcp_header{}: ptr | st
 ' Write/assemble TCP header
 '   Returns: length of assembled header, in bytes
-    st := fifo_wr_ptr(-2)
+    st := fifo_wr_ptr{}
     wrword_msbf(_tcp_port.word[PSRC])
     wrword_msbf(_tcp_port.word[PDEST])
     wrlong_msbf(_seq_nr)
@@ -286,7 +286,7 @@ PUB wr_tcp_header{}: ptr | st
     wrword_msbf(_tcp_cksum)
     wrword_msbf(_urg_ptr)
 
-    _tcp_msglen := fifo_wr_ptr(-2)-st
+    _tcp_msglen := fifo_wr_ptr{}-st
     return _tcp_msglen
 
 PUB write_klv(kind, len, wr_val, val, byte_ord): tlvlen

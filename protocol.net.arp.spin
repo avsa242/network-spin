@@ -152,12 +152,12 @@ PUB arp_set_target_proto_addr(addr) | i
 PUB rd_arp_msg{}: ptr
 ' Read ARP message
     rdblk_lsbf(@_arp_data, ARP_MSG_SZ)
-    return fifo_wr_ptr(-2)
+    return fifo_wr_ptr{}
 
 PUB wr_arp_msg{}: ptr
 ' Write ARP message
     wrblk_lsbf(@_arp_data, ARP_MSG_SZ)
-    return fifo_wr_ptr(-2)
+    return fifo_wr_ptr{}
 
 DAT
 {

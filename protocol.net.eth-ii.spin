@@ -60,12 +60,12 @@ PUB rd_ethii_frame{}: ptr
 ' Read ethernet-II frame
 '   Returns: number of bytes read
     rdblk_lsbf(@_ethii_data, ETH_FRM_SZ)
-    return fifo_wr_ptr(-2)
+    return fifo_wr_ptr{}
 
 PUB wr_ethii_frame{}: ptr
 ' Write ethernet-II frame
     wrblk_lsbf(@_ethii_data, ETH_FRM_SZ)
-    return fifo_wr_ptr(-2)
+    return fifo_wr_ptr{}
 
 DAT
 {

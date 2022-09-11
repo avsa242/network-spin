@@ -364,7 +364,7 @@ PUB rd_bootp_msg(): ptr
     if (rdlong_msbf() == DHCP_MAGIC_COOKIE)
         rd_dhcp_msg()
     else
-        set_ptr(fifo_wr_ptr()-4)                     ' rewind if it's not DHCP
+        fifo_set_wr_ptr(fifo_wr_ptr()-4)        ' rewind if it's not DHCP
     return fifo_wr_ptr()
 
 PUB rd_dhcp_msg(): ptr | t

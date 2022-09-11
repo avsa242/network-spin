@@ -364,8 +364,8 @@ PUB rd_bootp_msg{}: ptr
     if (rdlong_msbf{} == DHCP_MAGIC_COOKIE)
         rd_dhcp_msg{}
     else
-        set_ptr(fifo_wr_ptr(-2)-4)                     ' rewind if it's not DHCP
-    return fifo_wr_ptr(-2)
+        fifo_set_wr_ptr(fifo_wr_ptr{}-4)        ' rewind if it's not DHCP
+    return fifo_wr_ptr{}
 
 PUB rd_dhcp_msg{}: ptr | t
 ' Read DHCP message
@@ -403,14 +403,14 @@ PUB rd_dhcp_msg{}: ptr | t
             OPT_END:
                 rd_byte{}
     until (t == OPT_END)    'XXX not safeguarded against bad messages missing the OPT_END ($FF) byte
-    return fifo_wr_ptr(-2)
+    return fifo_wr_ptr{}
 
 PUB wr_bootp_msg{}: ptr | st
 ' Write BOOTP message
 '   Returns: number of bytes written to buffer
-    st := fifo_wr_ptr(-2)
+    st := fifo_wr_ptr{}
     wrblk_lsbf(@_bootp_data, BOOTP_MSG_SZ)
-    return fifo_wr_ptr(-2)-st
+    return fifo_wr_ptr{}-st
 
 CON
 
@@ -420,7 +420,7 @@ CON
 PUB wr_dhcp_msg{}: ptr | st
 ' Write DHCP message, preceded by BOOTP message
 '   NOTE: Ensure DHCP_set_MsgType() is set, prior to calling this method
-    st := fifo_wr_ptr(-2)
+    st := fifo_wr_ptr{}
 
     { start with BOOTP message }
     wr_bootp_msg{}
@@ -447,7 +447,7 @@ PUB wr_dhcp_msg{}: ptr | st
 
     { pad the end of the message equal to the number of bytes in the options }
     wr_byte_x($00, _dhcp_opts_len)
-    _dhcp_msg_len := (fifo_wr_ptr(-2) - st)
+    _dhcp_msg_len := (fifo_wr_ptr{} - st)
     return _dhcp_msg_len
 
 PUB write_tlv(typ, len, val, byte_ord): ptr

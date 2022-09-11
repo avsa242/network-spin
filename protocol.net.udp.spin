@@ -86,13 +86,13 @@ PUB rd_udp_header{}
 ' Read/disassemble UDP header
 '   Returns: length of read header, in bytes
     rdblk_lsbf(@_udp_data, UDP_MSG_SZ)
-    return fifo_wr_ptr(-2)
+    return fifo_wr_ptr{}
 
 PUB wr_udp_header{}: ptr
 ' Write/assemble UDP header
 '   Returns: length of assembled header, in bytes
     wrblk_lsbf(@_udp_data, UDP_MSG_SZ)
-    return fifo_wr_ptr(-2)
+    return fifo_wr_ptr{}
 
 DAT
 

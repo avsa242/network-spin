@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Generic buffer I/O operations
     Started Mar 21, 2022
-    Updated Mar 25, 2022
+    Updated Sep 11, 2022
     Copyright 2022
     See end of file for terms of use.
     --------------------------------------------
@@ -37,15 +37,14 @@ PUB dec_ptr(val)
 ' Manually decrement pointer by val
     _ptr -= val
 
-PUB fifo_wr_ptr(ptr): p
+PUB fifo_set_wr_ptr(ptr)
 ' Set write position within FIFO
 '   Valid values: 0..FIFO_MAX
-'   Any other value polls the chip and returns the current setting
-    case ptr
-        0..FIFO_MAX:
-            _ptr := ptr
-        other:
-            return _ptr
+    _ptr := 0 #> ptr <# FIFO_MAX
+
+PUB fifo_wr_ptr{}: p
+' Get current write position within FIFO
+    return _ptr
 
 PUB inc_ptr(val)
 ' Manually increment pointer by val
@@ -87,10 +86,6 @@ PUB rdword_msbf{}: w
 ' Read word from buffer, most-significant byte first
     w.byte[1] := byte[_ptr_dest][_ptr++]
     w.byte[0] := byte[_ptr_dest][_ptr++]
-
-PUB set_ptr(p)
-' Set pointer index/offset
-    _ptr := p
 
 PUB wrblk_lsbf(ptr_buff, len): ptr
 ' Write block of data, least-significant (first) byte first

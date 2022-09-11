@@ -199,13 +199,13 @@ PUB reset_ipv4{}
 PUB rd_ip_header{}: ptr
 ' Read IP header from buffer
     rdblk_lsbf(@_ip_data, IP_HDR_SZ)
-    return fifo_wr_ptr(-2)
+    return fifo_wr_ptr{}
 
 PUB wr_ip_header{}: ptr
 ' Write IP header to buffer
 '   Returns: length of assembled header, in bytes
     wrblk_lsbf(@_ip_data, IP_HDR_SZ)
-    return fifo_wr_ptr(-2)
+    return fifo_wr_ptr{}
 
 DAT
 
