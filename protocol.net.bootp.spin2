@@ -122,7 +122,7 @@ PUB bootp_boot_fn(): ptr_str
 ' Get boot filename
     ptr_str := @_bootp_data[BOOTPM_FILENM]
 
-PUB bootp_client_ipp(): addr | i
+PUB bootp_client_ip(): addr | i
 ' Get client IP address
     repeat i from 0 to 3
         addr.byte[i] := _bootp_data[BOOTPM_CIP+i]
@@ -154,7 +154,7 @@ PUB bootp_hops(): h
 
 PUB bootp_inc_xid{}
 ' Increment xid/transaction ID by 1
-    _bootp_data[BOOTPM_XID]++
+    _bootp_data[BOOTPM_XID+3]++
 
 PUB bootp_lease_elapsed(): s
 ' Get time elapsed since start of attempt to acquire or renew lease
@@ -174,7 +174,7 @@ PUB bootp_srv_hostname(): ptr_str
 ' Get server hostname
     ptr_str := @_bootp_data[BOOTPM_HOSTNM]
 
-PUB bootp_srv_ipp(): addr | i
+PUB bootp_srv_ip(): addr | i
 ' Get next server IP address
     repeat i from 0 to 3
         addr.byte[i] := _bootp_data[BOOTPM_SIP+i]
@@ -220,11 +220,11 @@ PUB dhcp_msg_type(): t
 ' Get type of DHCP message
     return _dhcp_msg_t
 
-PUB dhcp_router_ipp(): addr
+PUB dhcp_router_ip(): addr
 ' Get router IP address
     return _router_ip
 
-PUB dhcp_srv_ipp(): addr
+PUB dhcp_srv_ip(): addr
 ' Get DHCP server IP address
     bytemove(@addr, @_dhcp_srv_ip, IPV4ADDR_LEN)
 
