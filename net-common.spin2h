@@ -1,14 +1,15 @@
 {
     --------------------------------------------
-    Filename: net-common.spinh
+    Filename: net-common.spin2h
     Author: Jesse Burt
     Description: Constants common to multiple networking objects
     Started Mar 12, 2022
-    Updated Apr 19, 2022
-    Copyright 2022
+    Updated Jan 14, 2023
+    Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
 }
+#ifndef NET_COMMON
 #define NET_COMMON
 
 CON
@@ -27,6 +28,7 @@ DAT
 
     _mac_bcast  byte $FF, $FF, $FF, $FF, $FF, $FF
 
+#endif
 DAT
 
 {

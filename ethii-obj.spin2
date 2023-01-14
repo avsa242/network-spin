@@ -1,0 +1,121 @@
+{
+    --------------------------------------------
+    Filename: ethii-obj.spin2
+    Author: Jesse Burt
+    Description: Ethernet II protocol
+        * Experimental object-oriented func. pointer-based
+    Started Mar 1, 2022
+    Updated Jan 14, 2023
+    Copyright 2023
+    See end of file for terms of use.
+    --------------------------------------------
+}
+#include "net-common.spin2h"
+
+CON
+
+    { limits }
+    ETH_FRM_SZ      = 14
+
+    { offsets within frame }
+    ETH_DEST        = 0
+    ETH_SRC         = ETH_DEST+MACADDR_LEN
+    ETH_TYPE        = ETH_SRC+MACADDR_LEN
+
+VAR
+
+    { PHY I/O function pointers }
+    long rdblk_lsbf
+    long wrblk_lsbf
+    long fifo_wr_ptr
+
+    word _ptr_this_mac
+    byte _ethii_data[ETH_FRM_SZ]
+
+PUB init(ptr_rdblk, ptr_wrblk, ptr_fifo_wr)
+' Set pointers to network device driver's buffer I/O functions
+    rdblk_lsbf := ptr_rdblk
+    wrblk_lsbf := ptr_wrblk
+    fifo_wr_ptr := ptr_fifo_wr
+
+PUB dest_addr(): addr
+' Get destination address of ethernet frame
+'   Returns: pointer to 6-byte MAC address
+    return @_ethii_data[ETH_DEST]
+
+PUB ethertype(): eth_t
+' Get ethertype of ethernet frame
+'   Returns: word
+    eth_t.byte[0] := _ethii_data[ETH_TYPE+1]
+    eth_t.byte[1] := _ethii_data[ETH_TYPE]
+
+PUB new_frame(mac_src, mac_dest, ether_t)
+' Start new ethernet-II frame
+    set_dest_addr(mac_dest)
+    set_src_addr(mac_src)
+    set_ethertype(ether_t)
+    wr_ethii_frame()
+
+PUB reply_frame(): pos
+' Set up/write Ethernet II frame as a reply to last received frame
+    set_dest_addr(src_addr())
+    set_src_addr(_ptr_this_mac)
+    wr_ethii_frame()
+    return fifo_wr_ptr()
+
+PUB src_addr(): addr
+' Get source address of ethernet frame
+'   Returns: pointer to 6-byte MAC address
+    return @_ethii_data[ETH_SRC]
+
+PUB set_local_addr(ptr_addr)
+
+    _ptr_this_mac := ptr_addr
+
+PUB set_dest_addr(ptr_addr)
+' Set destination address of ethernet frame
+    bytemove(@_ethii_data, ptr_addr, MACADDR_LEN)
+
+PUB set_ethertype(eth_t)
+' Set ethertype of ethernet frame
+    _ethii_data[ETH_TYPE] := eth_t.byte[1]
+    _ethii_data[ETH_TYPE+1] := eth_t.byte[0]
+
+PUB set_src_addr(ptr_addr)
+' Set source address of ethernet frame
+    bytemove(@_ethii_data + ETH_SRC, ptr_addr, MACADDR_LEN)
+
+PUB rd_ethii_frame(): ptr
+' Read ethernet-II frame
+'   Returns: number of bytes read
+    rdblk_lsbf(@_ethii_data, ETH_FRM_SZ)
+    return fifo_wr_ptr()
+
+PUB wr_ethii_frame(): ptr
+' Write ethernet-II frame
+    wrblk_lsbf(@_ethii_data, ETH_FRM_SZ)
+    return fifo_wr_ptr()
+
+DAT
+{
+TERMS OF USE: MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+}
+
