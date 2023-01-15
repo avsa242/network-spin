@@ -25,15 +25,17 @@ CON
     IP_HDRLEN       = 0
     IP_DSCP_ECN     = 1
     IP_TLEN         = 2
-     IP_TLEN_LSB    = 3
-    IP_IDENT        = 4
-     IP_IDENT_LSB   = 5
+    IP_TLEN_M       = 2
+    IP_TLEN_L       = 3
+    IP_IDENT_M      = 4
+    IP_IDENT_L      = 5
     IP_FLAGS_FRGH   = 6
     IP_FRGL         = 7
     IP_T2L          = 8
     IP_PRTCL        = 9
     IP_CKSUM        = 10
-     IP_CKSUM_LSB   = 11
+    IP_CKSUM_M      = 10
+    IP_CKSUM_L      = 11
     IP_SRCIP        = 12'..15
     IP_DSTIP        = 16'..19
 
@@ -65,8 +67,8 @@ PUB ip_dest_addr(): addr | i
 PUB ip_dgram_len(): len
 ' Return total length of IP datagram, in bytes
 '   Returns: word
-    len.byte[0] := _ip_data[IP_TLEN_LSB]
-    len.byte[1] := _ip_data[IP_TLEN]
+    len.byte[0] := _ip_data[IP_TLEN_L]
+    len.byte[1] := _ip_data[IP_TLEN_M]
 
 PUB ip_dscp(): cp
 ' Differentiated services code point
@@ -92,8 +94,8 @@ PUB ip_frag_offset(): offs
 PUB ip_hdr_chk(): cksum
 ' Get header checksum
 '   Returns: word
-    cksum.byte[0] := _ip_data[IP_CKSUM_LSB]
-    cksum.byte[1] := _ip_data[IP_CKSUM]
+    cksum.byte[0] := _ip_data[IP_CKSUM_L]
+    cksum.byte[1] := _ip_data[IP_CKSUM_M]
 
 PUB ip_hdr_len(): len
 ' Get header length, in bytes
@@ -135,8 +137,8 @@ PUB ip_set_dest_addr(addr) | i
 PUB ip_set_dgram_len(len)
 ' Set total length of IP datagram, in bytes
 '   IP header length + L4 header length + data length
-    _ip_data[IP_TLEN] := len.byte[1]
-    _ip_data[IP_TLEN_LSB] := len.byte[0]
+    _ip_data[IP_TLEN_M] := len.byte[1]
+    _ip_data[IP_TLEN_L] := len.byte[0]
 
 PUB ip_set_dscp(cp)
 ' Set Differentiated services code point
@@ -156,8 +158,8 @@ PUB ip_set_frag_offset(offs)
 
 PUB ip_set_hdr_chk(cksum)
 ' Set header checksum
-    _ip_data[IP_CKSUM] := cksum.byte[1]
-    _ip_data[IP_CKSUM_LSB] := cksum.byte[0]
+    _ip_data[IP_CKSUM_M] := cksum.byte[1]
+    _ip_data[IP_CKSUM_L] := cksum.byte[0]
 
 PUB ip_set_hdr_len(len)
 ' Set header length, in bytes
@@ -170,8 +172,8 @@ PUB ip_set_l4_proto(proto)
 
 PUB ip_set_msg_ident(id)
 ' Set identification common to all fragments in a message
-    _ip_data[IP_IDENT] := id.byte[1]
-    _ip_data[IP_IDENT_LSB] := id.byte[0]
+    _ip_data[IP_IDENT_M] := id.byte[1]
+    _ip_data[IP_IDENT_L] := id.byte[0]
 
 PUB ip_set_src_addr(addr) | i
 ' Set source/originator of IP datagram
@@ -204,8 +206,8 @@ PUB reset_ipv4()
     _ip_data[IP_HDRLEN] |= $05
     _ip_data[IP_FLAGS_FRGH] |= (%010 << 5)
     _ip_data[IP_T2L] := 128
-    _ip_data[IP_IDENT] := $00
-    _ip_data[IP_IDENT+1] := $01
+    _ip_data[IP_IDENT_M] := $00
+    _ip_data[IP_IDENT_L] := $01
 
 PUB rd_ip_header(): ptr
 ' Read IP header from buffer
