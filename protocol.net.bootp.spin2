@@ -4,8 +4,8 @@
     Author: Jesse Burt
     Description: Boot Protocol/Dynamic Host Configuration Protocol
     Started Mar 28, 2022
-    Updated Sep 10, 2022
-    Copyright 2022
+    Updated Jan 15, 2023
+    Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -201,13 +201,12 @@ PUB dhcp_new(msg_t, ptr_params, nr_params)
 '   msg_t: DHCP message type (DHCPDISCOVER, DHCPREQUEST)
 '   ptr_params: pointer to buffer containing DHCP parameters to be requested from the server
 '   nr_params: number of parameters at ptr_params
-    bootp_set_opcode(BOOT_REQ)
-    bootp_set_bcast_flag(true)
-    bootp_set_client_mac(@_mac_local)
-    dhcp_set_params_reqd(ptr_params, nr_params)
-    dhcp_set_max_msg_len(MTU_MAX)
-    dhcp_set_ip_lease_time(120)                ' 2min
-    dhcp_set_msg_type(msg_t)
+    _bootp_data[BOOTPM_OP] := BOOT_REQ
+    _bootp_data[BOOTPM_FLAGS] := (1 << BCAST_BIT)
+    bytemove(@_bootp_data[BOOTPM_CLI_MAC], @_mac_local, MACADDR_LEN)
+    bytemove(@_dhcp_param_req, ptr_params, (nr_params <# 5))
+    _dhcp_max_msg_len := MTU_MAX
+    _dhcp_msg_t := msg_t
     wr_dhcp_msg{}
 
 PUB dhcp_ip_lease_time(): s

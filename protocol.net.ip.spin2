@@ -186,13 +186,15 @@ PUB ip_set_version(ver)
 ' Set IP version
     _ip_data[IP_VERS] |= (ver << 4)
 
-PUB ipv4_new(l4_proto, src_ip, dest_ip)
+PUB ipv4_new(l4_proto, src_ip, dest_ip) | i
 ' Construct an IPV4 header
 '   l4_proto: OSI Layer-4 protocol (TCP, UDP, *ICMP)
     reset_ipv4()
-    ip_set_l4_proto(l4_proto)
-    ip_set_src_addr(src_ip)
-    ip_set_dest_addr(dest_ip)
+    _ip_data[IP_PRTCL] := l4_proto
+    repeat i from 0 to 3
+        _ip_data[IP_SRCIP+i] := src_ip.byte[i]
+    repeat i from 0 to 3
+        _ip_data[IP_DSTIP+i] := dest_ip.byte[i]
     wr_ip_header()
 
 PUB reset_ipv4()
