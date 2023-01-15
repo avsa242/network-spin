@@ -7,35 +7,42 @@ This is a P8X32A/Propeller, P2X8C4M64P/Propeller 2 networking stack
 
 ## Salient Features
 
+* Ethernet II
 * IP
 * ARP
 * UDP
-* BOOTP/DHCP
+* TCP
 * ICMP
-* Buffer-oriented (individual components of datagrams are stored as variables, manipulated or retrieved using object methods, and used to assemble datagrams which are then copied to a user-specified buffer)
+* BOOTP/DHCP
 
 ## Requirements
 
 P1/SPIN1:
 * spin-standard-library
+* #inclusion by an object (e.g., network device driver) that provides FIFO R/W methods
 
 P2/SPIN2:
 * p2-spin-standard-library
+* #inclusion by an object (e.g., network device driver) that provides FIFO R/W methods
 
 ## Compiler Compatibility
 
-* P1/SPIN1 OpenSpin (bytecode): Untested (deprecated)
-* P1/SPIN1 FlexSpin (bytecode): OK, tested with 5.9.9-beta
-* P1/SPIN1 FlexSpin (native): OK, tested with 5.9.9-beta
-* ~~P2/SPIN2 FlexSpin (nu-code):~~ FTBFS
-* P2/SPIN2 FlexSpin (native): OK, tested with 5.9.9-beta
-* ~~BST~~ (incompatible - no preprocessor)
-* ~~Propeller Tool~~ (incompatible - no preprocessor)
-* ~~PNut~~ (incompatible - no preprocessor)
+| Processor | Language | Compiler               | Backend     | Status                |
+|-----------|----------|------------------------|-------------|-----------------------|
+| P1        | SPIN1    | FlexSpin (5.9.25-beta) | Bytecode    | OK                    |
+| P1        | SPIN1    | FlexSpin (5.9.25-beta) | Native code | OK                    |
+| P1        | SPIN1    | OpenSpin (1.00.81)     | Bytecode    | Untested (deprecated) |
+| P2        | SPIN2    | FlexSpin (5.9.25-beta) | NuCode      | OK                    |
+| P2        | SPIN2    | FlexSpin (5.9.25-beta) | Native code | Untested              |
+| P1        | SPIN1    | Brad's Spin Tool (any) | Bytecode    | Unsupported           |
+| P1, P2    | SPIN1, 2 | Propeller Tool (any)   | Bytecode    | Unsupported           |
+| P1, P2    | SPIN1, 2 | PNut (any)             | Bytecode    | Unsupported           |
 
 ## Limitations
 
 * Very early in development - may malfunction, or outright fail to build
 * Some things are currently hardcoded
-* Only buffer-oriented currently, so can be quite memory hungry (depending on network frame buffer size)
 * API unstable
+* IP only really supports 20-byte headers
+* TCP and ICMP are currently _very_ primitive - only enough is implemented to store/retrieve metadata. No state machine exists for TCP and ICMP is written with enough to form reply messages to echo requests in mind.
+
