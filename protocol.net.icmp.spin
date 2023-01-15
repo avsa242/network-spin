@@ -4,8 +4,8 @@
     Author: Jesse Burt
     Description: Internet Control Message Protocol
     Started Mar 31, 2022
-    Updated Sep 10, 2022
-    Copyright 2022
+    Updated Jan 15, 2023
+    Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -82,6 +82,13 @@ VAR
 
     byte _icmp_data[ICMP_MSG_SZ]
     byte _icmp_echo[ICMP_ECHO_MSG_SZ]
+
+PUB icmp_echo_reply{}
+' Set up for an echo reply message
+    _icmp_data[ICMP_CKSUM] := 0
+    _icmp_data[ICMP_CKSUM_L] := 0
+    _icmp_data[ICMP_T] := ECHO_REPL
+    wr_icmp_msg{}
 
 PUB icmp_set_chksum(ck)
 ' Set checksum (optional; set to 0 to ignore)
