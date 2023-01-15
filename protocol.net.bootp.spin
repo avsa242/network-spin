@@ -29,10 +29,11 @@ CON
     BOOTPM_HW_ADDR_LEN  = 2
     BOOTPM_HOP          = 3
     BOOTPM_XID          = 4
-    BOOTPM_LSTM_EL      = 8
-     BOOTPM_LSTM_EL_L   = 9
+    BOOTPM_LSTM_EL_M    = 8
+    BOOTPM_LSTM_EL_L    = 9
     BOOTPM_FLAGS        = 10
-     BOOTPM_FLAGS_L     = 11
+    BOOTPM_FLAGS_M      = 10
+    BOOTPM_FLAGS_L      = 11
     BOOTPM_CIP          = 12
     BOOTPM_YIP          = BOOTPM_CIP+IPV4ADDR_LEN
     BOOTPM_SIP          = BOOTPM_YIP+IPV4ADDR_LEN
@@ -158,7 +159,7 @@ PUB bootp_inc_xid{}
 
 PUB bootp_lease_elapsed{}: s
 ' Get time elapsed since start of attempt to acquire or renew lease
-    s.byte[0] := _bootp_data[BOOTPM_LSTM_EL]
+    s.byte[0] := _bootp_data[BOOTPM_LSTM_EL_M]
     s.byte[1] := _bootp_data[BOOTPM_LSTM_EL_L]
 
 PUB bootp_opcode{}: c
@@ -168,7 +169,7 @@ PUB bootp_opcode{}: c
 PUB bootp_rsvd_flags{}: flags
 ' Get BOOTP reserved flags
     flags.byte[0] := _bootp_data[BOOTPM_FLAGS_L]
-    flags.byte[1] := _bootp_data[BOOTPM_FLAGS]
+    flags.byte[1] := _bootp_data[BOOTPM_FLAGS_M]
 
 PUB bootp_srv_hostname{}: ptr_str
 ' Get server hostname
@@ -287,7 +288,7 @@ PUB bootp_set_hops(h)
 
 PUB bootp_set_lease_elapsed(s)
 ' Set time elapsed since start of attempt to acquire or renew lease
-    _bootp_data[BOOTPM_LSTM_EL] := s.byte[0]
+    _bootp_data[BOOTPM_LSTM_EL_M] := s.byte[0]
     _bootp_data[BOOTPM_LSTM_EL_L] := s.byte[1]
 
 PUB bootp_set_opcode(c)
@@ -296,22 +297,20 @@ PUB bootp_set_opcode(c)
 
 PUB bootp_set_rsvd_flags(flags)
 ' Set BOOTP reserved flags
-    _bootp_data[BOOTPM_FLAGS] |= flags.byte[1] & $7f
+    _bootp_data[BOOTPM_FLAGS_M] |= flags.byte[1] & $7f
     _bootp_data[BOOTPM_FLAGS_L] := flags.byte[0]
 
 PUB bootp_set_srv_hostname(ptr_str)
 ' Set server hostname, up to 64 bytes
     bytemove(@_bootp_data[BOOTPM_HOSTNM], ptr_str, strsize(ptr_str) <# SRV_HOSTN_LEN)
 
-PUB bootp_set_srv_ip(addr) | i
+PUB bootp_set_srv_ip(addr)
 ' Set server IP address
-    repeat i from 0 to 3
-        _bootp_data[BOOTPM_GIP+i] := addr.byte[i]
+    bytemove(@_bootp_data + BOOTPM_GIP, @addr, IPV4ADDR_LEN)
 
-PUB bootp_set_xid(id) | i
+PUB bootp_set_xid(id)
 ' Set transaction ID
-    repeat i from 0 to 3
-        _bootp_data[BOOTPM_XID+i] := id.byte[i]
+    bytemove(@_bootp_data + BOOTPM_XID, @id, 4)
 
 PUB bootp_set_your_ip(addr)
 ' Set 'your' IP address
@@ -366,7 +365,7 @@ PUB reset_bootp{}
     bytefill(@_bootp_data, 0, BOOTP_MSG_SZ)
     _bootp_data[BOOTPM_CLI_HW_T] := ETHERNET
     _bootp_data[BOOTPM_HW_ADDR_LEN] := MACADDR_LEN
-    _bootp_data[BOOTPM_LSTM_EL] := $00
+    _bootp_data[BOOTPM_LSTM_EL_M] := $00
     _bootp_data[BOOTPM_LSTM_EL_L] := $01
 
 PUB rd_bootp_msg{}: ptr
