@@ -4,8 +4,8 @@
     Author: Jesse Burt
     Description: address Resolution Protocol
     Started Mar 28, 2022
-    Updated Sep 10, 2022
-    Copyright 2022
+    Updated Jan 15, 2023
+    Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -85,6 +85,24 @@ PUB arp_proto_type(): pro
 '   Returns: word
     pro.byte[0] := _arp_data[ARP_PROTO_T+1]
     pro.byte[1] := _arp_data[ARP_PROTO_T]
+
+PUB arp_reply() | ip_tmp, mac_tmp[2]
+' Set up next ARP message to "reply" to the previous
+    arp_set_opcode(ARP_REPL)
+
+    { temporarily store the current sender addresses }
+    bytemove(@ip_tmp, @_arp_data[ARP_SNDR_PRADDR], IPV4ADDR_LEN)
+    bytemove(@mac_tmp, @_arp_data[ARP_SNDR_HWADDR], MACADDR_LEN)
+
+    { update the sender addresses to the last received target IP, and the locally set MAC }
+    bytemove(@_arp_data[ARP_SNDR_PRADDR], @_arp_data[ARP_TGT_PRADDR], IPV4ADDR_LEN)
+    bytemove(@_arp_data[ARP_SNDR_HWADDR], @_mac_local, MACADDR_LEN)
+
+    { update the target addresses to the temporarily stored sender addresses }
+    bytemove(@_arp_data[ARP_TGT_PRADDR], @ip_tmp, IPV4ADDR_LEN)
+    bytemove(@_arp_data[ARP_TGT_HWADDR], @mac_tmp, MACADDR_LEN)
+
+    wr_arp_msg()
 
 PUB arp_sender_hw_addr(): ptr_addr
 ' Get sender hardware address
