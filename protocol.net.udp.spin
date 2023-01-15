@@ -4,8 +4,8 @@
     Author: Jesse Burt
     Description: Universal Datagram Protocol
     Started Feb 28, 2022
-    Updated Sep 10, 2022
-    Copyright 2022
+    Updated Jan 15, 2023
+    Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -33,6 +33,16 @@ CON
 VAR
 
     byte _udp_data[UDP_MSG_SZ]
+
+PUB udp_new(src_port, dest_port)
+' Construct new UDP datagram
+    bytefill(@_udp_data, 0, UDP_MSG_SZ)
+    _udp_data[UDP_SRCPORT] := src_port.byte[1]
+    _udp_data[UDP_SRCPORT_L] := src_port.byte[0]
+    _udp_data[UDP_DESTPORT] := dest_port.byte[1]
+    _udp_data[UDP_DESTPORT_L] := dest_port.byte[0]
+
+    wr_udp_header{}
 
 PUB udp_set_chksum(ck)
 ' Set checksum (optional; set to 0 to ignore)
