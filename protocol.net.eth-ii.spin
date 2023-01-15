@@ -46,6 +46,13 @@ PUB ethii_new(mac_src, mac_dest, ether_t)
     _ethii_data[ETH_TYPE+1] := ether_t.byte[0]
     wr_ethii_frame{}
 
+PUB ethii_reply{}: pos
+' Set up/write Ethernet II frame as a reply to last received frame
+    bytemove(@_ethii_data, @_ethii_data + ETH_SRC, MACADDR_LEN)
+    bytemove(@_ethii_data + ETH_SRC, @_mac_local, MACADDR_LEN)
+    wr_ethii_frame{}
+    return fifo_wr_ptr{}
+
 PUB ethii_src_addr{}: addr
 ' Get source address of ethernet frame
 '   Returns: pointer to 6-byte MAC address
