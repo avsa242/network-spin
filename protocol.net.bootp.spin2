@@ -196,6 +196,20 @@ PUB dhcp_dns_ip{}: addr
 ' Get domain name server IP address
     return _dns_ip
 
+PUB dhcp_new(msg_t, ptr_params, nr_params)
+' Write a DHCP message to the buffer
+'   msg_t: DHCP message type (DHCPDISCOVER, DHCPREQUEST)
+'   ptr_params: pointer to buffer containing DHCP parameters to be requested from the server
+'   nr_params: number of parameters at ptr_params
+    bootp_set_opcode(BOOT_REQ)
+    bootp_set_bcast_flag(true)
+    bootp_set_client_mac(@_mac_local)
+    dhcp_set_params_reqd(ptr_params, nr_params)
+    dhcp_set_max_msg_len(MTU_MAX)
+    dhcp_set_ip_lease_time(120)                ' 2min
+    dhcp_set_msg_type(msg_t)
+    wr_dhcp_msg{}
+
 PUB dhcp_ip_lease_time(): s
 ' Get lease time of IP address, in seconds
     return _dhcp_lease_tm
