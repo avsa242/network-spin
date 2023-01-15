@@ -4,8 +4,8 @@
     Author: Jesse Burt
     Description: Ethernet II protocol
     Started Mar 1, 2022
-    Updated Sep 10, 2022
-    Copyright 2022
+    Updated Jan 15, 2023
+    Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -37,6 +37,14 @@ PUB ethii_ethertype{}: eth_t
 '   Returns: word
     eth_t.byte[0] := _ethii_data[ETH_TYPE+1]
     eth_t.byte[1] := _ethii_data[ETH_TYPE]
+
+PUB ethii_new(mac_src, mac_dest, ether_t)
+' Start new ethernet-II frame
+    bytemove(@_ethii_data, mac_dest, MACADDR_LEN)
+    bytemove(@_ethii_data + ETH_SRC, mac_src, MACADDR_LEN)
+    _ethii_data[ETH_TYPE] := ether_t.byte[1]
+    _ethii_data[ETH_TYPE+1] := ether_t.byte[0]
+    wr_ethii_frame{}
 
 PUB ethii_src_addr{}: addr
 ' Get source address of ethernet frame
