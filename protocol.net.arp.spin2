@@ -2,7 +2,7 @@
     --------------------------------------------
     Filename: protocol.net.arp.spin2
     Author: Jesse Burt
-    Description: address Resolution Protocol
+    Description: Address Resolution Protocol
     Started Mar 28, 2022
     Updated Jan 15, 2023
     Copyright 2023
@@ -21,11 +21,14 @@ CON
     { offsets within message }
     ARP_ABS_ST      = ETH_TYPE+2                ' add to the below for abs. position within frame
 
-    ARP_HW_T        = 0'..1                     ' 16b/2B
-    ARP_PROTO_T     = 2'..3                     ' 16b/2B
+    ARP_HW_T_M      = 0                         ' 16b/2B
+    ARP_HW_T_L      = ARP_HW_T_M+1
+    ARP_PROTO_T_M   = 2                         ' 16b/2B
+    ARP_PROTO_T_L   = ARP_PROTO_T_M+1
     ARP_HWADDR_LEN  = 4                         ' 8b/1B
     ARP_PRADDR_LEN  = 5                         ' 8b/1B
-    ARP_OP_CODE     = 6'..7                     ' 16b/2B
+    ARP_OP_CODE_M   = 6                         ' 16b/2B
+    ARP_OP_CODE_L   = 7
     ARP_SNDR_HWADDR = 8'..13                    ' 48b/6B
     ARP_SNDR_PRADDR = 14'..17                   ' 32b/4B
     ARP_TGT_HWADDR  = 18'..23                   ' 48b/6B
@@ -66,14 +69,14 @@ PUB arp_hw_addrLen(): len
 PUB arp_hw_type(): hrd
 ' Get hardware/hardware address type
 '   Returns: word
-    hrd.byte[0] := _arp_data[ARP_HW_T+1]
-    hrd.byte[1] := _arp_data[ARP_HW_T]
+    hrd.byte[0] := _arp_data[ARP_HW_T_L]
+    hrd.byte[1] := _arp_data[ARP_HW_T_M]
 
 PUB arp_opcode(): op
 ' Get ARP operation code
 '   Returns: byte
-    op.byte[0] := _arp_data[ARP_OP_CODE+1]
-    op.byte[1] := _arp_data[ARP_OP_CODE]
+    op.byte[0] := _arp_data[ARP_OP_CODE_L]
+    op.byte[1] := _arp_data[ARP_OP_CODE_M]
 
 PUB arp_proto_addr_len(): len
 ' Get protocol address length
@@ -83,8 +86,8 @@ PUB arp_proto_addr_len(): len
 PUB arp_proto_type(): pro
 ' Get protocol/protocol address type
 '   Returns: word
-    pro.byte[0] := _arp_data[ARP_PROTO_T+1]
-    pro.byte[1] := _arp_data[ARP_PROTO_T]
+    pro.byte[0] := _arp_data[ARP_PROTO_T_L]
+    pro.byte[1] := _arp_data[ARP_PROTO_T_M]
 
 PUB arp_reply() | ip_tmp, mac_tmp[2]
 ' Set up next ARP message to "reply" to the previous
@@ -132,13 +135,13 @@ PUB arp_set_hw_addr_len(len)
 
 PUB arp_set_hwtype(hrd)
 ' Set hardware type
-    _arp_data[ARP_HW_T] := hrd.byte[1]
-    _arp_data[ARP_HW_T+1] := hrd.byte[0]
+    _arp_data[ARP_HW_T_M] := hrd.byte[1]
+    _arp_data[ARP_HW_T_L] := hrd.byte[0]
 
 PUB arp_set_opcode(op)
 ' Set ARP operation code
-    _arp_data[ARP_OP_CODE] := op.byte[1]
-    _arp_data[ARP_OP_CODE+1] := op.byte[0]
+    _arp_data[ARP_OP_CODE_M] := op.byte[1]
+    _arp_data[ARP_OP_CODE_L] := op.byte[0]
 
 PUB arp_set_proto_addr_len(len)
 ' Set protocol address length
@@ -146,8 +149,8 @@ PUB arp_set_proto_addr_len(len)
 
 PUB arp_set_proto_type(pro)
 ' Set protocol type
-    _arp_data[ARP_PROTO_T] := pro.byte[1]
-    _arp_data[ARP_PROTO_T+1] := pro.byte[0]
+    _arp_data[ARP_PROTO_T_M] := pro.byte[1]
+    _arp_data[ARP_PROTO_T_L] := pro.byte[0]
 
 PUB arp_set_sender_hw_addr(ptr_addr)
 ' Set sender hardware address
