@@ -4,8 +4,8 @@
     Author: Jesse Burt
     Description: Internet Protocol
     Started Mar 28, 2022
-    Updated Sep 10, 2022
-    Copyright 2022
+    Updated Jan 15, 2022
+    Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -185,6 +185,15 @@ PUB ip_set_ttl(ttl)
 PUB ip_set_version(ver)
 ' Set IP version
     _ip_data[IP_VERS] |= (ver << 4)
+
+PUB ipv4_new(l4_proto, src_ip, dest_ip)
+' Construct an IPV4 header
+'   l4_proto: OSI Layer-4 protocol (TCP, UDP, *ICMP)
+    reset_ipv4()
+    ip_set_l4_proto(l4_proto)
+    ip_set_src_addr(src_ip)
+    ip_set_dest_addr(dest_ip)
+    wr_ip_header()
 
 PUB reset_ipv4()
 ' Reset all values to defaults for an IPV4 header
