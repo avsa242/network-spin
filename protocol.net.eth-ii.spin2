@@ -21,7 +21,9 @@ CON
     { offsets within frame }
     ETH_DEST        = 0
     ETH_SRC         = ETH_DEST+MACADDR_LEN
-    ETH_TYPE        = ETH_SRC+MACADDR_LEN
+    ETH_TYPE_M      = ETH_SRC+MACADDR_LEN
+    ETH_TYPE_L      = ETH_TYPE_M+1
+    ETH_TYPE        = ETH_TYPE_M
 
 VAR
 
@@ -35,15 +37,15 @@ PUB ethii_dest_addr(): addr
 PUB ethii_ethertype(): eth_t
 ' Get ethertype of ethernet frame
 '   Returns: word
-    eth_t.byte[0] := _ethii_data[ETH_TYPE+1]
-    eth_t.byte[1] := _ethii_data[ETH_TYPE]
+    eth_t.byte[0] := _ethii_data[ETH_TYPE_L]
+    eth_t.byte[1] := _ethii_data[ETH_TYPE_M]
 
 PUB ethii_new(mac_src, mac_dest, ether_t)
 ' Start new ethernet-II frame
     bytemove(@_ethii_data, mac_dest, MACADDR_LEN)
     bytemove(@_ethii_data + ETH_SRC, mac_src, MACADDR_LEN)
-    _ethii_data[ETH_TYPE] := ether_t.byte[1]
-    _ethii_data[ETH_TYPE+1] := ether_t.byte[0]
+    _ethii_data[ETH_TYPE_M] := ether_t.byte[1]
+    _ethii_data[ETH_TYPE_L] := ether_t.byte[0]
     wr_ethii_frame()
 
 PUB ethii_reply(): pos
@@ -64,8 +66,8 @@ PUB ethii_set_dest_addr(ptr_addr)
 
 PUB ethii_set_ethertype(eth_t)
 ' Set ethertype of ethernet frame
-    _ethii_data[ETH_TYPE] := eth_t.byte[1]
-    _ethii_data[ETH_TYPE+1] := eth_t.byte[0]
+    _ethii_data[ETH_TYPE_M] := eth_t.byte[1]
+    _ethii_data[ETH_TYPE_L] := eth_t.byte[0]
 
 PUB ethii_set_src_addr(ptr_addr)
 ' Set source address of ethernet frame
