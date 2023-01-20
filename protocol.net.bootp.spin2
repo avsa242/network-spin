@@ -153,9 +153,10 @@ PUB bootp_hops(): h
 ' Get number of hops
     h := _bootp_data[BOOTPM_HOP]
 
-PUB bootp_inc_xid{}
+PUB bootp_inc_xid(): x
 ' Increment xid/transaction ID by 1
-    _bootp_data[BOOTPM_XID+3]++
+'   Returns: new xid
+    return ++_bootp_data[BOOTPM_XID+3]
 
 PUB bootp_lease_elapsed(): s
 ' Get time elapsed since start of attempt to acquire or renew lease
@@ -189,11 +190,11 @@ PUB bootp_your_ip(): addr | i
     repeat i from 0 to 3
         addr.byte[i] := _bootp_data[BOOTPM_YIP+i]
 
-PUB dhcp_bcast_ip{}: addr
+PUB dhcp_bcast_ip(): addr
 ' Get broadcast IP address
     return _bcast_ip
 
-PUB dhcp_dns_ip{}: addr
+PUB dhcp_dns_ip(): addr
 ' Get domain name server IP address
     return _dns_ip
 
@@ -208,7 +209,7 @@ PUB dhcp_new(msg_t, ptr_params, nr_params)
     bytemove(@_dhcp_param_req, ptr_params, (nr_params <# 5))
     _dhcp_max_msg_len := MTU_MAX
     _dhcp_msg_t := msg_t
-    wr_dhcp_msg{}
+    wr_dhcp_msg()
 
 PUB dhcp_ip_lease_time(): s
 ' Get lease time of IP address, in seconds
@@ -360,7 +361,7 @@ PUB dhcp_set_subnet_mask(mask)
 ' Set subnet mask
     bytemove(@_subnet_mask, @mask, IPV4ADDR_LEN)
 
-PUB reset_bootp{}
+PUB reset_bootp()
 ' Reset all values to defaults
     bytefill(@_bootp_data, 0, BOOTP_MSG_SZ)
     _bootp_data[BOOTPM_CLI_HW_T] := ETHERNET

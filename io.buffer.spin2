@@ -4,8 +4,8 @@
     Author: Jesse Burt
     Description: Generic buffer I/O operations
     Started Mar 21, 2022
-    Updated Sep 11, 2022
-    Copyright 2022
+    Updated Jan 20, 2023
+    Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -15,127 +15,157 @@ CON
 
 VAR
 
-    long _ptr_dest, _ptr
+    long _txbuff, _rxbuff, _txptr, _rxptr
 
-PUB init(ptr_buff)
+PUB init(ptr_buff, ptr_rx)
 ' Initialize
 '   Set pointer to operating buffer
 '   Set pointer index to 0
-    _ptr_dest := ptr_buff
-    _ptr := 0
+    _txbuff := ptr_buff
+    _rxbuff := ptr_rx
+    _txptr := _rxptr := 0
 
-PUB deinit{}
+PUB deinit()
 ' Deinitialize
 '   Clear variable space
-    longfill(@_ptr_dest, 0, 2)
+    longfill(@_txbuff, 0, 4)
 
-PUB curr_byte{}: b
+PUB curr_byte(): b
 ' Read byte at current pointer without advancing
-    return byte[_ptr_dest][_ptr]
+    return byte[_txbuff][_txptr]
 
-PUB dec_ptr(val)
+PUB dec_txptr(val)
 ' Manually decrement pointer by val
-    _ptr -= val
+    _txptr -= val
+
+PUB fifo_set_rd_ptr(ptr)
+' Set read position within FIFO
+'   Valid values: 0..FIFO_MAX
+    _rxptr := 0 #> ptr <# FIFO_MAX
 
 PUB fifo_set_wr_ptr(ptr)
 ' Set write position within FIFO
 '   Valid values: 0..FIFO_MAX
-    _ptr := 0 #> ptr <# FIFO_MAX
+    _txptr := 0 #> ptr <# FIFO_MAX
 
-PUB fifo_wr_ptr{}: p
-' Get current write position within FIFO
-    return _ptr
+PUB fifo_rd_ptr(): p
+' Get current position within read FIFO
+    return _rxptr
 
-PUB inc_ptr(val)
+PUB fifo_wr_ptr(): p
+' Get current position within write FIFO
+    return _txptr
+
+PUB inc_txptr(val)
 ' Manually increment pointer by val
-    _ptr += val
+    _txptr += val
 
 PUB rdblk_lsbf(ptr_buff, len): ptr
 ' Read block of data from ptr_buff, least-significant (first) byte first
 '   Returns: number of bytes read
     repeat ptr from 0 to (len-1)
-        byte[ptr_buff][ptr] := byte[_ptr_dest][_ptr++]
+        byte[ptr_buff][ptr] := byte[_rxbuff][_rxptr++]
 
 PUB rdblk_msbf(ptr_buff, len): ptr
 ' Read block of data from ptr_buff, most-significant (last) byte first
 '   Returns: number of bytes read
     repeat ptr from (len-1) to 0
-        byte[ptr_buff][ptr] := byte[_ptr_dest][_ptr++]
+        byte[ptr_buff][ptr] := byte[_rxbuff][_rxptr++]
     return len
 
-PUB rd_byte{}: b
+PUB rd_byte(): b
 ' Read byte from buffer
-    return byte[_ptr_dest][_ptr++]
+    return byte[_rxbuff][_rxptr++]
 
-PUB rdlong_lsbf{}: l | i
+PUB rdlong_lsbf(): l | i
 ' Read long from buffer, least-significant byte first
     repeat i from 0 to 3
-        l.byte[i] := byte[_ptr_dest][_ptr++]
+        l.byte[i] := byte[_rxbuff][_rxptr++]
 
-PUB rdlong_msbf{}: l | i
+PUB rdlong_msbf(): l | i
 ' Read long from buffer, most-significant byte first
     repeat i from 3 to 0
-        l.byte[i] := byte[_ptr_dest][_ptr++]
+        l.byte[i] := byte[_rxbuff][_rxptr++]
 
-PUB rdword_lsbf{}: w
+PUB rdword_lsbf(): w
 ' Read word from buffer, least-significant byte first
-    w.byte[0] := byte[_ptr_dest][_ptr++]
-    w.byte[1] := byte[_ptr_dest][_ptr++]
+    w.byte[0] := byte[_rxbuff][_rxptr++]
+    w.byte[1] := byte[_rxbuff][_rxptr++]
 
-PUB rdword_msbf{}: w
+PUB rdword_msbf(): w
 ' Read word from buffer, most-significant byte first
-    w.byte[1] := byte[_ptr_dest][_ptr++]
-    w.byte[0] := byte[_ptr_dest][_ptr++]
+    w.byte[1] := byte[_rxbuff][_rxptr++]
+    w.byte[0] := byte[_rxbuff][_rxptr++]
 
 PUB wrblk_lsbf(ptr_buff, len): ptr
 ' Write block of data, least-significant (first) byte first
-    bytemove(_ptr_dest+_ptr, ptr_buff, len)
-    _ptr += len
+    bytemove(_txbuff+_txptr, ptr_buff, len)
+    _txptr += len
     return len
 
 PUB wrblk_msbf(ptr_buff, len): ptr
 ' Write block of data, most-significant (last) byte first
     repeat ptr from (len-1) to 0
-        byte[_ptr_dest][_ptr++] := byte[ptr_buff][ptr]
+        byte[_txbuff][_txptr++] := byte[ptr_buff][ptr]
     return len
 
 PUB wr_byte(b): len
 ' Write byte to buffer
 '   Increment offset
-    byte[_ptr_dest][_ptr++] := b
+    byte[_txbuff][_txptr++] := b
     return 1
 
 PUB wr_byte_x(b, nr_bytes): len
 ' Repeatedly write byte 'b', 'nr_bytes' times
     repeat nr_bytes
-        byte[_ptr_dest][_ptr++] := b
+        byte[_txbuff][_txptr++] := b
     return nr_bytes
 
 PUB wrlong_lsbf(l): len | i
 ' Write long to buffer, least-significant byte first
 '   Increment offset
     repeat i from 0 to 3
-        byte[_ptr_dest][_ptr++] := l.byte[i]
+        byte[_txbuff][_txptr++] := l.byte[i]
     return 4
 
 PUB wrlong_msbf(l): len | i
 ' Write long to buffer, most-significant byte first
 '   Increment offset
     repeat i from 3 to 0
-        byte[_ptr_dest][_ptr++] := l.byte[i]
+        byte[_txbuff][_txptr++] := l.byte[i]
     return 4
 
 PUB wrword_lsbf(w): len
 ' Write word to buffer, least-significant byte first
 '   Increment offset
-    byte[_ptr_dest][_ptr++] := w.byte[0]
-    byte[_ptr_dest][_ptr++] := w.byte[1]
+    byte[_txbuff][_txptr++] := w.byte[0]
+    byte[_txbuff][_txptr++] := w.byte[1]
     return 2
 
 PUB wrword_msbf(w): len
 ' Write word to buffer, most-significant byte first
 '   Increment offset
-    byte[_ptr_dest][_ptr++] := w.byte[1]
-    byte[_ptr_dest][_ptr++] := w.byte[0]
+    byte[_txbuff][_txptr++] := w.byte[1]
+    byte[_txbuff][_txptr++] := w.byte[0]
     return 2
+
+DAT
+{
+Copyright 2023 Jesse Burt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+}
 
