@@ -4,8 +4,8 @@
     Author: Jesse Burt
     Description: Transmission Control Protocol
     Started Apr 5, 2022
-    Updated Sep 10, 2022
-    Copyright 2022
+    Updated Feb 12, 2023
+    Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
 }
@@ -76,6 +76,31 @@ VAR
     byte _options_len
     byte _tcp_winscale
     byte _tcp_sack_perm
+
+OBJ
+
+    crc:    "math.crc"
+
+PUB tcp_calc_pseudo_header_cksum(ip_src, ip_dest, l4_proto, len): ck | phdr[12/4]
+' Calculate TCP pseudo-header checksum
+'   ip_src: IPv4 source address
+'   ip_dest: IPv4 destination address
+'   l4_proto: layer-4 protocol (set to TCP unless you have a need to otherwise)
+'   len: TCP segment length (header + data)
+    bytefill(@phdr, 0, 12)
+    phdr[0] := ip_src                           ' 0..3
+    phdr[1] := ip_dest                          ' 4..7
+    phdr.byte[9] := l4_proto                    ' 9 (8 = reserved)
+    phdr.byte[10] := len.byte[1]                ' 10..11
+    phdr.byte[11] := len.byte[0]
+    ck := crc.inet_chksum(@phdr, 12, $00)
+
+PUB tcp_reply{}
+' Set up the TCP segment to "reply" to the last received segment
+    tcp_swap_ports{}
+    tcp_swap_seq_nrs{}
+    tcp_inc_ack_nr(1)
+    tcp_set_chksum(0)
 
 PUB tcp_reset{}
 ' Reset/initialize all stored data to 0
