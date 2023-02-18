@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Protocol
     Started Feb 27, 2022
-    Updated Jan 15, 2022
+    Updated Feb 17, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -56,6 +56,8 @@ CON
 
 VAR
 
+    long _my_ip
+    word _ip_start
     byte _ip_data[IP_HDR_SZ]
 
 PUB ip_dest_addr{}: addr | i
@@ -175,6 +177,14 @@ PUB ip_set_msg_ident(id)
     _ip_data[IP_IDENT_M] := id.byte[1]
     _ip_data[IP_IDENT_L] := id.byte[0]
 
+PUB ip_set_my_ip(o3, o2, o1, o0)
+' Set this node's IP address
+'   o3..o0: IP address octets, MSB to LSB (e.g. 192,168,1,10)
+    _my_ip.byte[0] := o3
+    _my_ip.byte[1] := o2
+    _my_ip.byte[2] := o1
+    _my_ip.byte[3] := o0
+
 PUB ip_set_src_addr(addr) | i
 ' Set source/originator of IP datagram
     repeat i from 0 to 3
@@ -199,6 +209,10 @@ PUB ipv4_new(l4_proto, src_ip, dest_ip) | i
         _ip_data[IP_DSTIP+i] := dest_ip.byte[i]
     wr_ip_header{}
 
+PUB my_ip(): addr | i
+' Get this node's IP address
+    bytemove(@addr, @_my_ip, IPV4ADDR_LEN)
+
 PUB reset_ipv4{}
 ' Reset all values to defaults for an IPV4 header
     bytefill(@_ip_data, 0, IP_HDR_SZ)
@@ -211,6 +225,7 @@ PUB reset_ipv4{}
 
 PUB rd_ip_header{}: ptr
 ' Read IP header from buffer
+    _ip_start := fifo_rd_ptr()
     rdblk_lsbf(@_ip_data, IP_HDR_SZ)
     return fifo_wr_ptr{}
 

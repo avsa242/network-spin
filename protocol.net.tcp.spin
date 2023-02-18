@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Transmission Control Protocol
     Started Apr 5, 2022
-    Updated Feb 12, 2023
+    Updated Feb 17, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -95,11 +95,12 @@ PUB tcp_calc_pseudo_header_cksum(ip_src, ip_dest, l4_proto, len): ck | phdr[12/4
     phdr.byte[11] := len.byte[0]
     ck := crc.inet_chksum(@phdr, 12, $00)
 
-PUB tcp_reply{}
+PUB tcp_reply(ack_inc)
 ' Set up the TCP segment to "reply" to the last received segment
+'   ack_inc: value to increase the outgoing acknowledgement number by
     tcp_swap_ports{}
     tcp_swap_seq_nrs{}
-    tcp_inc_ack_nr(1)
+    tcp_inc_ack_nr(ack_inc)
     tcp_set_chksum(0)
 
 PUB tcp_reset{}
