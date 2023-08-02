@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Universal Datagram Protocol
     Started Feb 28, 2022
-    Updated Jan 15, 2023
+    Updated Aug 2, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -18,23 +18,23 @@ CON
     { limits }
     UDP_MSG_SZ      = 8                         ' message length
 
-    { offsets within header }
-    UDP_ABS_ST      = IP_DSTIP + 4              ' add to the below for abs. position within frame
+OBJ
 
-    UDP_SRCPORT     = 0
-     UDP_SRCPORT_L  = 1
-    UDP_DESTPORT    = 2
-     UDP_DESTPORT_L = 3
-    UDP_DGRAMLEN    = 4
-     UDP_DGRAMLEN_L = 5
-    UDP_CKSUM       = 6
-     UDP_CKSUM_L    = 7
+    { virtual instance of network device object }
+    net=    NETDEV_OBJ
 
 VAR
 
+    { obj pointer }
+    long _dev
+
     byte _udp_data[UDP_MSG_SZ]
 
-PUB udp_new(src_port, dest_port)
+pub init(optr)
+' Set pointer to network device object
+    _dev := optr
+
+PUB new(src_port, dest_port)
 ' Construct new UDP datagram
     bytefill(@_udp_data, 0, UDP_MSG_SZ)
     _udp_data[UDP_SRCPORT] := src_port.byte[1]
@@ -44,46 +44,46 @@ PUB udp_new(src_port, dest_port)
 
     wr_udp_header{}
 
-PUB udp_set_chksum(ck)
+PUB set_chksum(ck)
 ' Set checksum (optional; set to 0 to ignore)
     _udp_data[UDP_CKSUM] := ck.byte[1]
     _udp_data[UDP_CKSUM_L] := ck.byte[0]
 
-PUB udp_set_dest_port(p)
+PUB set_dest_port(p)
 ' Set destination port field
     _udp_data[UDP_DESTPORT] := p.byte[1]
     _udp_data[UDP_DESTPORT_L] := p.byte[0]
 
-PUB udp_set_dgram_len(len)
+PUB set_dgram_len(len)
 ' Set length of UDP datagram
     _udp_data[UDP_DGRAMLEN] := len.byte[1]
     _udp_data[UDP_DGRAMLEN_L] := len.byte[0]
 
-PUB udp_set_src_port(p)
+PUB set_src_port(p)
 ' Set source port field
     _udp_data[UDP_SRCPORT] := p.byte[1]
     _udp_data[UDP_SRCPORT_L] := p.byte[0]
 
-PUB udp_chksum{}: ck
+PUB chksum{}: ck
 ' Get checksum
     ck.byte[1] := _udp_data[UDP_CKSUM]
     ck.byte[0] := _udp_data[UDP_CKSUM_L]
 
-PUB udp_dest_port{}: p
+PUB dest_port{}: p
 ' Get destination port field
     p.byte[1] := _udp_data[UDP_DESTPORT]
     p.byte[0] := _udp_data[UDP_DESTPORT_L]
 
-PUB udp_dgram_len{}: len
+PUB dgram_len{}: len
 ' Get length of UDP datagram
     len.byte[1] := _udp_data[UDP_DGRAMLEN]
     len.byte[0] := _udp_data[UDP_DGRAMLEN_L]
 
-PUB udp_hdr_len{}: len
+PUB hdr_len{}: len
 ' Get current header length
     return UDP_MSG_SZ
 
-PUB udp_src_port{}: p
+PUB src_port{}: p
 ' Get source port field
     p.byte[1] := _udp_data[UDP_SRCPORT]
     p.byte[0] := _udp_data[UDP_SRCPORT_L]
@@ -95,14 +95,14 @@ PUB reset_udp{}
 PUB rd_udp_header{}
 ' Read/disassemble UDP header
 '   Returns: length of read header, in bytes
-    rdblk_lsbf(@_udp_data, UDP_MSG_SZ)
-    return fifo_wr_ptr{}
+    net[_dev].rdblk_lsbf(@_udp_data, UDP_MSG_SZ)
+    return net[_dev].fifo_wr_ptr{}
 
 PUB wr_udp_header{}: ptr
 ' Write/assemble UDP header
 '   Returns: length of assembled header, in bytes
-    wrblk_lsbf(@_udp_data, UDP_MSG_SZ)
-    return fifo_wr_ptr{}
+    net[_dev].wrblk_lsbf(@_udp_data, UDP_MSG_SZ)
+    return net[_dev].fifo_wr_ptr{}
 
 DAT
 

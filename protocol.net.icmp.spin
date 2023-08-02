@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Control Message Protocol
     Started Mar 31, 2022
-    Updated Jan 15, 2023
+    Updated Aug 2, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -18,15 +18,6 @@ CON
     { limits }
     ICMP_MSG_SZ     = 8                         ' message length
     ICMP_ECHO_MSG_SZ= 12                        ' echo metadata (_not_ echoed data)
-
-    { offsets within header }
-    ICMP_ABS_ST     = IP_DSTIP + 4              ' add to the below for abs. position within frame
-
-    ICMP_T          = 0
-    ICMP_CD         = 1
-    ICMP_CKSUM      = 2
-     ICMP_CKSUM_L   = 3
-    ICMP_DATA       = 50                        ' data for ECHO messages
 
     { ECHO: offsets within metadata }
     ICMP_IDENT_M    = 0
@@ -74,7 +65,15 @@ CON
     NOPERM_PREC     = 14                        ' host precedence violation
     PREC_CUTOFF     = 15                        ' precedence cutoff in effect
 
+OBJ
+
+    { virtual instance of network device object }
+    net=    NETDEV_OBJ
+
 VAR
+
+    { obj pointer }
+    long _dev
 
     long _icmp_tm_stamp
     word _icmp_ident, _icmp_seq_nr
@@ -83,89 +82,93 @@ VAR
     byte _icmp_data[ICMP_MSG_SZ]
     byte _icmp_echo[ICMP_ECHO_MSG_SZ]
 
-PUB icmp_echo_reply{}
+pub init(optr)
+' Set pointer to network device object
+    _dev := optr
+
+PUB echo_reply{}
 ' Set up for an echo reply message
     _icmp_data[ICMP_CKSUM] := 0
     _icmp_data[ICMP_CKSUM_L] := 0
     _icmp_data[ICMP_T] := ECHO_REPL
     wr_icmp_msg{}
 
-PUB icmp_set_chksum(ck)
+PUB set_chksum(ck)
 ' Set checksum (optional; set to 0 to ignore)
     _icmp_data[ICMP_CKSUM] := ck.byte[0]
     _icmp_data[ICMP_CKSUM_L] := ck.byte[1]
 
-PUB icmp_set_code(icmp_c)
+PUB set_code(icmp_c)
 ' Set ICMP subtype
     _icmp_data[ICMP_CD] := icmp_c
 
-PUB icmp_set_ident(iid)
+PUB set_ident(iid)
 ' Set ICMP identifier
     _icmp_echo[ICMP_IDENT_M] := iid.byte[0]
     _icmp_echo[ICMP_IDENT_L] := iid.byte[1]
 
-PUB icmp_set_msg_type(msg_t)
+PUB set_msg_type(msg_t)
 ' Set ICMP message type
     _icmp_data[ICMP_T] := msg_t
 
-PUB icmp_set_seq_nr(seq_nr)
+PUB set_seq_nr(seq_nr)
 ' Set ICMP sequence number
     _icmp_echo[ICMP_SEQNR_M] := seq_nr.byte[0]
     _icmp_echo[ICMP_SEQNR_L] := seq_nr.byte[1]
 
-PUB icmp_set_timestamp(tm) | i
+PUB set_timestamp(tm) | i
 ' Set timestamp for ICMP message
     repeat i from 0 to 3
         _icmp_echo[ICMP_TMSTMP_M+i] := tm.byte[i]
 
-PUB icmp_chksum{}: ck
+PUB chksum{}: ck
 ' Get checksum
     ck.byte[0] := _icmp_data[ICMP_CKSUM]
     ck.byte[1] := _icmp_data[ICMP_CKSUM_L]
 
-PUB icmp_code{}: icmp_c
+PUB code{}: icmp_c
 ' Get ICMP subtype/code
     icmp_c := _icmp_data[ICMP_CD]
 
-PUB icmp_ident{}: iid
+PUB ident{}: iid
 ' Get ICMP identifier
     iid.byte[0] := _icmp_echo[ICMP_IDENT_M]
     iid.byte[1] := _icmp_echo[ICMP_IDENT_L]
 
-PUB icmp_msg_len{}: len
+PUB msg_len{}: len
 ' Get length of currently assembled ICMP message
     return _icmp_msg_len
 
-PUB icmp_msg_type{}: msg_t
+PUB msg_type{}: msg_t
 ' Get ICMP message type
     msg_t := _icmp_data[ICMP_T]
 
-PUB icmp_seq_nr{}: seq_nr
+PUB seq_nr{}: seq_nr
 ' Get ICMP sequence number
     seq_nr.byte[0] := _icmp_echo[ICMP_SEQNR_M]
     seq_nr.byte[1] := _icmp_echo[ICMP_SEQNR_L]
 
-PUB icmp_timestamp{}: tm
+PUB timestamp{}: tm
 ' Get timestamp from ICMP message
     return _icmp_tm_stamp
 
 PUB rd_icmp_msg{}: ptr
 ' Read/disassemble ICMP message
 '   Returns: length of read message, in bytes
-    rdblk_lsbf(@_icmp_data, 4)
-    if (_icmp_data[ICMP_T] == ECHO_REQ)
-        rdblk_lsbf(@_icmp_echo, ICMP_ECHO_MSG_SZ)
-    return fifo_wr_ptr{}
+    net[_dev].rdblk_lsbf(@_icmp_data, 4)
+    if ( _icmp_data[ICMP_T] == ECHO_REQ )
+        net[_dev].rdblk_lsbf(@_icmp_echo, ICMP_ECHO_MSG_SZ)
+    return net[_dev].fifo_wr_ptr{}
 
 PUB wr_icmp_msg{}: ptr | st
 ' Write/assemble ICMP message
 '   Returns: length of assembled message, in bytes
-    st := fifo_wr_ptr{}
-    wrblk_lsbf(@_icmp_data, 4)
-    if (_icmp_data[ICMP_T] == ECHO_REPL)
-        wrblk_lsbf(@_icmp_echo, ICMP_ECHO_MSG_SZ)
-    _icmp_msg_len := fifo_wr_ptr{} - st
-    return fifo_wr_ptr{}
+    st := net[_dev].fifo_wr_ptr{}
+    net[_dev].wrblk_lsbf(@_icmp_data, 4)
+    if ( _icmp_data[ICMP_T] == ECHO_REPL )
+        net[_dev].wrblk_lsbf(@_icmp_echo, ICMP_ECHO_MSG_SZ)
+    _icmp_msg_len := net[_dev].fifo_wr_ptr{} - st
+    return net[_dev].fifo_wr_ptr{}
 
 DAT
 

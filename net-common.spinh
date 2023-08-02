@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Constants common to multiple networking objects
     Started Mar 12, 2022
-    Updated Jan 14, 2023
+    Updated Aug 2, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -23,6 +23,111 @@ CON
     ETYP_ARP                = $0806
 
     BCAST_IP                = $FF_FF_FF_FF      ' broadcast IP
+
+
+    { eth-ii }
+    ETH_DEST        = 0
+    ETH_SRC         = ETH_DEST+MACADDR_LEN
+    ETH_TYPE_M      = ETH_SRC+MACADDR_LEN
+    ETH_TYPE_L      = ETH_TYPE_M+1
+    ETH_TYPE        = ETH_TYPE_M
+
+    { ip }
+    IP_ABS_ST       = ETH_TYPE+2                ' add to the below for abs. position within frame
+
+    IP_VERS         = 0
+    IP_HDRLEN       = 0
+    IP_DSCP_ECN     = 1
+    IP_TLEN         = 2
+    IP_TLEN_M       = 2
+    IP_TLEN_L       = 3
+    IP_IDENT_M      = 4
+    IP_IDENT_L      = 5
+    IP_FLAGS_FRGH   = 6
+    IP_FRGL         = 7
+    IP_T2L          = 8
+    IP_PRTCL        = 9
+    IP_CKSUM        = 10
+    IP_CKSUM_M      = 10
+    IP_CKSUM_L      = 11
+    IP_SRCIP        = 12'..15
+    IP_DSTIP        = 16'..19
+
+
+    { arp }
+    ARP_ABS_ST      = ETH_TYPE+2                ' add to the below for abs. position within frame
+
+    ARP_HW_T_M      = 0                         ' 16b/2B
+    ARP_HW_T_L      = ARP_HW_T_M+1
+    ARP_PROTO_T_M   = 2                         ' 16b/2B
+    ARP_PROTO_T_L   = ARP_PROTO_T_M+1
+    ARP_HWADDR_LEN  = 4                         ' 8b/1B
+    ARP_PRADDR_LEN  = 5                         ' 8b/1B
+    ARP_OP_CODE_M   = 6                         ' 16b/2B
+    ARP_OP_CODE_L   = 7
+    ARP_SNDR_HWADDR = 8'..13                    ' 48b/6B
+    ARP_SNDR_PRADDR = 14'..17                   ' 32b/4B
+    ARP_TGT_HWADDR  = 18'..23                   ' 48b/6B
+    ARP_TGT_PRADDR  = 24'..27                   ' 32b/4B
+
+
+    { udp }
+    UDP_ABS_ST      = IP_DSTIP + 4              ' add to the below for abs. position within frame
+
+    UDP_SRCPORT     = 0
+     UDP_SRCPORT_L  = 1
+    UDP_DESTPORT    = 2
+     UDP_DESTPORT_L = 3
+    UDP_DGRAMLEN    = 4
+     UDP_DGRAMLEN_L = 5
+    UDP_CKSUM       = 6
+     UDP_CKSUM_L    = 7
+
+
+    { bootp }
+    BOOTP_ABS_ST        = UDP_CKSUM + 2         ' add to the below for abs. position within frame
+
+    HDWADDRLEN_MAX      = 16
+    SRV_HOSTN_LEN       = 64
+
+    BOOTPM_OP           = 0
+    BOOTPM_CLI_HW_T     = 1
+    BOOTPM_HW_ADDR_LEN  = 2
+    BOOTPM_HOP          = 3
+    BOOTPM_XID          = 4
+    BOOTPM_LSTM_EL_M    = 8
+     BOOTPM_LSTM_EL_L   = 9
+    BOOTPM_FLAGS        = 10
+     BOOTPM_FLAGS_L     = 11
+    BOOTPM_CIP          = 12
+    BOOTPM_YIP          = BOOTPM_CIP+IPV4ADDR_LEN
+    BOOTPM_SIP          = BOOTPM_YIP+IPV4ADDR_LEN
+    BOOTPM_GIP          = BOOTPM_SIP+IPV4ADDR_LEN
+    BOOTPM_CLI_MAC      = BOOTPM_GIP+IPV4ADDR_LEN
+    BOOTPM_HOSTNM       = BOOTPM_CLI_MAC + (HDWADDRLEN_MAX-MACADDR_LEN)
+    BOOTPM_FILENM       = BOOTPM_HOSTNM + SRV_HOSTN_LEN
+
+    { icmp }
+    ICMP_ABS_ST     = IP_DSTIP + 4              ' add to the below for abs. position within frame
+
+    ICMP_T          = 0
+    ICMP_CD         = 1
+    ICMP_CKSUM      = 2
+     ICMP_CKSUM_L   = 3
+    ICMP_DATA       = 50                        ' data for ECHO messages
+
+    { tcp }
+    TCPH_SRCP       = 0
+    TCPH_DESTP      = TCPH_SRCP+2
+    TCPH_SEQNR      = TCPH_DESTP+2
+    TCPH_ACKNR      = TCPH_SEQNR+4
+    TCPH_HDRLEN     = TCPH_ACKNR+4
+    TCPH_FLAGS      = TCPH_ACKNR+4
+    TCPH_WIN        = TCPH_FLAGS+2
+    TCPH_CKSUM      = TCPH_WIN+2
+    TCPH_URGPTR     = TCPH_CKSUM+2
+    TCPH_OPTS       = TCPH_URGPTR+2
+
 
 DAT
 
