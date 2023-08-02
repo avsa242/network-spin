@@ -198,16 +198,47 @@ PUB ip_set_version(ver)
 ' Set IP version
     _ip_data[IP_VERS] |= (ver << 4)
 
+PUB ip_start{}: p
+' Get pointer to start of IP header
+    return _ip_start
+
 PUB ipv4_new(l4_proto, src_ip, dest_ip) | i
 ' Construct an IPV4 header
 '   l4_proto: OSI Layer-4 protocol (TCP, UDP, *ICMP)
+    _ip_start := fifo_wr_ptr{}
     reset_ipv4{}
     _ip_data[IP_PRTCL] := l4_proto
     repeat i from 0 to 3
         _ip_data[IP_SRCIP+i] := src_ip.byte[i]
     repeat i from 0 to 3
         _ip_data[IP_DSTIP+i] := dest_ip.byte[i]
-    wr_ip_header{}
+'    wr_ip_header{}
+
+PUB ipv4_reply{}: p
+' Set up/write IPv4 header as a reply to last received header
+    ip_set_hdr_chk(0)                         ' init header checksum to 0
+'    fifo_wr_ptr()
+    ipv4_new(ip_l4_proto(), my_ip(), ip_src_addr())
+'    return fifo_wr_ptr()
+
+pub tle
+
+    return ip_start() + IP_TLEN
+
+PUB ipv4_update_chksum(len) | ptr_tmp
+' Update IP header with checksum
+'   len: length of IP datagram (header plus payload)
+    ptr_tmp := fifo_wr_ptr()                ' cache current pointer
+
+    { update IP header with specified length and calculate checksum }
+    ip_set_dgram_len(len)
+    fifo_set_wr_ptr(TXSTART+IP_ABS_ST+IP_TLEN)
+'    fifo_set_wr_ptr(ip_start() + IP_TLEN)
+    wrword_lsbf(ip_dgram_len())
+
+    inet_chksum(IP_ABS_ST, IP_ABS_ST+IP_HDR_SZ, IP_ABS_ST+IP_CKSUM)
+
+    fifo_set_wr_ptr(ptr_tmp)                         ' restore pointer pos
 
 PUB my_ip(): addr | i
 ' Get this node's IP address
@@ -225,7 +256,7 @@ PUB reset_ipv4{}
 
 PUB rd_ip_header{}: ptr
 ' Read IP header from buffer
-    _ip_start := fifo_rd_ptr()
+    _ip_start := fifo_rd_ptr{}
     rdblk_lsbf(@_ip_data, IP_HDR_SZ)
     return fifo_wr_ptr{}
 
