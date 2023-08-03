@@ -55,6 +55,7 @@ PUB new(mac_src, mac_dest, ether_t)
 
 PUB reply{}: pos
 ' Set up/write Ethernet II frame as a reply to last received frame
+    net[_dev].start_frame()
     bytemove(@_ethii_data, @_ethii_data + ETH_SRC, MACADDR_LEN)
     bytemove(@_ethii_data + ETH_SRC, @net[_dev]._mac_local, MACADDR_LEN)
     wr_ethii_frame{}
