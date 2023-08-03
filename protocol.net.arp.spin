@@ -96,7 +96,7 @@ PUB reply() | ip_tmp, mac_tmp[2]
 
     { update the sender addresses to the last received target IP, and the locally set MAC }
     bytemove(@_arp_data[ARP_SNDR_PRADDR], @_arp_data[ARP_TGT_PRADDR], IPV4ADDR_LEN)
-    bytemove(@_arp_data[ARP_SNDR_HWADDR], @_mac_local, MACADDR_LEN)
+    bytemove(@_arp_data[ARP_SNDR_HWADDR], @net[_dev]._mac_local, MACADDR_LEN)
 
     { update the target addresses to the temporarily stored sender addresses }
     bytemove(@_arp_data[ARP_TGT_PRADDR], @ip_tmp, IPV4ADDR_LEN)

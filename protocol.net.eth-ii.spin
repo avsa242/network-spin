@@ -56,9 +56,9 @@ PUB new(mac_src, mac_dest, ether_t)
 PUB reply{}: pos
 ' Set up/write Ethernet II frame as a reply to last received frame
     bytemove(@_ethii_data, @_ethii_data + ETH_SRC, MACADDR_LEN)
-    bytemove(@_ethii_data + ETH_SRC, @_mac_local, MACADDR_LEN)
+    bytemove(@_ethii_data + ETH_SRC, @net[_dev]._mac_local, MACADDR_LEN)
     wr_ethii_frame{}
-    return fifo_wr_ptr{}
+    return net[_dev].fifo_wr_ptr{}
 
 PUB src_addr{}: addr
 ' Get source address of ethernet frame
