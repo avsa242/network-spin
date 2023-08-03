@@ -168,13 +168,18 @@ PUB set_msg_ident(id)
     _ip_data[IP_IDENT_M] := id.byte[1]
     _ip_data[IP_IDENT_L] := id.byte[0]
 
-PUB ip_set_my_ip(o3, o2, o1, o0)
+PUB set_my_ip(o3, o2, o1, o0)
 ' Set this node's IP address
 '   o3..o0: IP address octets, MSB to LSB (e.g. 192,168,1,10)
     _my_ip.byte[0] := o3
     _my_ip.byte[1] := o2
     _my_ip.byte[2] := o1
     _my_ip.byte[3] := o0
+
+PUB set_my_ip32(addr)
+' Set this node's IP address, as a 32-bit number
+'   addr: IP address in 32bit form, MSB to LSB (e.g. for 192.168.1.10, $c0_a8_01_0a
+    bytemove(@_my_ip, @addr, IPV4ADDR_LEN)
 
 PUB set_src_addr(addr) | i
 ' Set source/originator of IP datagram
@@ -210,7 +215,7 @@ PUB reply(): p
     set_hdr_chk(0)                         ' init header checksum to 0
 '    fifo_wr_ptr()
     new(l4_proto(), my_ip(), src_addr())
-'    return fifo_wr_ptr()
+    return net[_dev].fifo_wr_ptr()
 
 pub tle
 
