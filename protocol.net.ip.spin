@@ -189,7 +189,7 @@ PUB set_version(ver)
 ' Set IP version
     _ip_data[IP_VERS] |= (ver << 4)
 
-PUB ip_start(): p
+PUB start_pos(): p
 ' Get pointer to start of IP header
     return _ip_start
 
@@ -203,7 +203,7 @@ PUB new(l4_proto, src_ip, dest_ip) | i
         _ip_data[IP_SRCIP+i] := src_ip.byte[i]
     repeat i from 0 to 3
         _ip_data[IP_DSTIP+i] := dest_ip.byte[i]
-'    wr_ip_header()
+    wr_ip_header()
 
 PUB reply(): p
 ' Set up/write IPv4 header as a reply to last received header
@@ -214,7 +214,7 @@ PUB reply(): p
 
 pub tle
 
-    return ip_start() + IP_TLEN
+    return start_pos() + IP_TLEN
 
 PUB update_chksum(len) | ptr_tmp
 ' Update IP header with checksum
@@ -224,7 +224,7 @@ PUB update_chksum(len) | ptr_tmp
     { update IP header with specified length and calculate checksum }
     set_dgram_len(len)
     net[_dev].fifo_set_wr_ptr(TXSTART+IP_ABS_ST+IP_TLEN)
-'    fifo_set_wr_ptr(ip_start() + IP_TLEN)
+'    fifo_set_wr_ptr(start_pos() + IP_TLEN)
     net[_dev].wrword_lsbf(dgram_len())
 
     net[_dev].inet_chksum(IP_ABS_ST, IP_ABS_ST+IP_HDR_SZ, IP_ABS_ST+IP_CKSUM)
