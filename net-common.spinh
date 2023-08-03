@@ -27,9 +27,9 @@ CON
 
     { eth-ii }
     ETH_DEST        = 0
-    ETH_SRC         = ETH_DEST+MACADDR_LEN
-    ETH_TYPE_M      = ETH_SRC+MACADDR_LEN
-    ETH_TYPE_L      = ETH_TYPE_M+1
+    ETH_SRC         = 6
+    ETH_TYPE_M      = 12
+    ETH_TYPE_L      = 13
     ETH_TYPE        = ETH_TYPE_M
 
     { ip }
@@ -58,9 +58,9 @@ CON
     ARP_ABS_ST      = ETH_TYPE+2                ' add to the below for abs. position within frame
 
     ARP_HW_T_M      = 0                         ' 16b/2B
-    ARP_HW_T_L      = ARP_HW_T_M+1
+    ARP_HW_T_L      = 1
     ARP_PROTO_T_M   = 2                         ' 16b/2B
-    ARP_PROTO_T_L   = ARP_PROTO_T_M+1
+    ARP_PROTO_T_L   = 3
     ARP_HWADDR_LEN  = 4                         ' 8b/1B
     ARP_PRADDR_LEN  = 5                         ' 8b/1B
     ARP_OP_CODE_M   = 6                         ' 16b/2B

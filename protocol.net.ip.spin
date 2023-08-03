@@ -212,8 +212,7 @@ PUB new(l4_proto, src_ip, dest_ip) | i
 
 PUB reply(): p
 ' Set up/write IPv4 header as a reply to last received header
-    set_hdr_chk(0)                         ' init header checksum to 0
-'    fifo_wr_ptr()
+    set_hdr_chk(0)                              ' init header checksum to 0
     new(l4_proto(), my_ip(), src_addr())
     return net[_dev].fifo_wr_ptr()
 
@@ -224,17 +223,15 @@ pub tle
 PUB update_chksum(len) | ptr_tmp
 ' Update IP header with checksum
 '   len: length of IP datagram (header plus payload)
-    ptr_tmp := net[_dev].fifo_wr_ptr()                ' cache current pointer
+    ptr_tmp := net[_dev].fifo_wr_ptr()          ' save the current pointer
 
     { update IP header with specified length and calculate checksum }
     set_dgram_len(len)
-    net[_dev].fifo_set_wr_ptr(TXSTART+IP_ABS_ST+IP_TLEN)
-'    fifo_set_wr_ptr(start_pos() + IP_TLEN)
-    net[_dev].wrword_lsbf(dgram_len())
-
+    net[_dev].fifo_set_wr_ptr(start_pos() + IP_TLEN)
+    net[_dev].wrblk_lsbf(@_ip_data[IP_TLEN], 2)
     net[_dev].inet_chksum(IP_ABS_ST, IP_ABS_ST+IP_HDR_SZ, IP_ABS_ST+IP_CKSUM)
 
-    net[_dev].fifo_set_wr_ptr(ptr_tmp)                         ' restore pointer pos
+    net[_dev].fifo_set_wr_ptr(ptr_tmp)          ' restore pointer pos
 
 PUB my_ip(): addr | i
 ' Get this node's IP address
