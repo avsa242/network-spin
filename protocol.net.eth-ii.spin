@@ -47,6 +47,7 @@ PUB ethertype{}: eth_t
 
 PUB new(mac_src, mac_dest, ether_t)
 ' Start new ethernet-II frame
+    net[_dev].start_frame()
     bytemove(@_ethii_data, mac_dest, MACADDR_LEN)
     bytemove(@_ethii_data + ETH_SRC, mac_src, MACADDR_LEN)
     _ethii_data[ETH_TYPE_M] := ether_t.byte[1]
