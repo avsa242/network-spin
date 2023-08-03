@@ -41,7 +41,7 @@ OBJ
 VAR
 
     { obj pointer }
-    long _dev
+    long dev
 
     long _my_ip
     word _ip_start
@@ -49,7 +49,7 @@ VAR
 
 pub init(optr)
 ' Set pointer to network device object
-    _dev := optr
+    dev := optr
 
 PUB dest_addr(): addr | i
 ' Get destination address of IP datagram
@@ -201,7 +201,7 @@ PUB start_pos(): p
 PUB new(l4_proto, src_ip, dest_ip) | i
 ' Construct an IPV4 header
 '   l4_proto: OSI Layer-4 protocol (TCP, UDP, *ICMP)
-    _ip_start := net[_dev].fifo_wr_ptr()
+    _ip_start := net[dev].fifo_wr_ptr()
     reset_ipv4()
     _ip_data[IP_PRTCL] := l4_proto
     repeat i from 0 to 3
@@ -214,7 +214,7 @@ PUB reply(): p
 ' Set up/write IPv4 header as a reply to last received header
     set_hdr_chk(0)                              ' init header checksum to 0
     new(l4_proto(), my_ip(), src_addr())
-    return net[_dev].fifo_wr_ptr()
+    return net[dev].fifo_wr_ptr()
 
 pub tle
 
@@ -223,15 +223,15 @@ pub tle
 PUB update_chksum(len) | ptr_tmp
 ' Update IP header with checksum
 '   len: length of IP datagram (header plus payload)
-    ptr_tmp := net[_dev].fifo_wr_ptr()          ' save the current pointer
+    ptr_tmp := net[dev].fifo_wr_ptr()          ' save the current pointer
 
     { update IP header with specified length and calculate checksum }
     set_dgram_len(len)
-    net[_dev].fifo_set_wr_ptr(start_pos() + IP_TLEN)
-    net[_dev].wrblk_lsbf(@_ip_data[IP_TLEN], 2)
-    net[_dev].inet_chksum(IP_ABS_ST, IP_ABS_ST+IP_HDR_SZ, IP_ABS_ST+IP_CKSUM)
+    net[dev].fifo_set_wr_ptr(start_pos() + IP_TLEN)
+    net[dev].wrblk_lsbf(@_ip_data[IP_TLEN], 2)
+    net[dev].inet_chksum(IP_ABS_ST, IP_ABS_ST+IP_HDR_SZ, IP_ABS_ST+IP_CKSUM)
 
-    net[_dev].fifo_set_wr_ptr(ptr_tmp)          ' restore pointer pos
+    net[dev].fifo_set_wr_ptr(ptr_tmp)          ' restore pointer pos
 
 PUB my_ip(): addr | i
 ' Get this node's IP address
@@ -249,15 +249,15 @@ PUB reset_ipv4()
 
 PUB rd_ip_header(): ptr
 ' Read IP header from buffer
-    _ip_start := net[_dev].fifo_rd_ptr()
-    net[_dev].rdblk_lsbf(@_ip_data, IP_HDR_SZ)
-    return net[_dev].fifo_wr_ptr()
+    _ip_start := net[dev].fifo_rd_ptr()
+    net[dev].rdblk_lsbf(@_ip_data, IP_HDR_SZ)
+    return net[dev].fifo_wr_ptr()
 
 PUB wr_ip_header(): ptr
 ' Write IP header to buffer
 '   Returns: length of assembled header, in bytes
-    net[_dev].wrblk_lsbf(@_ip_data, IP_HDR_SZ)
-    return net[_dev].fifo_wr_ptr()
+    net[dev].wrblk_lsbf(@_ip_data, IP_HDR_SZ)
+    return net[dev].fifo_wr_ptr()
 
 DAT
 

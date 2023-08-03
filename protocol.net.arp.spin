@@ -4,13 +4,17 @@
     Author: Jesse Burt
     Description: Address Resolution Protocol
     Started Feb 27, 2022
-    Updated Aug 2, 2023
+    Updated Aug 2, 203
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
 }
 #ifndef NET_COMMON
 #include "net-common.spinh"
+#endif
+
+#ifndef L2_OBJ
+#define L2_OBJ "protocol.net.eth-ii"
 #endif
 
 CON
@@ -43,20 +47,22 @@ CON
 
 OBJ
 
-    { virtual instance of network device object }
-    net=    NETDEV_OBJ
+    { virtual objects }
+    net=    NETDEV_OBJ                          ' network device driver
+    layer2= L2_OBJ                              ' layer 2 object (usually ethernet-ii)
 
 VAR
 
     { obj pointer }
-    long _dev
+    long dev, l2proto
 
     byte _arp_data[ARP_MSG_SZ]
     byte _mac_local[MACADDR_LEN]
 
-pub init(optr)
+pub init(netdev_ptr, l2_ptr)
 ' Set pointer to network device object
-    _dev := optr
+    dev := netdev_ptr
+    l2proto := l2_ptr
 
 PUB hw_addrLen{}: len
 ' Get hardware address length
@@ -88,6 +94,7 @@ PUB proto_type{}: pro
 
 PUB reply() | ip_tmp, mac_tmp[2]
 ' Set up next ARP message to "reply" to the previous
+    layer2[l2proto].reply()
     set_opcode(ARP_REPL)
 
     { temporarily store the current sender addresses }
@@ -96,13 +103,14 @@ PUB reply() | ip_tmp, mac_tmp[2]
 
     { update the sender addresses to the last received target IP, and the locally set MAC }
     bytemove(@_arp_data[ARP_SNDR_PRADDR], @_arp_data[ARP_TGT_PRADDR], IPV4ADDR_LEN)
-    bytemove(@_arp_data[ARP_SNDR_HWADDR], @net[_dev]._mac_local, MACADDR_LEN)
+    bytemove(@_arp_data[ARP_SNDR_HWADDR], @net[dev]._mac_local, MACADDR_LEN)
 
     { update the target addresses to the temporarily stored sender addresses }
     bytemove(@_arp_data[ARP_TGT_PRADDR], @ip_tmp, IPV4ADDR_LEN)
     bytemove(@_arp_data[ARP_TGT_HWADDR], @mac_tmp, MACADDR_LEN)
 
     wr_arp_msg()
+    net[dev].send_frame()
 
 PUB sender_hw_addr{}: ptr_addr
 ' Get sender hardware address
@@ -169,13 +177,13 @@ PUB set_target_proto_addr(addr) | i
 
 PUB rd_arp_msg{}: ptr
 ' Read ARP message
-    net[_dev].rdblk_lsbf(@_arp_data, ARP_MSG_SZ)
-    return net[_dev].fifo_wr_ptr{}
+    net[dev].rdblk_lsbf(@_arp_data, ARP_MSG_SZ)
+    return net[dev].fifo_wr_ptr{}
 
 PUB wr_arp_msg{}: ptr
 ' Write ARP message
-    net[_dev].wrblk_lsbf(@_arp_data, ARP_MSG_SZ)
-    return net[_dev].fifo_wr_ptr{}
+    net[dev].wrblk_lsbf(@_arp_data, ARP_MSG_SZ)
+    return net[dev].fifo_wr_ptr{}
 
 DAT
 {

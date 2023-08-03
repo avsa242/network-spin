@@ -73,7 +73,7 @@ OBJ
 VAR
 
     { obj pointer }
-    long _dev
+    long dev
 
     long _icmp_tm_stamp
     word _icmp_ident, _icmp_seq_nr
@@ -84,7 +84,7 @@ VAR
 
 pub init(optr)
 ' Set pointer to network device object
-    _dev := optr
+    dev := optr
 
 PUB echo_reply{}
 ' Set up for an echo reply message
@@ -155,20 +155,20 @@ PUB timestamp{}: tm
 PUB rd_icmp_msg{}: ptr
 ' Read/disassemble ICMP message
 '   Returns: length of read message, in bytes
-    net[_dev].rdblk_lsbf(@_icmp_data, 4)
+    net[dev].rdblk_lsbf(@_icmp_data, 4)
     if ( _icmp_data[ICMP_T] == ECHO_REQ )
-        net[_dev].rdblk_lsbf(@_icmp_echo, ICMP_ECHO_MSG_SZ)
-    return net[_dev].fifo_wr_ptr{}
+        net[dev].rdblk_lsbf(@_icmp_echo, ICMP_ECHO_MSG_SZ)
+    return net[dev].fifo_wr_ptr{}
 
 PUB wr_icmp_msg{}: ptr | st
 ' Write/assemble ICMP message
 '   Returns: length of assembled message, in bytes
-    st := net[_dev].fifo_wr_ptr{}
-    net[_dev].wrblk_lsbf(@_icmp_data, 4)
+    st := net[dev].fifo_wr_ptr{}
+    net[dev].wrblk_lsbf(@_icmp_data, 4)
     if ( _icmp_data[ICMP_T] == ECHO_REPL )
-        net[_dev].wrblk_lsbf(@_icmp_echo, ICMP_ECHO_MSG_SZ)
-    _icmp_msg_len := net[_dev].fifo_wr_ptr{} - st
-    return net[_dev].fifo_wr_ptr{}
+        net[dev].wrblk_lsbf(@_icmp_echo, ICMP_ECHO_MSG_SZ)
+    _icmp_msg_len := net[dev].fifo_wr_ptr{} - st
+    return net[dev].fifo_wr_ptr{}
 
 DAT
 

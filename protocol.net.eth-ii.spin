@@ -26,13 +26,13 @@ OBJ
 VAR
 
     { obj pointer }
-    long _dev
+    long dev
 
     byte _ethii_data[ETH_FRM_SZ]
 
 pub init(optr)
 ' Set pointer to network device object
-    _dev := optr
+    dev := optr
 
 PUB dest_addr{}: addr
 ' Get destination address of ethernet frame
@@ -47,7 +47,7 @@ PUB ethertype{}: eth_t
 
 PUB new(mac_src, mac_dest, ether_t)
 ' Start new ethernet-II frame
-    net[_dev].start_frame()
+    net[dev].start_frame()
     bytemove(@_ethii_data, mac_dest, MACADDR_LEN)
     bytemove(@_ethii_data + ETH_SRC, mac_src, MACADDR_LEN)
     _ethii_data[ETH_TYPE_M] := ether_t.byte[1]
@@ -56,11 +56,11 @@ PUB new(mac_src, mac_dest, ether_t)
 
 PUB reply{}: pos
 ' Set up/write Ethernet II frame as a reply to last received frame
-    net[_dev].start_frame()
+    net[dev].start_frame()
     bytemove(@_ethii_data, @_ethii_data + ETH_SRC, MACADDR_LEN)
-    bytemove(@_ethii_data + ETH_SRC, @net[_dev]._mac_local, MACADDR_LEN)
+    bytemove(@_ethii_data + ETH_SRC, @net[dev]._mac_local, MACADDR_LEN)
     wr_ethii_frame{}
-    return net[_dev].fifo_wr_ptr{}
+    return net[dev].fifo_wr_ptr{}
 
 PUB src_addr{}: addr
 ' Get source address of ethernet frame
@@ -83,13 +83,13 @@ PUB set_src_addr(ptr_addr)
 PUB rd_ethii_frame{}: ptr
 ' Read ethernet-II frame
 '   Returns: number of bytes read
-    net[_dev].rdblk_lsbf(@_ethii_data, ETH_FRM_SZ)
-    return net[_dev].fifo_wr_ptr{}
+    net[dev].rdblk_lsbf(@_ethii_data, ETH_FRM_SZ)
+    return net[dev].fifo_wr_ptr{}
 
 PUB wr_ethii_frame{}: ptr
 ' Write ethernet-II frame
-    net[_dev].wrblk_lsbf(@_ethii_data, ETH_FRM_SZ)
-    return net[_dev].fifo_wr_ptr{}
+    net[dev].wrblk_lsbf(@_ethii_data, ETH_FRM_SZ)
+    return net[dev].fifo_wr_ptr{}
 
 DAT
 {

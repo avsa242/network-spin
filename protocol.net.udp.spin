@@ -26,7 +26,7 @@ OBJ
 VAR
 
     { obj pointer }
-    long _dev
+    long dev
 
     long _udp_fifo_pos                          ' start of the datagram in the FIFO
 
@@ -34,7 +34,7 @@ VAR
 
 pub init(optr)
 ' Set pointer to network device object
-    _dev := optr
+    dev := optr
 
 PUB new(src_port, dest_port)
 ' Construct new UDP datagram
@@ -97,8 +97,8 @@ PUB reset_udp{}
 PUB rd_udp_header{}
 ' Read/disassemble UDP header
 '   Returns: length of read header, in bytes
-    net[_dev].rdblk_lsbf(@_udp_data, UDP_MSG_SZ)
-    return net[_dev].fifo_wr_ptr{}
+    net[dev].rdblk_lsbf(@_udp_data, UDP_MSG_SZ)
+    return net[dev].fifo_wr_ptr{}
 
 pub start_pos(): p
 ' Get the start position of the last written UDP message in the FIFO
@@ -107,9 +107,9 @@ pub start_pos(): p
 PUB wr_udp_header{}: ptr
 ' Write/assemble UDP header
 '   Returns: length of assembled header, in bytes
-    _udp_fifo_pos := net[_dev].fifo_wr_ptr()    ' save this FIFO position as the start of UDP
-    net[_dev].wrblk_lsbf(@_udp_data, UDP_MSG_SZ)
-    return net[_dev].fifo_wr_ptr{}
+    _udp_fifo_pos := net[dev].fifo_wr_ptr()    ' save this FIFO position as the start of UDP
+    net[dev].wrblk_lsbf(@_udp_data, UDP_MSG_SZ)
+    return net[dev].fifo_wr_ptr{}
 
 DAT
 
