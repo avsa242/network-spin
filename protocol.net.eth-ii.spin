@@ -45,7 +45,7 @@ PUB ethertype{}: eth_t
     eth_t.byte[0] := _ethii_data[ETH_TYPE_L]
     eth_t.byte[1] := _ethii_data[ETH_TYPE_M]
 
-PUB ethii_new(mac_src, mac_dest, ether_t)
+PUB new(mac_src, mac_dest, ether_t)
 ' Start new ethernet-II frame
     bytemove(@_ethii_data, mac_dest, MACADDR_LEN)
     bytemove(@_ethii_data + ETH_SRC, mac_src, MACADDR_LEN)
@@ -53,7 +53,7 @@ PUB ethii_new(mac_src, mac_dest, ether_t)
     _ethii_data[ETH_TYPE_L] := ether_t.byte[0]
     wr_ethii_frame{}
 
-PUB ethii_reply{}: pos
+PUB reply{}: pos
 ' Set up/write Ethernet II frame as a reply to last received frame
     bytemove(@_ethii_data, @_ethii_data + ETH_SRC, MACADDR_LEN)
     bytemove(@_ethii_data + ETH_SRC, @_mac_local, MACADDR_LEN)

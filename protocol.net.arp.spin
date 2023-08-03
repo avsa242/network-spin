@@ -52,6 +52,7 @@ VAR
     long _dev
 
     byte _arp_data[ARP_MSG_SZ]
+    byte _mac_local[MACADDR_LEN]
 
 pub init(optr)
 ' Set pointer to network device object
