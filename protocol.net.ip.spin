@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Protocol
     Started Feb 27, 2022
-    Updated Aug 2, 2023
+    Updated Aug 5, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -129,7 +129,9 @@ PUB set_dest_addr(addr) | i
 
 PUB set_dgram_len(len)
 ' Set total length of IP datagram, in bytes
-'   IP header length + L4 header length + data length
+'   len: L4 header length + data length
+'   NOTE: don't include the 20-bytes of IP header in the length
+    len += IP_HDR_SZ
     _ip_data[IP_TLEN_M] := len.byte[1]
     _ip_data[IP_TLEN_L] := len.byte[0]
 
@@ -222,7 +224,7 @@ pub tle
 
 PUB update_chksum(len) | ptr_tmp
 ' Update IP header with checksum
-'   len: length of IP datagram (header plus payload)
+'   len: length of datagram (layer-4 and datagram only; don't include the 20-byte IP header)
     ptr_tmp := net[dev].fifo_wr_ptr()          ' save the current pointer
 
     { update IP header with specified length and calculate checksum }

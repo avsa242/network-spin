@@ -57,6 +57,8 @@ PUB set_dest_port(p)
 
 PUB set_dgram_len(len)
 ' Set length of UDP datagram
+'   NOTE: Don't include the 8-bytes of the UDP header itself
+    len += UDP_MSG_SZ
     _udp_data[UDP_DGRAMLEN] := len.byte[1]
     _udp_data[UDP_DGRAMLEN_L] := len.byte[0]
 
@@ -77,6 +79,7 @@ PUB dest_port{}: p
 
 PUB dgram_len{}: len
 ' Get length of UDP datagram
+'   NOTE: This length includes the 8-bytes UDP header itself
     len.byte[1] := _udp_data[UDP_DGRAMLEN]
     len.byte[0] := _udp_data[UDP_DGRAMLEN_L]
 
