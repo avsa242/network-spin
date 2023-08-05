@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Universal Datagram Protocol
     Started Feb 28, 2022
-    Updated Aug 2, 2023
+    Updated Aug 5, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -38,7 +38,6 @@ pub init(optr)
 
 PUB new(src_port, dest_port)
 ' Construct new UDP datagram
-    bytefill(@_udp_data, 0, UDP_MSG_SZ)
     _udp_data[UDP_SRCPORT] := src_port.byte[1]
     _udp_data[UDP_SRCPORT_L] := src_port.byte[0]
     _udp_data[UDP_DESTPORT] := dest_port.byte[1]
