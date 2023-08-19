@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Address Resolution Protocol
     Started Feb 27, 2022
-    Updated Aug 2, 203
+    Updated Aug 19, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -21,7 +21,7 @@ CON
 
     { limits }
     ARP_MSG_SZ      = 28                        ' message length
-
+    ENTRIES         = 10                        ' ARP cache entries (RAM usage: n * 11 bytes)
     { hardware types }
     HRD_ETH         = 1                         ' only these first two are
     HRD_IEEE802     = 6                         '   officially supported
@@ -49,25 +49,76 @@ OBJ
 
     { virtual objects }
     net=    NETDEV_OBJ                          ' network device driver
-    layer2= L2_OBJ                              ' layer 2 object (usually ethernet-ii)
+
+    ethii:  "protocol.net.eth-ii"               ' layer 2 object (usually ethernet-ii)
 
 VAR
 
-    { obj pointer }
-    long dev, l2proto
+    { network device obj pointer }
+    long dev
 
+    { ARP message }
     byte _arp_data[ARP_MSG_SZ]
-    byte _mac_local[MACADDR_LEN]
 
-pub init(netdev_ptr, l2_ptr)
+    { ARP table/cache }
+    byte _entry_used[ENTRIES]
+    byte _hw_addr[ENTRIES * MACADDR_LEN]
+    long _proto_addr[ENTRIES]
+
+
+pub init(netdev_ptr)
 ' Set pointer to network device object
     dev := netdev_ptr
-    l2proto := l2_ptr
+    ethii.init(netdev_ptr)
+
+PUB cache_entry(hw_addr, proto_addr): ent_nr
+' Cache an entry in the ARP table
+    { check for an existing entry with this protocol address first }
+    ent_nr := find_entry_by_proto_addr(proto_addr)
+    if ( ent_nr => 0 )
+        { found an existing entry: update it with the new hardware address }
+        bytemove(hw_ent(ent_nr), hw_addr, MACADDR_LEN)
+    else
+        { not found: create a new entry }
+        repeat ent_nr from 0 to (ENTRIES-1)
+            ifnot ( _entry_used[ent_nr] )
+                bytemove(hw_ent(ent_nr), hw_addr, MACADDR_LEN)
+                _proto_addr[ent_nr] := proto_addr
+                _entry_used[ent_nr] := 1
+                return
+        return -1                               ' cache full; no entries available
+
+pub drop_entry(ent_nr)
+' Drop a cached entry from the ARP table
+    bytefill(hw_ent(ent_nr), 0, 6)
+    _proto_addr[ent_nr] := 0
+    _entry_used[ent_nr] := false
+
+pub entry_is_used(ent_nr): f
+' Flag indicating entry in the ARP table is used
+    return ( _entry_used[ent_nr] <> 0 )
+
+pub find_entry_by_proto_addr(proto_addr): ent_nr
+' Find an entry in the ARP table by its protocol address
+'   proto_addr: protocol address (4 bytes)
+'   Returns: entry number in ARP table, or -1 if not found
+    repeat ent_nr from 0 to (ENTRIES-1)
+        if ( entry_is_used(ent_nr) )
+            if ( _proto_addr[ent_nr] == proto_addr )
+                return ent_nr
+
+    return -1
 
 PUB hw_addrLen{}: len
 ' Get hardware address length
 '   Returns: byte
     return _arp_hln
+
+pub hw_ent(ent_nr): p
+' Calculate the pointer to a hardware address in the ARP table, given an entry number
+'   ent_nr: entry number (1..(ENTRIES-1) )
+'   Returns: pointer to hardware address (OUI first)
+    return @_hw_addr+(ent_nr*6)
 
 PUB hw_type{}: hrd
 ' Get hardware/hardware address type
@@ -92,9 +143,16 @@ PUB proto_type{}: pro
     pro.byte[0] := _arp_data[ARP_PROTO_T_L]
     pro.byte[1] := _arp_data[ARP_PROTO_T_M]
 
+pub read_entry(ent_nr): hw, proto
+' Read an entry from the cache
+'   Returns (2 return values):
+'       1) pointer to HW address
+'       2) protocol address
+    return hw_ent(ent_nr), _proto_addr[ent_nr]
+
 PUB reply() | ip_tmp, mac_tmp[2]
 ' Set up next ARP message to "reply" to the previous
-    layer2[l2proto].reply()
+    ethii.reply()
     set_opcode(ARP_REPL)
 
     { temporarily store the current sender addresses }
@@ -179,6 +237,26 @@ PUB rd_arp_msg{}: ptr
 ' Read ARP message
     net[dev].rdblk_lsbf(@_arp_data, ARP_MSG_SZ)
     return net[dev].fifo_wr_ptr{}
+
+pub who_has(my_proto_addr, proto_addr)
+' Send a query for a protocol address
+    ethii.new(@net[dev]._mac_local, @_mac_bcast, ETYP_ARP)
+    set_hw_addr_len(MACADDR_LEN)
+    set_hwtype(HRD_ETH)
+    set_opcode(ARP_REQ)
+    set_proto_addr_len(IPV4ADDR_LEN)
+    set_proto_type(ETYP_IPV4)
+
+    { who has }
+    set_target_hw_addr(@_mac_zero)
+    set_target_proto_addr(proto_addr)
+
+    { tell }
+    set_sender_hw_addr(@net[dev]._mac_local)
+    set_sender_proto_addr(my_proto_addr)
+
+    wr_arp_msg()
+    net[dev].send_frame()
 
 PUB wr_arp_msg{}: ptr
 ' Write ARP message

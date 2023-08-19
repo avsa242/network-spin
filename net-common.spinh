@@ -53,6 +53,18 @@ CON
     IP_SRCIP        = 12'..15
     IP_DSTIP        = 16'..19
 
+    { layer 4 protocols }
+    RSVD            = $00
+    ICMP            = $01
+    IGMP            = $02
+    GGP             = $03
+    IP_IN_IP        = $04
+    TCP             = $06
+    EGP             = $08
+    UDP             = $11
+    ESP             = $32
+    AH              = $33
+
 
     { arp }
     ARP_ABS_ST      = ETH_TYPE+2                ' add to the below for abs. position within frame
@@ -132,6 +144,7 @@ CON
 DAT
 
     _mac_bcast  byte $FF, $FF, $FF, $FF, $FF, $FF
+    _mac_zero   byte 0, 0, 0, 0, 0, 0
 
 #endif
 DAT
