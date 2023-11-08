@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Boot Protocol/Dynamic Host Configuration Protocol
     Started Feb 28, 2022
-    Updated Jan 15, 2023
+    Updated Nov 8, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -17,36 +17,7 @@ CON
 
     { limits }
     BOOTP_MSG_SZ        = 236
-    SRV_HOSTN_LEN       = 64
     BOOT_FN_LEN         = 128
-    HDWADDRLEN_MAX      = 16
-
-    { offsets within message }
-    BOOTP_ABS_ST        = UDP_CKSUM + 2         ' add to the below for abs. position within frame
-
-    BOOTPM_OP           = 0
-    BOOTPM_CLI_HW_T     = 1
-    BOOTPM_HW_ADDR_LEN  = 2
-    BOOTPM_HOP          = 3
-    BOOTPM_XID          = 4
-    BOOTPM_LSTM_EL_M    = 8
-    BOOTPM_LSTM_EL_L    = 9
-    BOOTPM_FLAGS        = 10
-    BOOTPM_FLAGS_M      = 10
-    BOOTPM_FLAGS_L      = 11
-    BOOTPM_CIP          = 12
-    BOOTPM_YIP          = BOOTPM_CIP+IPV4ADDR_LEN
-    BOOTPM_SIP          = BOOTPM_YIP+IPV4ADDR_LEN
-    BOOTPM_GIP          = BOOTPM_SIP+IPV4ADDR_LEN
-    BOOTPM_CLI_MAC      = BOOTPM_GIP+IPV4ADDR_LEN
-    BOOTPM_HOSTNM       = BOOTPM_CLI_MAC + (HDWADDRLEN_MAX-MACADDR_LEN)
-    BOOTPM_FILENM       = BOOTPM_HOSTNM + SRV_HOSTN_LEN
-
-    DHCP_MAGIC_COOKIE   = $63_82_53_63
-    DHCP_MAGIC_COOKIE3  = ((DHCP_MAGIC_COOKIE >> 24) & $FF)
-    DHCP_MAGIC_COOKIE2  = ((DHCP_MAGIC_COOKIE >> 16) & $FF)
-    DHCP_MAGIC_COOKIE1  = ((DHCP_MAGIC_COOKIE >> 8) & $FF)
-    DHCP_MAGIC_COOKIE0  = (DHCP_MAGIC_COOKIE & $FF)
 
     BCAST_BIT           = 15-8                  ' bit 15 of flags, but bit 7 of MSByte
 
@@ -63,6 +34,12 @@ CON
     { Hardware types }
     ETHERNET            = $01
     IEEE802             = $06
+
+    DHCP_MAGIC_COOKIE   = $63_82_53_63
+    DHCP_MAGIC_COOKIE3  = ((DHCP_MAGIC_COOKIE >> 24) & $FF)
+    DHCP_MAGIC_COOKIE2  = ((DHCP_MAGIC_COOKIE >> 16) & $FF)
+    DHCP_MAGIC_COOKIE1  = ((DHCP_MAGIC_COOKIE >> 8) & $FF)
+    DHCP_MAGIC_COOKIE0  = (DHCP_MAGIC_COOKIE & $FF)
 
     { DHCP options }
     HOSTNAME            = $0C
@@ -92,7 +69,15 @@ CON
     DHCPRELEASE         = $07
     DHCPINFORM          = $08
 
+OBJ
+
+    { virtual instance of network device object }
+    net=    NETDEV_OBJ
+
 VAR
+
+    { obj pointer }
+    long dev
 
     long _dhcp_lease_tm
     long _dhcp_renewal_tm
@@ -114,6 +99,10 @@ VAR
     byte _dhcp_msg_t
 
     byte _bootp_data[BOOTP_MSG_SZ]
+
+pub init(optr)
+' Set pointer to network device object
+    dev := optr
 
 PUB bootp_bcast_flag{}: f
 ' Get BOOTP broadcast flag
@@ -370,59 +359,59 @@ PUB reset_bootp{}
 
 PUB rd_bootp_msg{}: ptr
 ' Read BOOTP message, as well as DHCP message, if it exists
-    rdblk_lsbf(@_bootp_data, BOOTP_MSG_SZ)
+    net[dev].rdblk_lsbf(@_bootp_data, BOOTP_MSG_SZ)
 
     { does the message contain a DHCP message? }
-    if (rdlong_msbf{} == DHCP_MAGIC_COOKIE)
+    if ( net[dev].rdlong_msbf{} == DHCP_MAGIC_COOKIE )
         rd_dhcp_msg{}
     else
-        fifo_set_wr_ptr(fifo_wr_ptr{}-4)        ' rewind if it's not DHCP
-    return fifo_wr_ptr{}
+        net[dev].fifo_set_wr_ptr(net[dev].fifo_wr_ptr{}-4)        ' rewind if it's not DHCP
+    return net[dev].fifo_wr_ptr{}
 
 PUB rd_dhcp_msg{}: ptr | t
 ' Read DHCP message
     { read through all TLVs }
     repeat
-        t := rd_byte{}
+        t := net[dev].rd_byte{}
         case t
             MSG_TYPE:
-                rd_byte{}                       ' skip over the length byte
-                _dhcp_msg_t := rd_byte{}
+                net[dev].rd_byte{}                       ' skip over the length byte
+                _dhcp_msg_t := net[dev].rd_byte{}
             DHCP_SRV_ID:
-                rd_byte{}
-                rdblk_lsbf(@_dhcp_srv_ip, IPV4ADDR_LEN)
+                net[dev].rd_byte{}
+                net[dev].rdblk_lsbf(@_dhcp_srv_ip, IPV4ADDR_LEN)
             IP_LEASE_TM:
-                rd_byte{}
-                rdblk_msbf(@_dhcp_lease_tm, 4)
+                net[dev].rd_byte{}
+                net[dev].rdblk_msbf(@_dhcp_lease_tm, 4)
             RENEWAL_TM:
-                rd_byte{}
-                rdblk_msbf(@_dhcp_renewal_tm, 4)
+                net[dev].rd_byte{}
+                net[dev].rdblk_msbf(@_dhcp_renewal_tm, 4)
             REBIND_TM:
-                rd_byte{}
-                rdblk_msbf(@_dhcp_rebind_tm, 4)
+                net[dev].rd_byte{}
+                net[dev].rdblk_msbf(@_dhcp_rebind_tm, 4)
             SUBNET_MASK:
-                rd_byte{}
-                rdblk_lsbf(@_subnet_mask, IPV4ADDR_LEN)
+                net[dev].rd_byte{}
+                net[dev].rdblk_lsbf(@_subnet_mask, IPV4ADDR_LEN)
             BCAST_ADDR:
-                rd_byte{}
-                rdblk_lsbf(@_bcast_ip, IPV4ADDR_LEN)
+                net[dev].rd_byte{}
+                net[dev].rdblk_lsbf(@_bcast_ip, IPV4ADDR_LEN)
             ROUTER:
-                rd_byte{}
-                rdblk_lsbf(@_router_ip, IPV4ADDR_LEN)
+                net[dev].rd_byte{}
+                net[dev].rdblk_lsbf(@_router_ip, IPV4ADDR_LEN)
             DNS:
-                rd_byte{}
-                rdblk_lsbf(@_dns_ip, IPV4ADDR_LEN)
+                net[dev].rd_byte{}
+                net[dev].rdblk_lsbf(@_dns_ip, IPV4ADDR_LEN)
             OPT_END:
-                rd_byte{}
+                net[dev].rd_byte{}
     until (t == OPT_END)    'XXX not safeguarded against bad messages missing the OPT_END ($FF) byte
-    return fifo_wr_ptr{}
+    return net[dev].fifo_wr_ptr{}
 
 PUB wr_bootp_msg{}: ptr | st
 ' Write BOOTP message
 '   Returns: number of bytes written to buffer
-    st := fifo_wr_ptr{}
-    wrblk_lsbf(@_bootp_data, BOOTP_MSG_SZ)
-    return fifo_wr_ptr{}-st
+    st := net[dev].fifo_wr_ptr{}
+    net[dev].wrblk_lsbf(@_bootp_data, BOOTP_MSG_SZ)
+    return net[dev].fifo_wr_ptr{}-st
 
 CON
 
@@ -432,24 +421,24 @@ CON
 PUB wr_dhcp_msg{}: ptr | st
 ' Write DHCP message, preceded by BOOTP message
 '   NOTE: Ensure DHCP_set_MsgType() is set, prior to calling this method
-    st := fifo_wr_ptr{}
+    st := net[dev].fifo_wr_ptr{}
 
     { start with BOOTP message }
     wr_bootp_msg{}
 
     { then the DHCP 'magic cookie' value to identify it as a DHCP message }
-    wrlong_msbf(DHCP_MAGIC_COOKIE)
+    net[dev].wrlong_msbf(DHCP_MAGIC_COOKIE)
 
     { finally, the DHCP 'options' }
     _dhcp_opts_len := 0
     write_tlv(MSG_TYPE, 1, _dhcp_msg_t, LSBF)
     write_tlv(PARAM_REQLST, 5, @_dhcp_param_req, LSBF)
 '    write_tlv(CLIENT_ID, 7, @_client_hw_t, LSBF)       ' HW type, then HW addr
-    wr_byte(CLIENT_ID)
-    wr_byte(7)
-    wr_byte(_bootp_data[BOOTPM_CLI_HW_T])
-    wrblk_lsbf(@_bootp_data[BOOTPM_CLI_MAC], MACADDR_LEN)
-    if (_dhcp_msg_t == DHCPDISCOVER)
+    net[dev].wr_byte(CLIENT_ID)
+    net[dev].wr_byte(7)
+    net[dev].wr_byte(_bootp_data[BOOTPM_CLI_HW_T])
+    net[dev].wrblk_lsbf(@_bootp_data[BOOTPM_CLI_MAC], MACADDR_LEN)
+    if ( _dhcp_msg_t == DHCPDISCOVER )
         write_tlv(MAX_DHCP_MSGSZ, 2, _dhcp_max_msg_len, MSBF)
     elseif (_dhcp_msg_t == DHCPREQUEST)
         write_tlv(REQD_IPADDR, 4, @_bootp_data[BOOTPM_YIP], LSBF)
@@ -458,8 +447,8 @@ PUB wr_dhcp_msg{}: ptr | st
     write_tlv(OPT_END, 0, 0, LSBF)
 
     { pad the end of the message equal to the number of bytes in the options }
-    wr_byte_x($00, _dhcp_opts_len)
-    _dhcp_msg_len := (fifo_wr_ptr{} - st)
+    net[dev].wr_byte_x($00, _dhcp_opts_len)
+    _dhcp_msg_len := (net[dev].fifo_wr_ptr{} - st)
     return _dhcp_msg_len
 
 PUB write_tlv(typ, len, val, byte_ord): ptr
@@ -476,17 +465,17 @@ PUB write_tlv(typ, len, val, byte_ord): ptr
 '   Returns: total length of TLV (includes: type, length, and all values)
     { track length of DHCP options; it'll be needed later for padding
         the end of the DHCP message }
-    _dhcp_opts_len += wr_byte(typ)
+    _dhcp_opts_len += net[dev].wr_byte(typ)
     case len
         1..2:                                   ' immediate value
-            _dhcp_opts_len += wr_byte(len)
-            _dhcp_opts_len += wrblk_msbf(@val, len)
+            _dhcp_opts_len += net[dev].wr_byte(len)
+            _dhcp_opts_len += net[dev].wrblk_msbf(@val, len)
         3..255:                                 ' value pointed to
-            _dhcp_opts_len += wr_byte(len)
-            if (byte_ord == LSBF)
-                _dhcp_opts_len += wrblk_lsbf(val, len)
+            _dhcp_opts_len += net[dev].wr_byte(len)
+            if ( byte_ord == LSBF )
+                _dhcp_opts_len += net[dev].wrblk_lsbf(val, len)
             else
-                _dhcp_opts_len += wrblk_msbf(val, len)
+                _dhcp_opts_len += net[dev].wrblk_msbf(val, len)
         other:                                  ' type only
     return _dhcp_opts_len
 
