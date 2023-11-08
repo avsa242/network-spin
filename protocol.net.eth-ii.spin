@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Ethernet II protocol
     Started Mar 1, 2022
-    Updated Jan 15, 2023
+    Updated Nov 8, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -18,71 +18,78 @@ CON
     { limits }
     ETH_FRM_SZ      = 14
 
-    { offsets within frame }
-    ETH_DEST        = 0
-    ETH_SRC         = ETH_DEST+MACADDR_LEN
-    ETH_TYPE_M      = ETH_SRC+MACADDR_LEN
-    ETH_TYPE_L      = ETH_TYPE_M+1
-    ETH_TYPE        = ETH_TYPE_M
+OBJ
+
+    { virtual instance of network device object }
+    net=    NETDEV_OBJ
 
 VAR
 
+    { obj pointer }
+    long dev
+
     byte _ethii_data[ETH_FRM_SZ]
 
-PUB ethii_dest_addr{}: addr
+pub init(optr)
+' Set pointer to network device object
+    dev := optr
+
+PUB dest_addr{}: addr
 ' Get destination address of ethernet frame
 '   Returns: pointer to 6-byte MAC address
     return @_ethii_data[ETH_DEST]
 
-PUB ethii_ethertype{}: eth_t
+PUB ethertype{}: eth_t
 ' Get ethertype of ethernet frame
 '   Returns: word
     eth_t.byte[0] := _ethii_data[ETH_TYPE_L]
     eth_t.byte[1] := _ethii_data[ETH_TYPE_M]
 
-PUB ethii_new(mac_src, mac_dest, ether_t)
+PUB new(mac_src, mac_dest, ether_t)
 ' Start new ethernet-II frame
+    net[dev].start_frame()
     bytemove(@_ethii_data, mac_dest, MACADDR_LEN)
     bytemove(@_ethii_data + ETH_SRC, mac_src, MACADDR_LEN)
     _ethii_data[ETH_TYPE_M] := ether_t.byte[1]
     _ethii_data[ETH_TYPE_L] := ether_t.byte[0]
     wr_ethii_frame{}
 
-PUB ethii_reply{}: pos
+PUB reply{}: pos
 ' Set up/write Ethernet II frame as a reply to last received frame
+    net[dev].start_frame()
     bytemove(@_ethii_data, @_ethii_data + ETH_SRC, MACADDR_LEN)
-    bytemove(@_ethii_data + ETH_SRC, @_mac_local, MACADDR_LEN)
+    bytemove(@_ethii_data + ETH_SRC, @net[dev]._mac_local, MACADDR_LEN)
     wr_ethii_frame{}
-    return fifo_wr_ptr{}
+    return net[dev].fifo_wr_ptr{}
 
-PUB ethii_src_addr{}: addr
+PUB src_addr{}: addr
 ' Get source address of ethernet frame
 '   Returns: pointer to 6-byte MAC address
     return @_ethii_data[ETH_SRC]
 
-PUB ethii_set_dest_addr(ptr_addr)
+PUB set_dest_addr(ptr_addr)
 ' Set destination address of ethernet frame
     bytemove(@_ethii_data, ptr_addr, MACADDR_LEN)
 
-PUB ethii_set_ethertype(eth_t)
+PUB set_ethertype(eth_t)
 ' Set ethertype of ethernet frame
     _ethii_data[ETH_TYPE_M] := eth_t.byte[1]
     _ethii_data[ETH_TYPE_L] := eth_t.byte[0]
 
-PUB ethii_set_src_addr(ptr_addr)
+PUB set_src_addr(ptr_addr)
 ' Set source address of ethernet frame
     bytemove(@_ethii_data + ETH_SRC, ptr_addr, MACADDR_LEN)
 
 PUB rd_ethii_frame{}: ptr
 ' Read ethernet-II frame
 '   Returns: number of bytes read
-    rdblk_lsbf(@_ethii_data, ETH_FRM_SZ)
-    return fifo_wr_ptr{}
+    net[dev].rdblk_lsbf(@_ethii_data, ETH_FRM_SZ)
+    return net[dev].fifo_wr_ptr{}
 
 PUB wr_ethii_frame{}: ptr
 ' Write ethernet-II frame
-    wrblk_lsbf(@_ethii_data, ETH_FRM_SZ)
-    return fifo_wr_ptr{}
+    net[dev].wrblk_lsbf(@_ethii_data, ETH_FRM_SZ)
+    return net[dev].fifo_wr_ptr{}
 
 DAT
 {
