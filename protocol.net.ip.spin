@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Protocol
     Started Feb 27, 2022
-    Updated Feb 17, 2023
+    Updated Aug 5, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -17,27 +17,6 @@ CON
 
     { limits }
     IP_HDR_SZ       = 20                        ' header length
-
-    { offsets within header}
-    IP_ABS_ST       = ETH_TYPE+2                ' add to the below for abs. position within frame
-
-    IP_VERS         = 0
-    IP_HDRLEN       = 0
-    IP_DSCP_ECN     = 1
-    IP_TLEN         = 2
-    IP_TLEN_M       = 2
-    IP_TLEN_L       = 3
-    IP_IDENT_M      = 4
-    IP_IDENT_L      = 5
-    IP_FLAGS_FRGH   = 6
-    IP_FRGL         = 7
-    IP_T2L          = 8
-    IP_PRTCL        = 9
-    IP_CKSUM        = 10
-    IP_CKSUM_M      = 10
-    IP_CKSUM_L      = 11
-    IP_SRCIP        = 12'..15
-    IP_DSTIP        = 16'..19
 
     { layer 4 protocols }
     RSVD            = $00
@@ -54,130 +33,144 @@ CON
     { Differentiated Services Codepoints }
     CS6             = $30
 
+OBJ
+
+    { virtual instance of network device object }
+    net=    NETDEV_OBJ
+
 VAR
+
+    { obj pointer }
+    long dev
 
     long _my_ip
     word _ip_start
     byte _ip_data[IP_HDR_SZ]
 
-PUB ip_dest_addr{}: addr | i
+pub init(optr)
+' Set pointer to network device object
+    dev := optr
+
+PUB dest_addr(): addr | i
 ' Get destination address of IP datagram
 '   Returns: 4 IPv4 address bytes packed into long
     repeat i from 0 to 3
         addr.byte[i] := _ip_data[IP_DSTIP+i]
 
-PUB ip_dgram_len{}: len
+PUB dgram_len(): len
 ' Return total length of IP datagram, in bytes
 '   Returns: word
     len.byte[0] := _ip_data[IP_TLEN_L]
     len.byte[1] := _ip_data[IP_TLEN_M]
 
-PUB ip_dscp{}: cp
+PUB dscp(): cp
 ' Differentiated services code point
 '   Returns: 6-bit code point
    cp := _ip_data[IP_DSCP] >> 2 ' & $fc
 
-PUB ip_ecn{}: state
+PUB ecn(): state
 ' Explicit Congestion Notification
 '   Returns: 2-bit ECN state
     state := _ip_data[IP_ECN] & $03
 
-PUB ip_flags{}: f  'XXX methods to set DF and MF
+PUB flags(): f  'XXX methods to set DF and MF
 ' Get fragmentation control flags
 '   Returns: 3-bit field
     f := _ip_data[IP_FLAGS_FRGH] >> 5 ' & $e0
 
-PUB ip_frag_offset{}: offs
+PUB frag_offset(): offs
 ' Get offset in overall message of this fragment
 '   Returns: 13-bit offset
     offs.byte[0] := _ip_data[IP_FLAGS_FRGH]
     offs.byte[1] := _ip_data[IP_FRGL]
 
-PUB ip_hdr_chk{}: cksum
+PUB hdr_chk(): cksum
 ' Get header checksum
 '   Returns: word
     cksum.byte[0] := _ip_data[IP_CKSUM_L]
     cksum.byte[1] := _ip_data[IP_CKSUM_M]
 
-PUB ip_hdr_len{}: len
+PUB hdr_len(): len
 ' Get header length, in bytes
 '   Returns: byte
     len := (_ip_data[IP_HDRLEN] & $0f) << 2 ' * 4
 
-PUB ip_l4_proto{}: proto
+PUB l4_proto(): proto
 ' Get layer 4/transport protocol carried in datagram
 '   Returns: byte
     proto := _ip_data[IP_PRTCL]
 
-PUB ip_msg_ident{}: id
+PUB msg_ident(): id
 ' Get identification common to all fragments in a message
 '   Returns: word
     id.byte[0] := _ip_data[IP_IDENT+1]
     id.byte[1] := _ip_data[IP_IDENT]
 
-PUB ip_src_addr{}: addr | i
+PUB src_addr(): addr | i
 ' Get source/originator of IP datagram
 '   Returns: 4 IPv4 address bytes packed into long
     repeat i from 0 to 3
         addr.byte[i] := _ip_data[IP_SRCIP+i]
 
-PUB ip_ttl{}: ttl
+PUB ttl(): ttl
 ' Get number of router hops datagram is allowed to traverse
 '   Returns: byte
     ttl := _ip_data[IP_T2L]
 
-PUB ip_version{}: ver
+PUB version(): ver
 ' Get IP version
 '   Returns: byte
     ver := _ip_data[IP_VERS]
 
-PUB ip_set_dest_addr(addr) | i
+PUB set_dest_addr(addr) | i
 ' Set destination address of IP datagram
     repeat i from 0 to 3
         _ip_data[IP_DSTIP+i] := addr.byte[i]
 
-PUB ip_set_dgram_len(len)
+PUB set_dgram_len(len)
 ' Set total length of IP datagram, in bytes
-'   IP header length + L4 header length + data length
+'   len: L4 header length + data length
+'   NOTE: don't include the 20-bytes of IP header in the length
+    len += IP_HDR_SZ
     _ip_data[IP_TLEN_M] := len.byte[1]
     _ip_data[IP_TLEN_L] := len.byte[0]
 
-PUB ip_set_dscp(cp)
+PUB set_dscp(cp)
 ' Set Differentiated services code point
     _ip_data[IP_DSCP_ECN] |= (cp << 2)          ' combine with ECN
 
-PUB ip_set_ecn(state)
+PUB set_ecn(state)
 ' Set Explicit Congestion Notification state
     _ip_data[IP_DSCP_ECN] |= (state & $03)      ' combine with DSCP
 
-PUB ip_set_flags(f)  'XXX methods to set DF and MF
+PUB set_flags(f)  'XXX methods to set DF and MF
 ' Set fragmentation control flags
     _ip_data[IP_FLAGS_FRGH] |= (f << 5)
 
-PUB ip_set_frag_offset(offs)
+PUB set_frag_offset(offs)
 ' Set offset in overall message of this fragment
     _ip_data[IP_FLAGS_FRGH] |= (offs.byte[1] & $1f) | offs.byte[0]
 
-PUB ip_set_hdr_chk(cksum)
+PUB set_hdr_chk(cksum)
 ' Set header checksum
     _ip_data[IP_CKSUM_M] := cksum.byte[1]
     _ip_data[IP_CKSUM_L] := cksum.byte[0]
 
-PUB ip_set_hdr_len(len)
+PUB set_hdr_len(len)
 ' Set header length, in bytes
 '   NOTE: len must be a multiple of 4
     _ip_data[IP_HDRLEN] |= len >> 2            ' / 4
 
-PUB ip_set_l4_proto(proto)
+PUB set_l4_proto(proto)
 ' Set layer 4 protocol carried in datagram
     _ip_data[IP_PRTCL] := proto
 
-PUB ip_set_msg_ident(id)
+PUB set_msg_ident(id)
 ' Set identification common to all fragments in a message
     _ip_data[IP_IDENT_M] := id.byte[1]
     _ip_data[IP_IDENT_L] := id.byte[0]
 
-PUB ip_set_my_ip(o3, o2, o1, o0)
+PUB set_my_ip(o3, o2, o1, o0)
 ' Set this node's IP address
 '   o3..o0: IP address octets, MSB to LSB (e.g. 192,168,1,10)
     _my_ip.byte[0] := o3
@@ -185,66 +178,68 @@ PUB ip_set_my_ip(o3, o2, o1, o0)
     _my_ip.byte[2] := o1
     _my_ip.byte[3] := o0
 
-PUB ip_set_src_addr(addr) | i
+PUB set_my_ip32(addr)
+' Set this node's IP address, as a 32-bit number
+'   addr: IP address in 32bit form, MSB to LSB (e.g. for 192.168.1.10, $c0_a8_01_0a
+    bytemove(@_my_ip, @addr, IPV4ADDR_LEN)
+
+PUB set_src_addr(addr) | i
 ' Set source/originator of IP datagram
     repeat i from 0 to 3
         _ip_data[IP_SRCIP+i] := addr.byte[i]
 
-PUB ip_set_ttl(ttl)
+PUB set_ttl(ttl)
 ' Set number of router hops datagram is allowed to traverse
     _ip_data[IP_T2L] := ttl
 
-PUB ip_set_version(ver)
+PUB set_version(ver)
 ' Set IP version
     _ip_data[IP_VERS] |= (ver << 4)
 
-PUB ip_start{}: p
+PUB start_pos(): p
 ' Get pointer to start of IP header
     return _ip_start
 
-PUB ipv4_new(l4_proto, src_ip, dest_ip) | i
+PUB new(l4_proto, src_ip, dest_ip) | i
 ' Construct an IPV4 header
 '   l4_proto: OSI Layer-4 protocol (TCP, UDP, *ICMP)
-    _ip_start := fifo_wr_ptr{}
-    reset_ipv4{}
+    _ip_start := net[dev].fifo_wr_ptr()
+    reset_ipv4()
     _ip_data[IP_PRTCL] := l4_proto
     repeat i from 0 to 3
         _ip_data[IP_SRCIP+i] := src_ip.byte[i]
     repeat i from 0 to 3
         _ip_data[IP_DSTIP+i] := dest_ip.byte[i]
-'    wr_ip_header{}
+    wr_ip_header()
 
-PUB ipv4_reply{}: p
+PUB reply(): p
 ' Set up/write IPv4 header as a reply to last received header
-    ip_set_hdr_chk(0)                         ' init header checksum to 0
-'    fifo_wr_ptr()
-    ipv4_new(ip_l4_proto(), my_ip(), ip_src_addr())
-'    return fifo_wr_ptr()
+    set_hdr_chk(0)                              ' init header checksum to 0
+    new(l4_proto(), my_ip(), src_addr())
+    return net[dev].fifo_wr_ptr()
 
 pub tle
 
-    return ip_start() + IP_TLEN
+    return start_pos() + IP_TLEN
 
-PUB ipv4_update_chksum(len) | ptr_tmp
+PUB update_chksum(len) | ptr_tmp
 ' Update IP header with checksum
-'   len: length of IP datagram (header plus payload)
-    ptr_tmp := fifo_wr_ptr()                ' cache current pointer
+'   len: length of datagram (layer-4 and datagram only; don't include the 20-byte IP header)
+    ptr_tmp := net[dev].fifo_wr_ptr()          ' save the current pointer
 
     { update IP header with specified length and calculate checksum }
-    ip_set_dgram_len(len)
-    fifo_set_wr_ptr(TXSTART+IP_ABS_ST+IP_TLEN)
-'    fifo_set_wr_ptr(ip_start() + IP_TLEN)
-    wrword_lsbf(ip_dgram_len())
+    set_dgram_len(len)
+    net[dev].fifo_set_wr_ptr(start_pos() + IP_TLEN)
+    net[dev].wrblk_lsbf(@_ip_data[IP_TLEN], 2)
+    net[dev].inet_chksum(IP_ABS_ST, IP_ABS_ST+IP_HDR_SZ, IP_ABS_ST+IP_CKSUM)
 
-    inet_chksum(IP_ABS_ST, IP_ABS_ST+IP_HDR_SZ, IP_ABS_ST+IP_CKSUM)
-
-    fifo_set_wr_ptr(ptr_tmp)                         ' restore pointer pos
+    net[dev].fifo_set_wr_ptr(ptr_tmp)          ' restore pointer pos
 
 PUB my_ip(): addr | i
 ' Get this node's IP address
     bytemove(@addr, @_my_ip, IPV4ADDR_LEN)
 
-PUB reset_ipv4{}
+PUB reset_ipv4()
 ' Reset all values to defaults for an IPV4 header
     bytefill(@_ip_data, 0, IP_HDR_SZ)
     _ip_data[IP_VERS] |= $40
@@ -254,17 +249,17 @@ PUB reset_ipv4{}
     _ip_data[IP_IDENT_M] := $00
     _ip_data[IP_IDENT_L] := $01
 
-PUB rd_ip_header{}: ptr
+PUB rd_ip_header(): ptr
 ' Read IP header from buffer
-    _ip_start := fifo_rd_ptr{}
-    rdblk_lsbf(@_ip_data, IP_HDR_SZ)
-    return fifo_wr_ptr{}
+    _ip_start := net[dev].fifo_rd_ptr()
+    net[dev].rdblk_lsbf(@_ip_data, IP_HDR_SZ)
+    return net[dev].fifo_wr_ptr()
 
-PUB wr_ip_header{}: ptr
+PUB wr_ip_header(): ptr
 ' Write IP header to buffer
 '   Returns: length of assembled header, in bytes
-    wrblk_lsbf(@_ip_data, IP_HDR_SZ)
-    return fifo_wr_ptr{}
+    net[dev].wrblk_lsbf(@_ip_data, IP_HDR_SZ)
+    return net[dev].fifo_wr_ptr()
 
 DAT
 
