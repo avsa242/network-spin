@@ -19,25 +19,25 @@ CON
     TCP_HDR_SZ      = 20
 
     { TCP flags/control bits }
-    NONCE           = 8
-    CWR             = 7
-    ECN_ECHO        = 6
-    URG             = 5
-    ACK             = 4
-    PSH             = 3
-    RST             = 2
-    SYN             = 1
-    FIN             = 0
+    NONCE_BIT       = 8
+    CWR_BIT         = 7
+    ECN_ECHO_BIT    = 6
+    URG_BIT         = 5
+    ACK_BIT         = 4
+    PSH_BIT         = 3
+    RST_BIT         = 2
+    SYN_BIT         = 1
+    FIN_BIT         = 0
 
-    NONCE_BIT       = 1 << NONCE
-    CWR_BIT         = 1 << CWR
-    ECN_ECHO_BIT    = 1 << ECN_ECHO
-    URG_BIT         = 1 << URG
-    ACK_BIT         = 1 << ACK
-    PSH_BIT         = 1 << PSH
-    RST_BIT         = 1 << RST
-    SYN_BIT         = 1 << SYN
-    FIN_BIT         = 1 << FIN
+    NONCE           = 1 << NONCE_BIT
+    CWR             = 1 << CWR_BIT
+    ECN_ECHO        = 1 << ECN_ECHO_BIT
+    URG             = 1 << URG_BIT
+    ACK             = 1 << ACK_BIT
+    PSH             = 1 << PSH_BIT
+    RST             = 1 << RST_BIT
+    SYN             = 1 << SYN_BIT
+    FIN             = 1 << FIN_BIT
 
     { TCP options }
     NOOP            = $01
@@ -52,7 +52,9 @@ CON
 OBJ
 
     { virtual instance of network device object }
-    net=    NETDEV_OBJ
+    net=    NETIF_DRIVER
+    crc:    "math.crc"
+
 
 VAR
 
@@ -73,35 +75,32 @@ VAR
     byte _tcp_winscale
     byte _tcp_sack_perm
 
-OBJ
-
-    crc:    "math.crc"
 
 pub init(optr)
 ' Set pointer to network device object
     dev := optr
 
-PUB calc_pseudo_header_cksum(ip_src, ip_dest, l4_proto, len): ck | phdr[12/4]
+PUB pseudo_header_cksum(ip_src, ip_dest): ck | phdr[12/4]
 ' Calculate TCP pseudo-header checksum
 '   ip_src: IPv4 source address
 '   ip_dest: IPv4 destination address
-'   l4_proto: layer-4 protocol (set to TCP unless you have a need to otherwise)
 '   len: TCP segment length (header + data)
     bytefill(@phdr, 0, 12)
     phdr[0] := ip_src                           ' 0..3
     phdr[1] := ip_dest                          ' 4..7
-    phdr.byte[9] := l4_proto                    ' 9 (8 = reserved)
-    phdr.byte[10] := len.byte[1]                ' 10..11
-    phdr.byte[11] := len.byte[0]
-    ck := crc.inet_chksum(@phdr, 12, $00)
+                                                ' 8 = reserved
+    phdr.word[4] := (L4_TCP << 8) | 0
+    phdr.word[5] := header_len_bytes() << 8
+
+    return crc.inet_chksum(@phdr, 12, $00)
 
 PUB reply(ack_inc)
 ' Set up the TCP segment to "reply" to the last received segment
 '   ack_inc: value to increase the outgoing acknowledgement number by
-    tcp_swap_ports{}
-    tcp_swap_seq_nrs{}
-    tcp_inc_ack_nr(ack_inc)
-    tcp_set_chksum(0)
+    swap_ports{}
+    swap_seq_nrs{}
+    inc_ack_nr(ack_inc)
+    set_checksum(0)
 
 PUB reset{}
 ' Reset/initialize all stored data to 0
@@ -113,7 +112,7 @@ PUB set_ack_nr(ack_nr)
 ' Set TCP acknowledgement number
     _ack_nr := ack_nr
 
-PUB set_chksum(ck)
+PUB set_checksum(ck)
 ' Set checksum
     _tcp_cksum := ck
 
@@ -125,11 +124,11 @@ PUB set_flags(flags)
 ' Set TCP header flags
     _tcp_flags := flags
 
-PUB set_hdr_len(length)
+PUB set_header_len(length)
 ' Set TCP header length, in longs
     _tcp_hdrlen := length << 4
 
-PUB set_hdr_len_bytes(length)
+PUB set_header_len_bytes(length)
 ' Set TCP header length, in bytes
 '   NOTE: length must be a multiple of 4
     _tcp_hdrlen := (length / 4) << 4
@@ -147,7 +146,7 @@ PUB set_seq_nr(seq_nr)
 ' Set TCP sequence number
     _seq_nr := seq_nr
 
-PUB set_src_port(p)
+PUB set_source_port(p)
 ' Set source port field
     _tcp_port.word[PSRC] := p
 
@@ -191,12 +190,12 @@ PUB flags{}: flags
 ' Get TCP header flags
     return _tcp_flags
 
-PUB hdr_len{}: len
+PUB header_len{}: len
 ' Get current header length, in longs
 '   NOTE: Length is stored in as-received position (upper nibble)
     return _tcp_hdrlen
 
-PUB hdr_len_bytes{}: len
+PUB header_len_bytes{}: len
 ' Get current header length, in bytes
     return (_tcp_hdrlen >> 4) * 4
 
@@ -217,7 +216,7 @@ PUB seq_nr{}: seq_nr
 ' Get TCP sequence number
     return _seq_nr
 
-PUB src_port{}: p
+PUB source_port{}: p
 ' Get source port field
     return _tcp_port.word[PSRC]
 
@@ -298,23 +297,25 @@ PUB rd_tcp_opts{}: ptr | kind, st, opts_len
     until ( net[dev].fifo_wr_ptr{}-st ) > opts_len
     return fifo_wr_ptr{}
 
+var word _tcp_start
 PUB wr_tcp_header{}: ptr | st
 ' Write/assemble TCP header
 '   Returns: length of assembled header, in bytes
-    st := net[dev].fifo_wr_ptr{}
+    _tcp_start := net[dev].fifo_wr_ptr{}
     net[dev].wrword_msbf(_tcp_port.word[PSRC])
     net[dev].wrword_msbf(_tcp_port.word[PDEST])
     net[dev].wrlong_msbf(_seq_nr)
     net[dev].wrlong_msbf(_ack_nr)
-    net[dev].wr_byte(_tcp_hdrlen | ((_tcp_flags >> NONCE) & 1))   ' XXX | _tcp_flags.byte[1] ?
-    net[dev].wr_byte(_tcp_flags & $ff) ' XXX _tcp_flags.byte[0] ?
+    net[dev].wr_byte(_tcp_hdrlen | (_tcp_flags.byte[1] & 1) )
+    net[dev].wr_byte(_tcp_flags.byte[0])
     net[dev].wrword_msbf(_tcp_win)
     net[dev].wrword_msbf(_tcp_cksum)
     net[dev].wrword_msbf(_urg_ptr)
 
-    _tcp_msglen := net[dev].fifo_wr_ptr{}-st
+    _tcp_msglen := net[dev].fifo_wr_ptr{}-_tcp_start
     return _tcp_msglen
 
+CON #0, LSBF, MSBF
 PUB write_klv(kind, len, wr_val, val, byte_ord): tlvlen
 ' Write KLV to ptr_buff
 '   kind:

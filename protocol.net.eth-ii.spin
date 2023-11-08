@@ -21,7 +21,7 @@ CON
 OBJ
 
     { virtual instance of network device object }
-    net=    NETDEV_OBJ
+    net=    NETIF_DRIVER
 
 VAR
 
@@ -58,7 +58,7 @@ PUB reply{}: pos
 ' Set up/write Ethernet II frame as a reply to last received frame
     net[dev].start_frame()
     bytemove(@_ethii_data, @_ethii_data + ETH_SRC, MACADDR_LEN)
-    bytemove(@_ethii_data + ETH_SRC, @net[dev]._mac_local, MACADDR_LEN)
+    bytemove(@_ethii_data + ETH_SRC, net[dev].my_mac(), MACADDR_LEN)
     wr_ethii_frame{}
     return net[dev].fifo_wr_ptr{}
 

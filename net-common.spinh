@@ -54,16 +54,16 @@ CON
     IP_DSTIP        = 16'..19
 
     { layer 4 protocols }
-    RSVD            = $00
-    ICMP            = $01
-    IGMP            = $02
-    GGP             = $03
-    IP_IN_IP        = $04
-    TCP             = $06
-    EGP             = $08
-    UDP             = $11
-    ESP             = $32
-    AH              = $33
+    L4_RSVD            = $00
+    L4_ICMP            = $01
+    L4_IGMP            = $02
+    L4_GGP             = $03
+    L4_IP_IN_IP        = $04
+    L4_TCP             = $06
+    L4_EGP             = $08
+    L4_UDP             = $11
+    L4_ESP             = $32
+    L4_AH              = $33
 
 
     { arp }
@@ -129,6 +129,7 @@ CON
     ICMP_DATA       = 50                        ' data for ECHO messages
 
     { tcp }
+    TCPH_ST         = IP_ABS_ST+20
     TCPH_SRCP       = 0
     TCPH_DESTP      = TCPH_SRCP+2
     TCPH_SEQNR      = TCPH_DESTP+2

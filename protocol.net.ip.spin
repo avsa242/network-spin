@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Internet Protocol
     Started Feb 27, 2022
-    Updated Aug 5, 2023
+    Updated Nov 8, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -36,7 +36,7 @@ CON
 OBJ
 
     { virtual instance of network device object }
-    net=    NETDEV_OBJ
+    net=    NETIF_DRIVER
 
 VAR
 
@@ -95,7 +95,7 @@ PUB hdr_len(): len
 '   Returns: byte
     len := (_ip_data[IP_HDRLEN] & $0f) << 2 ' * 4
 
-PUB l4_proto(): proto
+PUB layer4_proto(): proto
 ' Get layer 4/transport protocol carried in datagram
 '   Returns: byte
     proto := _ip_data[IP_PRTCL]
@@ -161,7 +161,7 @@ PUB set_hdr_len(len)
 '   NOTE: len must be a multiple of 4
     _ip_data[IP_HDRLEN] |= len >> 2            ' / 4
 
-PUB set_l4_proto(proto)
+PUB set_layer4_proto(proto)
 ' Set layer 4 protocol carried in datagram
     _ip_data[IP_PRTCL] := proto
 
@@ -180,7 +180,7 @@ PUB set_my_ip(o3, o2, o1, o0)
 
 PUB set_my_ip32(addr)
 ' Set this node's IP address, as a 32-bit number
-'   addr: IP address in 32bit form, MSB to LSB (e.g. for 192.168.1.10, $c0_a8_01_0a
+'   addr: IP address in 32bit form, MSB to LSB (e.g. for 192.168.1.10, $c0_a8_01_0a)
     bytemove(@_my_ip, @addr, IPV4ADDR_LEN)
 
 PUB set_src_addr(addr) | i
@@ -215,7 +215,7 @@ PUB new(l4_proto, src_ip, dest_ip) | i
 PUB reply(): p
 ' Set up/write IPv4 header as a reply to last received header
     set_hdr_chk(0)                              ' init header checksum to 0
-    new(l4_proto(), my_ip(), src_addr())
+    new(layer4_proto(), my_ip(), src_addr())
     return net[dev].fifo_wr_ptr()
 
 pub tle
@@ -231,7 +231,9 @@ PUB update_chksum(len) | ptr_tmp
     set_dgram_len(len)
     net[dev].fifo_set_wr_ptr(start_pos() + IP_TLEN)
     net[dev].wrblk_lsbf(@_ip_data[IP_TLEN], 2)
-    net[dev].inet_chksum(IP_ABS_ST, IP_ABS_ST+IP_HDR_SZ, IP_ABS_ST+IP_CKSUM)
+    net[dev].inet_checksum_wr(  net[dev].TXSTART+1+IP_ABS_ST, ...
+                                IP_HDR_SZ, ...
+                                net[dev].TXSTART+1+IP_ABS_ST+IP_CKSUM )
 
     net[dev].fifo_set_wr_ptr(ptr_tmp)          ' restore pointer pos
 

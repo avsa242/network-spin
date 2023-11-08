@@ -45,7 +45,7 @@ CON
 OBJ
 
     { virtual objects }
-    net=    NETDEV_OBJ                          ' network device driver
+    net=    NETIF_DRIVER                          ' network device driver
 
 
 VAR
@@ -69,8 +69,8 @@ PUB init(netdev_ptr)
 PUB cache_entry(hw_addr, proto_addr): ent_nr
 ' Cache an entry in the ARP table
     { check for an existing entry with this protocol address first }
-    ent_nr := find_entry_by_proto_addr(proto_addr)
-    if ( ent_nr => 0 )
+    ent_nr := read_entry_by_proto_addr(proto_addr)
+    if ( ent_nr => 0 )                          ' 0 is _always_ the entry for our own node
         { found an existing entry: update it with the new hardware address }
         bytemove(hw_ent(ent_nr), hw_addr, MACADDR_LEN)
     else
@@ -81,7 +81,7 @@ PUB cache_entry(hw_addr, proto_addr): ent_nr
                 _proto_addr[ent_nr] := proto_addr
                 _entry_used[ent_nr] := 1
                 return
-        return -1                               ' cache full; no entries available
+        return -10                              ' cache full; no entries available
 
 PUB drop_entry(ent_nr)
 ' Drop a cached entry from the ARP table
@@ -93,16 +93,11 @@ PUB entry_is_used(ent_nr): f
 ' Flag indicating entry in the ARP table is used
     return ( _entry_used[ent_nr] <> 0 )
 
-PUB find_entry_by_proto_addr(proto_addr): ent_nr
-' Find an entry in the ARP table by its protocol address
-'   proto_addr: protocol address (4 bytes)
-'   Returns: entry number in ARP table, or -1 if not found
-    repeat ent_nr from 0 to (ENTRIES-1)
-        if ( entry_is_used(ent_nr) )
-            if ( _proto_addr[ent_nr] == proto_addr )
-                return ent_nr
-
-    return -1
+pub find_mac_by_ip(ip): hw | tmp
+' Read an entry from the cache by IP address
+    tmp := read_entry_by_proto_addr(ip)
+    if ( tmp => 0 )
+        return hw_ent( tmp )
 
 PUB hw_addrLen{}: len
 ' Get hardware address length
@@ -144,6 +139,22 @@ PUB read_entry(ent_nr): hw, proto
 '       1) pointer to HW address
 '       2) protocol address
     return hw_ent(ent_nr), _proto_addr[ent_nr]
+
+PUB read_entry_by_proto_addr(proto_addr): ent_nr
+' Find an entry in the ARP table by its protocol address
+'   proto_addr: protocol address (4 bytes)
+'   Returns: entry number in ARP table, or -1 if not found
+    repeat ent_nr from 0 to (ENTRIES-1)
+        if ( entry_is_used(ent_nr) and (_proto_addr[ent_nr] == proto_addr) )
+            return ent_nr
+
+    return -1
+
+pub read_entry_mac(ent_nr): hw
+' Read an entry from the cache
+'   Returns:
+'       pointer to HW address
+    return hw_ent(ent_nr)
 
 PUB reply() | ip_tmp, mac_tmp[2]
 ' Set up next ARP message to "reply" to the previous
@@ -239,12 +250,12 @@ PUB who_has(my_proto_addr, proto_addr)
     set_proto_addr_len(IPV4ADDR_LEN)
     set_proto_type(ETYP_IPV4)
 
-    { who has }
+    { who has d.d.d.d? }
     set_target_hw_addr(@_mac_zero)
     set_target_proto_addr(proto_addr)
 
-    { tell }
-    set_sender_hw_addr(@net[dev]._mac_local)
+    { tell d.d.d.d (xx:xx:xx:xx:xx:xx) }
+    set_sender_hw_addr(hw_ent(0))
     set_sender_proto_addr(my_proto_addr)
 
     wr_arp_msg()
