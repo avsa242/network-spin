@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Address Resolution Protocol
     Started Feb 27, 2022
-    Updated Jan 15, 2023
+    Updated Nov 8, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -13,27 +13,12 @@
 #include "net-common.spinh"
 #endif
 
+
 CON
 
     { limits }
     ARP_MSG_SZ      = 28                        ' message length
-
-    { offsets within message }
-    ARP_ABS_ST      = ETH_TYPE+2                ' add to the below for abs. position within frame
-
-    ARP_HW_T_M      = 0                         ' 16b/2B
-    ARP_HW_T_L      = ARP_HW_T_M+1
-    ARP_PROTO_T_M   = 2                         ' 16b/2B
-    ARP_PROTO_T_L   = ARP_PROTO_T_M+1
-    ARP_HWADDR_LEN  = 4                         ' 8b/1B
-    ARP_PRADDR_LEN  = 5                         ' 8b/1B
-    ARP_OP_CODE_M   = 6                         ' 16b/2B
-    ARP_OP_CODE_L   = 7
-    ARP_SNDR_HWADDR = 8'..13                    ' 48b/6B
-    ARP_SNDR_PRADDR = 14'..17                   ' 32b/4B
-    ARP_TGT_HWADDR  = 18'..23                   ' 48b/6B
-    ARP_TGT_PRADDR  = 24'..27                   ' 32b/4B
-
+    ENTRIES         = 10                        ' ARP cache entries (RAM usage: n * 11 bytes)
     { hardware types }
     HRD_ETH         = 1                         ' only these first two are
     HRD_IEEE802     = 6                         '   officially supported
@@ -57,41 +42,112 @@ CON
     INARP_REQ       = 8
     INARP_REPL      = 9
 
+OBJ
+
+    { virtual objects }
+    net=    NETDEV_OBJ                          ' network device driver
+
+
 VAR
 
+    { network device obj pointer }
+    long dev
+
+    { ARP message }
     byte _arp_data[ARP_MSG_SZ]
 
-PUB arp_hw_addrLen{}: len
+    { ARP table/cache }
+    byte _entry_used[ENTRIES]
+    byte _hw_addr[ENTRIES * MACADDR_LEN]
+    long _proto_addr[ENTRIES]
+
+
+PUB init(netdev_ptr)
+' Set pointer to network device object
+    dev := netdev_ptr
+
+PUB cache_entry(hw_addr, proto_addr): ent_nr
+' Cache an entry in the ARP table
+    { check for an existing entry with this protocol address first }
+    ent_nr := find_entry_by_proto_addr(proto_addr)
+    if ( ent_nr => 0 )
+        { found an existing entry: update it with the new hardware address }
+        bytemove(hw_ent(ent_nr), hw_addr, MACADDR_LEN)
+    else
+        { not found: create a new entry }
+        repeat ent_nr from 0 to (ENTRIES-1)
+            ifnot ( _entry_used[ent_nr] )
+                bytemove(hw_ent(ent_nr), hw_addr, MACADDR_LEN)
+                _proto_addr[ent_nr] := proto_addr
+                _entry_used[ent_nr] := 1
+                return
+        return -1                               ' cache full; no entries available
+
+PUB drop_entry(ent_nr)
+' Drop a cached entry from the ARP table
+    bytefill(hw_ent(ent_nr), 0, 6)
+    _proto_addr[ent_nr] := 0
+    _entry_used[ent_nr] := false
+
+PUB entry_is_used(ent_nr): f
+' Flag indicating entry in the ARP table is used
+    return ( _entry_used[ent_nr] <> 0 )
+
+PUB find_entry_by_proto_addr(proto_addr): ent_nr
+' Find an entry in the ARP table by its protocol address
+'   proto_addr: protocol address (4 bytes)
+'   Returns: entry number in ARP table, or -1 if not found
+    repeat ent_nr from 0 to (ENTRIES-1)
+        if ( entry_is_used(ent_nr) )
+            if ( _proto_addr[ent_nr] == proto_addr )
+                return ent_nr
+
+    return -1
+
+PUB hw_addrLen{}: len
 ' Get hardware address length
 '   Returns: byte
     return _arp_hln
 
-PUB arp_hw_type{}: hrd
+PUB hw_ent(ent_nr): p
+' Calculate the pointer to a hardware address in the ARP table, given an entry number
+'   ent_nr: entry number (1..(ENTRIES-1) )
+'   Returns: pointer to hardware address (OUI first)
+    return @_hw_addr+(ent_nr*6)
+
+PUB hw_type{}: hrd
 ' Get hardware/hardware address type
 '   Returns: word
     hrd.byte[0] := _arp_data[ARP_HW_T_L]
     hrd.byte[1] := _arp_data[ARP_HW_T_M]
 
-PUB arp_opcode{}: op
+PUB opcode{}: op
 ' Get ARP operation code
 '   Returns: byte
     op.byte[0] := _arp_data[ARP_OP_CODE_L]
     op.byte[1] := _arp_data[ARP_OP_CODE_M]
 
-PUB arp_proto_addr_len{}: len
+PUB proto_addr_len{}: len
 ' Get protocol address length
 '   Returns: byte
     return _arp_data[ARP_PRADDR_LEN]
 
-PUB arp_proto_type{}: pro
+PUB proto_type{}: pro
 ' Get protocol/protocol address type
 '   Returns: word
     pro.byte[0] := _arp_data[ARP_PROTO_T_L]
     pro.byte[1] := _arp_data[ARP_PROTO_T_M]
 
-PUB arp_reply() | ip_tmp, mac_tmp[2]
+PUB read_entry(ent_nr): hw, proto
+' Read an entry from the cache
+'   Returns (2 return values):
+'       1) pointer to HW address
+'       2) protocol address
+    return hw_ent(ent_nr), _proto_addr[ent_nr]
+
+PUB reply() | ip_tmp, mac_tmp[2]
 ' Set up next ARP message to "reply" to the previous
-    arp_set_opcode(ARP_REPL)
+    set_opcode(ARP_REPL)
 
     { temporarily store the current sender addresses }
     bytemove(@ip_tmp, @_arp_data[ARP_SNDR_PRADDR], IPV4ADDR_LEN)
@@ -99,7 +155,7 @@ PUB arp_reply() | ip_tmp, mac_tmp[2]
 
     { update the sender addresses to the last received target IP, and the locally set MAC }
     bytemove(@_arp_data[ARP_SNDR_PRADDR], @_arp_data[ARP_TGT_PRADDR], IPV4ADDR_LEN)
-    bytemove(@_arp_data[ARP_SNDR_HWADDR], @_mac_local, MACADDR_LEN)
+    bytemove(@_arp_data[ARP_SNDR_HWADDR], @net[dev]._mac_local, MACADDR_LEN)
 
     { update the target addresses to the temporarily stored sender addresses }
     bytemove(@_arp_data[ARP_TGT_PRADDR], @ip_tmp, IPV4ADDR_LEN)
@@ -107,78 +163,96 @@ PUB arp_reply() | ip_tmp, mac_tmp[2]
 
     wr_arp_msg()
 
-PUB arp_sender_hw_addr{}: ptr_addr
+PUB sender_hw_addr{}: ptr_addr
 ' Get sender hardware address
 '   Returns: pointer to 6-byte MAC address
     return @_arp_data[ARP_SNDR_HWADDR]
 
-PUB arp_sender_proto_addr{}: addr | i
+PUB sender_proto_addr{}: addr | i
 ' Get sender protocol address
 '   Returns: 4-byte IPv4 address, packed into long
     repeat i from 0 to 3
         addr.byte[i] := _arp_data[ARP_SNDR_PRADDR+i]
 
-PUB arp_target_hw_addr{}: ptr_addr
+PUB target_hw_addr{}: ptr_addr
 ' Get target hardware address
 '   Returns: pointer to 6-byte MAC address
     return @_arp_data[ARP_TGT_HWADDR]
 
-PUB arp_target_proto_addr{}: addr | i
+PUB target_proto_addr{}: addr | i
 ' Get target protocol address
 '   Returns: 4-byte IPv4 address, packed into long
     repeat i from 0 to 3
         addr.byte[i] := _arp_data[ARP_TGT_PRADDR+i]
 
-PUB arp_set_hw_addr_len(len)
+PUB set_hw_addr_len(len)
 ' Set hardware address length
     _arp_data[ARP_HWADDR_LEN] := len
 
-PUB arp_set_hwtype(hrd)
+PUB set_hwtype(hrd)
 ' Set hardware type
     _arp_data[ARP_HW_T_M] := hrd.byte[1]
     _arp_data[ARP_HW_T_L] := hrd.byte[0]
 
-PUB arp_set_opcode(op)
+PUB set_opcode(op)
 ' Set ARP operation code
     _arp_data[ARP_OP_CODE_M] := op.byte[1]
     _arp_data[ARP_OP_CODE_L] := op.byte[0]
 
-PUB arp_set_proto_addr_len(len)
+PUB set_proto_addr_len(len)
 ' Set protocol address length
     _arp_data[ARP_PRADDR_LEN] := len
 
-PUB arp_set_proto_type(pro)
+PUB set_proto_type(pro)
 ' Set protocol type
     _arp_data[ARP_PROTO_T_M] := pro.byte[1]
     _arp_data[ARP_PROTO_T_L] := pro.byte[0]
 
-PUB arp_set_sender_hw_addr(ptr_addr)
+PUB set_sender_hw_addr(ptr_addr)
 ' Set sender hardware address
     bytemove(@_arp_data[ARP_SNDR_HWADDR], ptr_addr, MACADDR_LEN)
 
-PUB arp_set_sender_proto_addr(addr) | i
+PUB set_sender_proto_addr(addr) | i
 ' Set sender protocol address
     repeat i from 0 to 3
         _arp_data[ARP_SNDR_PRADDR+i] := addr.byte[i]
 
-PUB arp_set_target_hw_addr(ptr_addr)
+PUB set_target_hw_addr(ptr_addr)
 ' Set target hardware address
     bytemove(@_arp_data[ARP_TGT_HWADDR], ptr_addr, MACADDR_LEN)
 
-PUB arp_set_target_proto_addr(addr) | i
+PUB set_target_proto_addr(addr) | i
 ' Set target protocol address
     repeat i from 0 to 3
         _arp_data[ARP_TGT_PRADDR+i] := addr.byte[i]
 
 PUB rd_arp_msg{}: ptr
 ' Read ARP message
-    rdblk_lsbf(@_arp_data, ARP_MSG_SZ)
-    return fifo_wr_ptr{}
+    net[dev].rdblk_lsbf(@_arp_data, ARP_MSG_SZ)
+    return net[dev].fifo_wr_ptr{}
+
+PUB who_has(my_proto_addr, proto_addr)
+' Send a query for a protocol address
+    set_hw_addr_len(MACADDR_LEN)
+    set_hwtype(HRD_ETH)
+    set_opcode(ARP_REQ)
+    set_proto_addr_len(IPV4ADDR_LEN)
+    set_proto_type(ETYP_IPV4)
+
+    { who has }
+    set_target_hw_addr(@_mac_zero)
+    set_target_proto_addr(proto_addr)
+
+    { tell }
+    set_sender_hw_addr(@net[dev]._mac_local)
+    set_sender_proto_addr(my_proto_addr)
+
+    wr_arp_msg()
 
 PUB wr_arp_msg{}: ptr
 ' Write ARP message
-    wrblk_lsbf(@_arp_data, ARP_MSG_SZ)
-    return fifo_wr_ptr{}
+    net[dev].wrblk_lsbf(@_arp_data, ARP_MSG_SZ)
+    return net[dev].fifo_wr_ptr{}
 
 DAT
 {
