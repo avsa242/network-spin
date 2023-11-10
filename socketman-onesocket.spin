@@ -125,13 +125,10 @@ pub loop() | l  ' XXX rename
                     ser.strln(@"SYN_SENT")
                     _flags := tcp.ACK
                     _rcv_nxt := tcp.seq_nr()+1
-                    '_rcv_wnd := tcp.window()
-                    '_snd_wnd := tcp.window()
                     send_segment()
                     _state := ESTABLISHED
                     ser.strln(@"connected")
         if ( _conn )    ' XXX temp, for testing
-            'connect(10 | (42 << 8) | (0 << 16) | (1 << 24), 23)
             connect(10,42,0,1, 23)
             _conn := false
 
