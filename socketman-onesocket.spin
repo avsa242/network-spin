@@ -260,7 +260,7 @@ pub segment_matches_this_socket(): tf
                 return true
 
 
-pub send_segment(len=0)
+pub send_segment(len=0) | tcplen
 ' Send a TCP segment
     ser.printf1(@"_snd_nxt: %d\n\r", _snd_nxt)
     ser.printf1(@"_snd_una: %d\n\r", _snd_una)
@@ -277,6 +277,7 @@ pub send_segment(len=0)
                 tcp.set_seq_nr(_snd_nxt)
                 tcp.set_ack_nr(_rcv_nxt)
                 tcp.set_header_len_bytes(20)    ' XXX hardcode for now; no TCP options yet
+                tcplen := tcp.header_len_bytes() + len
                 tcp.set_flags(_flags)
                 tcp.set_window(_our_window)
                 tcp.set_checksum(0)
@@ -284,10 +285,10 @@ pub send_segment(len=0)
                 if ( len > 0 )                  ' attach payload (XXX untested)
                     net[netif].wrblk_lsbf(@_txbuff, len <# SENDQ_SZ)
                 net[netif].inet_checksum_wr(tcp._tcp_start, ...
-                                            tcp.header_len_bytes()+len, ...
+                                            tcplen, ...
                                             tcp._tcp_start+TCPH_CKSUM, ...
-                                            tcp.pseudo_header_cksum(_my_ip, _remote_ip))
-            ip.update_chksum(20+len)
+                                            tcp.pseudo_header_cksum(_my_ip, _remote_ip, len))
+            ip.update_chksum(tcplen)
         net[netif].send_frame()
         _snd_nxt += len
         ser.printf1(@"snd_nxt now %d\n\r", _snd_nxt)
