@@ -227,7 +227,9 @@ PUB update_chksum(len) | ptr_tmp
 '   len: length of datagram (layer-4 and datagram only; don't include the 20-byte IP header)
     ptr_tmp := net[dev].fifo_wr_ptr()          ' save the current pointer
 
-    { update IP header with specified length and calculate checksum }
+    { update IP header with specified length and calculate checksum;
+        NOTE: the checksum should encompass the IP header _only_, _not_ the layer-4 protocol
+        and the payload, if they exist }
     set_dgram_len(len)
     net[dev].fifo_set_wr_ptr(start_pos() + IP_TLEN)
     net[dev].wrblk_lsbf(@_ip_data[IP_TLEN], 2)
