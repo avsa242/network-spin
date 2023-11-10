@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Transmission Control Protocol
     Started Apr 5, 2022
-    Updated Nov 8, 2023
+    Updated Nov 10, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -80,17 +80,17 @@ pub init(optr)
 ' Set pointer to network device object
     dev := optr
 
-PUB pseudo_header_cksum(ip_src, ip_dest): ck | phdr[12/4]
+PUB pseudo_header_cksum(ip_src, ip_dest, len=0): ck | phdr[12/4]
 ' Calculate TCP pseudo-header checksum
 '   ip_src: IPv4 source address
 '   ip_dest: IPv4 destination address
-'   len: TCP segment length (header + data)
+'   len: TCP payload length (the TCP header length is already included)
     bytefill(@phdr, 0, 12)
     phdr[0] := ip_src                           ' 0..3
     phdr[1] := ip_dest                          ' 4..7
                                                 ' 8 = reserved
     phdr.word[4] := (L4_TCP << 8) | 0
-    phdr.word[5] := header_len_bytes() << 8
+    phdr.word[5] := (header_len_bytes() + len) << 8 ' length of TCP header plus the payload length
 
     return crc.inet_chksum(@phdr, 12, $00)
 
