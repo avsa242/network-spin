@@ -105,6 +105,7 @@ var long _conn  ' XXX temp, for testing
 pub loop() | l  ' XXX rename
 ' Main loop
     _conn := 1  'XXX temp, for testing
+    testflag := true
     repeat
         if ( net[netif].pkt_cnt() )
             get_frame()
@@ -131,6 +132,17 @@ pub loop() | l  ' XXX rename
         if ( _conn )    ' XXX temp, for testing
             connect(10,42,0,1, 23)
             _conn := false
+        if ( _state == ESTABLISHED and testflag == true)
+            send_test_data()
+
+var long testflag
+dat test_data byte "Test data", 10, 13, 0
+pub send_test_data() | dlen
+
+    dlen := strsize(@test_data)
+    bytemove(@_txbuff, @test_data, dlen)
+    send_segment(dlen)
+    testflag := false
 
 
 pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_mac, attempt
@@ -260,7 +272,7 @@ pub segment_matches_this_socket(): tf
                 return true
 
 
-pub send_segment(len=0) | tcplen
+pub send_segment(len=0) | tcplen, frm_end
 ' Send a TCP segment
     ser.printf1(@"_snd_nxt: %d\n\r", _snd_nxt)
     ser.printf1(@"_snd_una: %d\n\r", _snd_una)
@@ -271,7 +283,6 @@ pub send_segment(len=0) | tcplen
         ser.strln(@"snd_nxt-snd_una < snd_wnd")
         ethii.new(_ptr_my_mac, _ptr_remote_mac, ETYP_IPV4)
             ip.new(ip.TCP, _my_ip, _remote_ip)
-            ip.set_dgram_len(len)
                 tcp.set_source_port(_local_port)
                 tcp.set_dest_port(_remote_port)
                 tcp.set_seq_nr(_snd_nxt)
@@ -283,11 +294,14 @@ pub send_segment(len=0) | tcplen
                 tcp.set_checksum(0)
                 tcp.wr_tcp_header()
                 if ( len > 0 )                  ' attach payload (XXX untested)
+                    ser.printf1(@"length is %d, attaching payload\n\r", len)
                     net[netif].wrblk_lsbf(@_txbuff, len <# SENDQ_SZ)
+                frm_end := net[netif].fifo_wr_ptr()
                 net[netif].inet_checksum_wr(tcp._tcp_start, ...
                                             tcplen, ...
                                             tcp._tcp_start+TCPH_CKSUM, ...
                                             tcp.pseudo_header_cksum(_my_ip, _remote_ip, len))
+            net[netif].fifo_set_wr_ptr(frm_end)
             ip.update_chksum(tcplen)
         net[netif].send_frame()
         _snd_nxt += len
