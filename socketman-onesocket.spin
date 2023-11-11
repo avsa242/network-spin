@@ -63,10 +63,10 @@ obj
     time:   "time"
 
     { XXX debugging }
-    ser:    "com.serial.terminal.ansi" | RX_PIN=24, TX_PIN=25, SER_BAUD=115_200
     util:   "net-util"
+    dbg=    "com.serial.terminal.ansi"
 
-
+var long dptr
 pub init(net_ptr, local_ip, local_mac)
 ' Initialize the socket
 '   net_ptr: pointer to the network device driver object
@@ -77,13 +77,6 @@ pub init(net_ptr, local_ip, local_mac)
     _ptr_my_mac := @_my_mac
 
     math.rndseed(cnt)                           ' seed the RNG
-    '-- debugging
-    ser.init_def()
-    time.msleep(30)
-    ser.clear()
-    ser.strln(@"serial started")
-    util.attach(@ser)
-    '--
 
     ethii.init(net_ptr)                         ' attach the OSI protocols to the network device
     arp.init(net_ptr)                           ' .
@@ -101,6 +94,12 @@ pub init(net_ptr, local_ip, local_mac)
     _state := CLOSED
 
 
+pub set_debug_obj(p)
+
+    dptr := p
+    util.attach(p)
+
+
 var long _conn  ' XXX temp, for testing
 pub loop() | l  ' XXX rename
 ' Main loop
@@ -109,29 +108,29 @@ pub loop() | l  ' XXX rename
     repeat
         if ( net[netif].pkt_cnt() )
             get_frame()
-            ser.strln(@"new frame")
+            dbg[dptr].strln(@"[SOCKMGR] new frame")
             if ( ethii.ethertype() == ETYP_ARP )
                 process_arp()
             elseif ( ethii.ethertype() == ETYP_IPV4 )
                 if ( segment_matches_this_socket() )
                 { see if the segment is for this socket }
-                    ser.strln(@"for this socket")
+                    dbg[dptr].strln(@"[SOCKMGR] for this socket")
                     l := recv_segment(  ip.dgram_len() - ...
                                         ip.IP_HDR_SZ - ...
                                         tcp.header_len_bytes() )
-                    ser.bin(tcp.flags(), 9)
-                    ser.putchar(" ")
-                    ser.printf2(@"ack_nr=%d  _snd_nxt=%d\n\r", tcp.ack_nr(), _snd_nxt)
+                    dbg[dptr].bin(tcp.flags(), 9)
+                    dbg[dptr].putchar(" ")
+                    dbg[dptr].printf2(@"[SOCKMGR] ack_nr=%d  _snd_nxt=%d\n\r", tcp.ack_nr(), _snd_nxt)
                     if (    (tcp.flags() == (tcp.SYN|tcp.ACK)) and ...
                             (tcp.ack_nr() == _snd_nxt) and ...
                             _state == SYN_SENT )
                     { in the middle of a 3-way handshake? }
-                        ser.strln(@"SYN_SENT")
+                        dbg[dptr].strln(@"[SOCKMGR] SYN_SENT")
                         _flags := tcp.ACK
                         _rcv_nxt := tcp.seq_nr()+1
                         send_segment()
                         _state := ESTABLISHED
-                        ser.strln(@"connected")
+                        dbg[dptr].strln(@"[SOCKMGR] connected")
         if ( _conn )    ' XXX temp, for testing
             connect(10,42,0,1, 23)
             _conn := false
@@ -154,17 +153,17 @@ pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_ma
 '   dest_port: remote port
     dest_addr := ip0 | (ip1 << 8) | (ip2 << 16) | (ip3 << 24)
     if ( _state == CLOSED )                     ' only attempt if not already trying to connect
-        util.show_ip_addr(@"connecting to ", dest_addr, @"...")
+        util.show_ip_addr(@"[SOCKMGR] connecting to ", dest_addr, @"...")
         repeat attempt from 1 to MAX_ARP_ATTEMPTS
-            ser.printf1(@"ARP: resolve IP (attempt %d)\n\r", attempt)
+            dbg[dptr].printf1(@"[SOCKMGR][ARP] resolve IP (attempt %d)\n\r", attempt)
             { first, try to resolve the IP address to a MAC address }
             arp_ent := resolve_ip(dest_addr)
             if ( arp_ent > 0 )
                 { found a matching MAC - now initiate the connection }
-                ser.strln(@"arp ok")
+                dbg[dptr].strln(@"[SOCKMGR] arp ok")
                 dest_mac := arp.read_entry_mac(arp_ent)
-                util.show_mac_addr(@"    mac: ", dest_mac, string(10, 13))
-                util.show_ip_addr(@"    ip: ", dest_addr, string(10, 13))
+                util.show_mac_addr(@"[SOCKMGR]    mac: ", dest_mac, string(10, 13))
+                util.show_ip_addr(@"[SOCKMGR]    ip: ", dest_addr, string(10, 13))
 
                 { set up the remote node in the socket }
                 _remote_ip := dest_addr
@@ -201,7 +200,8 @@ pub process_arp()
     arp.rd_arp_msg()
     case arp.opcode()
         arp.ARP_REQ:
-            ser.strln(@"[ARP]: REQ")
+            dbg[dptr].strln(@"[SOCKMGR][ARP]: REQ")
+            if (dptr)
             if ( arp.target_proto_addr() == _my_ip )
                 { respond to requests for our IP/MAC }
                 net[netif].start_frame()
@@ -215,23 +215,23 @@ pub process_arp()
                 net[netif].send_frame()
             if ( arp.sender_proto_addr() == arp.target_proto_addr() )
                 { gratuitous ARP announcement }
-                ser.strln(@"gratuitous ARP")
+                dbg[dptr].strln(@"[SOCKMGR] gratuitous ARP")
                 arp.cache_entry( arp.sender_hw_addr(), arp.sender_proto_addr() )
         arp.ARP_REPL:
-            ser.strln(@"[ARP]: REPL")
+            dbg[dptr].strln(@"[SOCKMGR][ARP]: REPL")
             arp.cache_entry( arp.sender_hw_addr(), arp.sender_proto_addr() )
 
 
 pub recv_segment(len=0)
 ' Receive a TCP segment
 '   len (optional): length of payload data to read (up to RECVQ_SZ)
-    ser.printf1(@"snd_wnd before: %d\n\r", _snd_wnd)
+    dbg[dptr].printf1(@"[SOCKMGR] snd_wnd before: %d\n\r", _snd_wnd)
     _snd_wnd := tcp.window()
-    ser.printf1(@"snd_wnd after: %d\n\r", _snd_wnd)
+    dbg[dptr].printf1(@"[SOCKMGR] snd_wnd after: %d\n\r", _snd_wnd)
     if ( tcp.seq_nr() == _rcv_nxt )
-        ser.strln(@"got expected seq_nr")
+        dbg[dptr].strln(@"[SOCKMGR] got expected seq_nr")
         if ( tcp.ack_nr() > _snd_una )          ' update unacknowledged sent data pointer
-            ser.strln(@"ack_nr > snd_una")
+            dbg[dptr].strln(@"[SOCKMGR] ack_nr > snd_una")
             _snd_una := tcp.ack_nr()
         if ( len )                              ' read the payload, if specified
             net[netif].rdblk_lsbf(@_rxbuff, len <# RECVQ_SZ)
@@ -243,7 +243,7 @@ pub recv_segment(len=0)
     else
         { out of order data? }
         return -1'XXX: specific error code
-        ser.printf2(@"got seq_nr %d, expected %d\n\r", tcp.seq_nr(), _rcv_nxt)
+        dbg[dptr].printf2(@"[SOCKMGR] got seq_nr %d, expected %d\n\r", tcp.seq_nr(), _rcv_nxt)
 
 
 pub resolve_ip(remote_ip): ent_nr
@@ -305,13 +305,13 @@ pub segment_matches_this_socket(): tf
 
 pub send_segment(len=0) | tcplen, frm_end
 ' Send a TCP segment
-    ser.printf1(@"_snd_nxt: %d\n\r", _snd_nxt)
-    ser.printf1(@"_snd_una: %d\n\r", _snd_una)
-    ser.printf1(@"_snd_wnd: %d\n\r", _snd_wnd)
-    ser.printf1(@"_snd_nxt-_snd_una: %d\n\r", _snd_nxt-_snd_una)
+    dbg[dptr].printf1(@"[SOCKMGR] _snd_nxt: %d\n\r", _snd_nxt)
+    dbg[dptr].printf1(@"[SOCKMGR] _snd_una: %d\n\r", _snd_una)
+    dbg[dptr].printf1(@"[SOCKMGR] _snd_wnd: %d\n\r", _snd_wnd)
+    dbg[dptr].printf1(@"[SOCKMGR] _snd_nxt-_snd_una: %d\n\r", _snd_nxt-_snd_una)
 
     if ( (_snd_nxt - _snd_una) < _snd_wnd )     'check for space in the send window first
-        ser.strln(@"snd_nxt-snd_una < snd_wnd")
+        dbg[dptr].strln(@"[SOCKMGR] snd_nxt-snd_una < snd_wnd")
         ethii.new(_ptr_my_mac, _ptr_remote_mac, ETYP_IPV4)
             ip.new(ip.TCP, _my_ip, _remote_ip)
                 tcp.set_source_port(_local_port)
@@ -325,7 +325,7 @@ pub send_segment(len=0) | tcplen, frm_end
                 tcp.set_checksum(0)
                 tcp.wr_tcp_header()
                 if ( len > 0 )                  ' attach payload (XXX untested)
-                    ser.printf1(@"length is %d, attaching payload\n\r", len)
+                    dbg[dptr].printf1(@"[SOCKMGR] length is %d, attaching payload\n\r", len)
                     net[netif].wrblk_lsbf(@_txbuff, len <# SENDQ_SZ)
                 frm_end := net[netif].fifo_wr_ptr()
                 net[netif].inet_checksum_wr(tcp._tcp_start, ...
@@ -336,9 +336,9 @@ pub send_segment(len=0) | tcplen, frm_end
             ip.update_chksum(tcplen)
         net[netif].send_frame()
         _snd_nxt += len
-        ser.printf1(@"snd_nxt now %d\n\r", _snd_nxt)
+        dbg[dptr].printf1(@"[SOCKMGR] snd_nxt now %d\n\r", _snd_nxt)
     else
-        ser.strln(@"snd_nxt-snd_una is not < snd_wnd")
+        dbg[dptr].strln(@"[SOCKMGR] snd_nxt-snd_una is not < snd_wnd")
 
 
 DAT
