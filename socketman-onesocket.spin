@@ -102,9 +102,9 @@ var long _pending_arp_request
 var long _conn  ' XXX temp, for testing
 pub loop() | l  ' XXX rename
 ' Main loop
-    '_conn := 1  'XXX temp, for testing
-    'testflag := true
-    _pending_arp_request := 10 | (42 << 8) | (0 << 16) | (1 << 24)
+    _conn := 1  'XXX temp, for testing
+    testflag := true
+    '_pending_arp_request := 10 | (42 << 8) | (0 << 16) | (1 << 24)
     repeat
         if ( net[netif].pkt_cnt() )
             get_frame()

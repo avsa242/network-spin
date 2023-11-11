@@ -1,4 +1,4 @@
-#define NETIF_DRIVER "../enc28j60-spin/enc-spi-with-builtin-cs"
+#define NETIF_DRIVER "../enc28j60-spin/net.eth.enc28j60"
 #pragma exportdef(NETIF_DRIVER)
 
 #include "net-common.spinh"
