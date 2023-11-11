@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Address Resolution Protocol
     Started Feb 27, 2022
-    Updated Nov 8, 2023
+    Updated Nov 11, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -149,6 +149,13 @@ PUB read_entry_by_proto_addr(proto_addr): ent_nr
             return ent_nr
 
     return -1
+
+pub read_entry_ip(ent_nr): pa
+' Read an entry from the cache
+'   Returns:
+'       32-bit IP address
+    return _proto_addr[ent_nr]
+
 
 pub read_entry_mac(ent_nr): hw
 ' Read an entry from the cache

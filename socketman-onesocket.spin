@@ -32,6 +32,9 @@ var
 
     long netif                                  ' pointer to network interface driver object
 
+    long _timestamp_last_arp_req                ' timestamp of last outgoing ARP request
+    byte _last_arp_answer                       ' ARP cache entry # of answer to last request
+
     { socket }
     long _ptr_my_mac
     long _ptr_remote_mac
@@ -95,11 +98,13 @@ pub init(net_ptr, local_ip, local_mac)
     _state := CLOSED
 
 
+var long _pending_arp_request
 var long _conn  ' XXX temp, for testing
 pub loop() | l  ' XXX rename
 ' Main loop
-    _conn := 1  'XXX temp, for testing
-    testflag := true
+    '_conn := 1  'XXX temp, for testing
+    'testflag := true
+    _pending_arp_request := 10 | (42 << 8) | (0 << 16) | (1 << 24)
     repeat
         if ( net[netif].pkt_cnt() )
             get_frame()
@@ -128,6 +133,16 @@ pub loop() | l  ' XXX rename
             _conn := false
         if ( _state == ESTABLISHED and testflag == true)
             send_test_data()
+        if ( _pending_arp_request )
+            if ( cnt-_timestamp_last_arp_req => clkfreq )
+                { don't send out another request until at least 1 second has elapsed }
+                arp_request()
+                if (    (_last_arp_answer > 0) and ...
+                        (arp.read_entry_ip(_last_arp_answer) == _pending_arp_request) )
+
+                    strln(@"last ARP reply was an answer to the pending ARP request; clearing")
+                    _pending_arp_request := 0
+
 
 var long testflag
 dat test_data byte "Test data", 10, 13, 0
@@ -206,7 +221,7 @@ pub process_arp()
             if ( arp.sender_proto_addr() == arp.target_proto_addr() )
                 { gratuitous ARP announcement }
                 'strln(@"gratuitous ARP")
-                arp.cache_entry( arp.sender_hw_addr(), arp.sender_proto_addr() )
+                _last_arp_answer := arp.cache_entry( arp.sender_hw_addr(), arp.sender_proto_addr() )
         arp.ARP_REPL:
             strln(@"[ARP]: REPL")
             arp.cache_entry( arp.sender_hw_addr(), arp.sender_proto_addr() )
@@ -238,6 +253,31 @@ pub recv_segment(): len
         return -1'XXX: specific error code
         'printf2(@"got seq_nr %d, expected %d\n\r", tcp.seq_nr(), _rcv_nxt)
 
+pub arp_request(): ent_nr
+' Send an ARP request to resolve an IP
+    if ( _pending_arp_request )                 ' basic sanity check
+        ent_nr := -1'XXX specific error code
+
+        { see if the IP is already in the ARP cache }
+        ent_nr := arp.read_entry_by_proto_addr(_pending_arp_request)
+        if ( ent_nr > 0 )
+            printf1(@"found IP in ARP cache entry %d\n\r", ent_nr)
+            'xxx review: why were we setting these ARP params after the lookup? should we still?
+            arp.set_target_hw_addr( arp.hw_ent(ent_nr) )
+            arp.set_target_proto_addr( _pending_arp_request )
+            arp.set_sender_hw_addr( _ptr_my_mac )
+            arp.set_sender_proto_addr( _my_ip )
+            _last_arp_answer := ent_nr
+            return ent_nr                           ' == the entry # in the table/cache
+
+        { not yet cached; ask the network for who the IP belongs to }
+        strln(@"not cached; requesting resolution...")
+        net[netif].start_frame()
+        ethii.new(_ptr_my_mac, @_mac_bcast, ETYP_ARP)
+        arp.who_has(_my_ip, _pending_arp_request)
+        net[netif].send_frame()
+        _timestamp_last_arp_req := cnt
+
 
 pub resolve_ip(remote_ip): ent_nr
 ' Use ARP to resolve an IP address to a MAC address
@@ -248,11 +288,13 @@ pub resolve_ip(remote_ip): ent_nr
     { see if the IP is already in the ARP cache }
     ent_nr := arp.read_entry_by_proto_addr(remote_ip)
     if ( ent_nr > 0 )
+        'xxx review: why were we setting these ARP params after the lookup? should we still?
         printf1(@"found IP in ARP cache entry %d\n\r", ent_nr)
         arp.set_target_hw_addr( arp.hw_ent(ent_nr) )
         arp.set_target_proto_addr( remote_ip )
         arp.set_sender_hw_addr( _ptr_my_mac )
         arp.set_sender_proto_addr( _my_ip )
+        _last_arp_answer := ent_nr
         return ent_nr                           ' == the entry # in the table/cache
 
     { not yet cached; ask the network for who the IP belongs to }
@@ -277,6 +319,7 @@ pub resolve_ip(remote_ip): ent_nr
             { store this IP/MAC as the next available entry in the ARP table }
             ent_nr := arp.cache_entry( arp.sender_hw_addr(), arp.sender_proto_addr() )
             'printf1(@"caching as number %d\n\r", ent_nr)
+            _last_arp_answer := ent_nr
         else
             strln(@"wrong ip")
             return -1'XXX specific error code
