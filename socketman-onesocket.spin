@@ -91,12 +91,6 @@ pub init(net_ptr, local_ip, local_mac)
     _my_ip := local_ip
     arp.cache_entry(local_mac, local_ip)
 
-    { set up the socket's initial state:
-        * choose a random local port from the 49152..65535 range
-        * choose a random initial sequence number
-        * set the send window }
-    _state := CLOSED
-
 
 var long _pending_arp_request
 var long _conn  ' XXX temp, for testing
