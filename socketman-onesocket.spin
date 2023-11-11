@@ -45,7 +45,6 @@ var
     long _snd_una, _snd_nxt, _snd_wnd
     long _rcv_wnd, _rcv_nxt
     byte _state
-    word _our_window
 
     { socket buffers }
     byte _txbuff[SENDQ_SZ], _rxbuff[RECVQ_SZ]   ' XXX use ring buffers
@@ -114,8 +113,8 @@ pub loop() | l  ' XXX rename
                     l := recv_segment(  ip.dgram_len() - ...
                                         ip.IP_HDR_SZ - ...
                                         tcp.header_len_bytes() )
-                    printf1(@"flags: %09.9b\n\r", tcp.flags())
-                    printf2(@"ack_nr=%d  _snd_nxt=%d\n\r", tcp.ack_nr(), _snd_nxt)
+                    'printf1(@"flags: %09.9b\n\r", tcp.flags())
+                    'printf2(@"ack_nr=%d  _snd_nxt=%d\n\r", tcp.ack_nr(), _snd_nxt)
                     if (    (tcp.flags() == (tcp.SYN|tcp.ACK)) and ...
                             (tcp.ack_nr() == _snd_nxt) and ...
                             _state == SYN_SENT )
@@ -166,7 +165,6 @@ pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_ma
                 _ptr_remote_mac := dest_mac
                 _local_port := 49152+math.rndi(16383)
                 _flags := tcp.SYN                           ' will synchronize on first connection
-                _our_window := RECVQ_SZ
                 _rcv_wnd := RECVQ_SZ
                 _rcv_nxt := 0
                 _snd_wnd := SENDQ_SZ
@@ -196,7 +194,6 @@ pub process_arp()
     case arp.opcode()
         arp.ARP_REQ:
             strln(@"[ARP]: REQ")
-            if (dptr)
             if ( arp.target_proto_addr() == _my_ip )
                 { respond to requests for our IP/MAC }
                 net[netif].start_frame()
@@ -210,7 +207,7 @@ pub process_arp()
                 net[netif].send_frame()
             if ( arp.sender_proto_addr() == arp.target_proto_addr() )
                 { gratuitous ARP announcement }
-                strln(@"gratuitous ARP")
+                'strln(@"gratuitous ARP")
                 arp.cache_entry( arp.sender_hw_addr(), arp.sender_proto_addr() )
         arp.ARP_REPL:
             strln(@"[ARP]: REPL")
@@ -220,13 +217,13 @@ pub process_arp()
 pub recv_segment(len=0)
 ' Receive a TCP segment
 '   len (optional): length of payload data to read (up to RECVQ_SZ)
-    printf1(@"snd_wnd before: %d\n\r", _snd_wnd)
+    'printf1(@"snd_wnd before: %d\n\r", _snd_wnd)
     _snd_wnd := tcp.window()
-    printf1(@"snd_wnd after: %d\n\r", _snd_wnd)
+    'printf1(@"snd_wnd after: %d\n\r", _snd_wnd)
     if ( tcp.seq_nr() == _rcv_nxt )
-        strln(@"got expected seq_nr")
+        'strln(@"got expected seq_nr")
         if ( tcp.ack_nr() > _snd_una )          ' update unacknowledged sent data pointer
-            strln(@"ack_nr > snd_una")
+            'strln(@"ack_nr > snd_una")
             _snd_una := tcp.ack_nr()
         if ( len )                              ' read the payload, if specified
             net[netif].rdblk_lsbf(@_rxbuff, len <# RECVQ_SZ)
@@ -238,7 +235,7 @@ pub recv_segment(len=0)
     else
         { out of order data? }
         return -1'XXX: specific error code
-        printf2(@"got seq_nr %d, expected %d\n\r", tcp.seq_nr(), _rcv_nxt)
+        'printf2(@"got seq_nr %d, expected %d\n\r", tcp.seq_nr(), _rcv_nxt)
 
 
 pub resolve_ip(remote_ip): ent_nr
@@ -278,7 +275,7 @@ pub resolve_ip(remote_ip): ent_nr
         if ( arp.sender_proto_addr() == remote_ip )
             { store this IP/MAC as the next available entry in the ARP table }
             ent_nr := arp.cache_entry( arp.sender_hw_addr(), arp.sender_proto_addr() )
-            printf1(@"caching as number %d\n\r", ent_nr)
+            'printf1(@"caching as number %d\n\r", ent_nr)
         else
             strln(@"wrong ip")
             return -1'XXX specific error code
@@ -300,13 +297,13 @@ pub segment_matches_this_socket(): tf
 
 pub send_segment(len=0) | tcplen, frm_end
 ' Send a TCP segment
-    printf1(@"_snd_nxt: %d\n\r", _snd_nxt)
-    printf1(@"_snd_una: %d\n\r", _snd_una)
-    printf1(@"_snd_wnd: %d\n\r", _snd_wnd)
-    printf1(@"_snd_nxt-_snd_una: %d\n\r", _snd_nxt-_snd_una)
+    'printf1(@"_snd_nxt: %d\n\r", _snd_nxt)
+    'printf1(@"_snd_una: %d\n\r", _snd_una)
+    'printf1(@"_snd_wnd: %d\n\r", _snd_wnd)
+    'printf1(@"_snd_nxt-_snd_una: %d\n\r", _snd_nxt-_snd_una)
 
     if ( (_snd_nxt - _snd_una) < _snd_wnd )     'check for space in the send window first
-        strln(@"snd_nxt-snd_una < snd_wnd")
+        'strln(@"snd_nxt-snd_una < snd_wnd")
         ethii.new(_ptr_my_mac, _ptr_remote_mac, ETYP_IPV4)
             ip.new(ip.TCP, _my_ip, _remote_ip)
                 tcp.set_source_port(_local_port)
@@ -316,7 +313,7 @@ pub send_segment(len=0) | tcplen, frm_end
                 tcp.set_header_len_bytes(20)    ' XXX hardcode for now; no TCP options yet
                 tcplen := tcp.header_len_bytes() + len
                 tcp.set_flags(_flags)
-                tcp.set_window(_our_window)
+                tcp.set_window(_rcv_wnd)
                 tcp.set_checksum(0)
                 tcp.wr_tcp_header()
                 if ( len > 0 )                  ' attach payload (XXX untested)
@@ -331,9 +328,9 @@ pub send_segment(len=0) | tcplen, frm_end
             ip.update_chksum(tcplen)
         net[netif].send_frame()
         _snd_nxt += len
-        printf1(@"snd_nxt now %d\n\r", _snd_nxt)
-    else
-        strln(@"snd_nxt-snd_una is not < snd_wnd")
+        'printf1(@"snd_nxt now %d\n\r", _snd_nxt)
+    'else
+        'strln(@"snd_nxt-snd_una is not < snd_wnd")
 
 
 { debugging methods }
