@@ -104,17 +104,15 @@ pub loop() | l  ' XXX rename
 ' Main loop
     _conn := 1  'XXX temp, for testing
     testflag := true
-    '_pending_arp_request := 10 | (42 << 8) | (0 << 16) | (1 << 24)
     repeat
         if ( net[netif].pkt_cnt() )
             get_frame()
-            strln(@"new frame")
             if ( ethii.ethertype() == ETYP_ARP )
                 process_arp()
             elseif ( ethii.ethertype() == ETYP_IPV4 )
                 if ( segment_matches_this_socket() )
                 { see if the segment is for this socket }
-                    strln(@"for this socket")
+                    strln(@"frame is for this socket")
                     l := recv_segment()
                     'printf1(@"flags: %09.9b\n\r", tcp.flags())
                     'printf2(@"ack_nr=%d  _snd_nxt=%d\n\r", tcp.ack_nr(), _snd_nxt)
@@ -129,17 +127,17 @@ pub loop() | l  ' XXX rename
                         _state := ESTABLISHED
                         strln(@"connected")
         if ( _conn )    ' XXX temp, for testing
-            connect(10,42,0,1, 23)
-            _conn := false
+            if ( connect(10,42,0,1, 23) == 1 )
+                _conn := false                  ' once connected, clear this flag
         if ( _state == ESTABLISHED and testflag == true)
             send_test_data()
         if ( _pending_arp_request )
-            if ( cnt-_timestamp_last_arp_req => clkfreq )
-                { don't send out another request until at least 1 second has elapsed }
+            if ( ||(cnt-_timestamp_last_arp_req) => clkfreq )
+                strln(@"new pending ARP request")
+                { don't send out another request unless at least 1 second has elapsed }
                 arp_request()
                 if (    (_last_arp_answer > 0) and ...
                         (arp.read_entry_ip(_last_arp_answer) == _pending_arp_request) )
-
                     strln(@"last ARP reply was an answer to the pending ARP request; clearing")
                     _pending_arp_request := 0
 
@@ -159,43 +157,43 @@ pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_ma
 '   ip0..ip3: IP address octets (e.g., for 192.168.1.1: 192,168,1,1)
 '   dest_port: remote port
     dest_addr := ip0 | (ip1 << 8) | (ip2 << 16) | (ip3 << 24)
-    if ( _state == CLOSED )                     ' only attempt if not already trying to connect
-        util.show_ip_addr(@"connecting to ", dest_addr, @"...")
-        repeat attempt from 1 to MAX_ARP_ATTEMPTS
-            printf1(@"[ARP] resolve IP (attempt %d)\n\r", attempt)
-            { first, try to resolve the IP address to a MAC address }
-            arp_ent := resolve_ip(dest_addr)
-            if ( arp_ent > 0 )
-                { found a matching MAC - now initiate the connection }
-                strln(@"arp ok")
-                dest_mac := arp.read_entry_mac(arp_ent)
-                util.show_mac_addr(@"    mac: ", dest_mac, string(10, 13))
-                util.show_ip_addr(@"    ip: ", dest_addr, string(10, 13))
-
-                { set up the remote node in the socket }
-                _remote_ip := dest_addr
-                _remote_port := dest_port
-                _ptr_remote_mac := dest_mac
-                _local_port := 49152+math.rndi(16383)
-                _flags := tcp.SYN                           ' will synchronize on first connection
-                _rcv_wnd := RECVQ_SZ
-                _rcv_nxt := 0
-                _snd_wnd := SENDQ_SZ
-                _snd_una := _isn := math.rndi(posx)
-                _snd_nxt := _isn
-
-                send_segment()
-                _snd_nxt++
-                _state := SYN_SENT
-                return 1
-            time.sleep(1)                       ' wait between attempts
-        return -1'XXX specific error code: arp failure
+    if ( _state == CLOSED )                     ' only attempt if the socket isn't in use
+        util.show_ip_addr(@"connecting to ", dest_addr, string("...", 10, 13))
+        arp_ent := arp.read_entry_by_proto_addr(dest_addr)
+        if ( arp_ent > 0 )
+        { if we know the MAC address associated with this IP, we can set up the socket
+            and request a connection }
+            strln(@"IP resolved; setting up socket")
+            { set up the remote node in the socket }
+            _remote_ip := dest_addr
+            _remote_port := dest_port
+            _ptr_remote_mac := arp.read_entry_mac(arp_ent)
+            _local_port := 49152+math.rndi(16383)
+            _flags := tcp.SYN                   ' will synchronize on first connection
+            _rcv_wnd := RECVQ_SZ
+            _rcv_nxt := 0
+            _snd_wnd := SENDQ_SZ
+            _snd_una := _isn := math.rndi(posx)
+            _snd_nxt := _isn
+            send_segment()
+            _snd_nxt++
+            _state := SYN_SENT
+            return 1
+        else
+            ifnot ( _pending_arp_request )
+                strln(@"requesting IP resolution")
+                _pending_arp_request := dest_addr
+            else
+                strln(@"another ARP request is already queued")
+                return -1'XXX specific error code: arp busy
+        return -1'XXX specific error code: arp can't resolve
     return -1'XXX specific error code: socket already open
 
 
 pub get_frame(): etype
 ' Get a frame of data from the network device
 '   Returns: ethertype of frame
+    strln(@"get_frame()")
     net[netif].get_frame()
     ethii.rd_ethii_frame()                      ' read in the Ethernet-II header
     return ethii.ethertype()
@@ -206,7 +204,7 @@ pub process_arp()
     arp.rd_arp_msg()
     case arp.opcode()
         arp.ARP_REQ:
-            strln(@"[ARP]: REQ")
+            strln(@"process_arp(): REQ")
             if ( arp.target_proto_addr() == _my_ip )
                 { respond to requests for our IP/MAC }
                 net[netif].start_frame()
@@ -223,7 +221,7 @@ pub process_arp()
                 'strln(@"gratuitous ARP")
                 _last_arp_answer := arp.cache_entry( arp.sender_hw_addr(), arp.sender_proto_addr() )
         arp.ARP_REPL:
-            strln(@"[ARP]: REPL")
+            strln(@"process_arp(): REPL")
             arp.cache_entry( arp.sender_hw_addr(), arp.sender_proto_addr() )
 
 
@@ -256,27 +254,28 @@ pub recv_segment(): len
 pub arp_request(): ent_nr
 ' Send an ARP request to resolve an IP
     if ( _pending_arp_request )                 ' basic sanity check
+        strln(@"arp_request(): received request")
         ent_nr := -1'XXX specific error code
 
         { see if the IP is already in the ARP cache }
         ent_nr := arp.read_entry_by_proto_addr(_pending_arp_request)
         if ( ent_nr > 0 )
-            printf1(@"found IP in ARP cache entry %d\n\r", ent_nr)
+            printf1(@"arp_request(): found IP in ARP cache: entry #%d\n\r", ent_nr)
             'xxx review: why were we setting these ARP params after the lookup? should we still?
             arp.set_target_hw_addr( arp.hw_ent(ent_nr) )
             arp.set_target_proto_addr( _pending_arp_request )
             arp.set_sender_hw_addr( _ptr_my_mac )
             arp.set_sender_proto_addr( _my_ip )
             _last_arp_answer := ent_nr
-            return ent_nr                           ' == the entry # in the table/cache
+            return ent_nr                       ' == the entry # in the table/cache
 
         { not yet cached; ask the network for who the IP belongs to }
-        strln(@"not cached; requesting resolution...")
+        strln(@"arp_request(): not cached; requesting resolution...")
         net[netif].start_frame()
         ethii.new(_ptr_my_mac, @_mac_bcast, ETYP_ARP)
         arp.who_has(_my_ip, _pending_arp_request)
         net[netif].send_frame()
-        _timestamp_last_arp_req := cnt
+        _timestamp_last_arp_req := cnt          ' mark now as the last time we sent a request
 
 
 pub resolve_ip(remote_ip): ent_nr
@@ -361,7 +360,7 @@ pub send_segment(len=0) | tcplen, frm_end
                 tcp.set_checksum(0)
                 tcp.wr_tcp_header()
                 if ( len > 0 )                  ' attach payload (XXX untested)
-                    printf1(@"length is %d, attaching payload\n\r", len)
+                    printf1(@"send_segment(): length is %d, attaching payload\n\r", len)
                     net[netif].wrblk_lsbf(@_txbuff, len <# SENDQ_SZ)
                 frm_end := net[netif].fifo_wr_ptr()
                 net[netif].inet_checksum_wr(tcp._tcp_start, ...
