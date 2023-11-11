@@ -5,7 +5,7 @@
     Description: Socket manager
         * one TCP socket
     Started Nov 8, 2023
-    Updated Nov 9, 2023
+    Updated Nov 11, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -110,9 +110,7 @@ pub loop() | l  ' XXX rename
                 if ( segment_matches_this_socket() )
                 { see if the segment is for this socket }
                     strln(@"for this socket")
-                    l := recv_segment(  ip.dgram_len() - ...
-                                        ip.IP_HDR_SZ - ...
-                                        tcp.header_len_bytes() )
+                    l := recv_segment()
                     'printf1(@"flags: %09.9b\n\r", tcp.flags())
                     'printf2(@"ack_nr=%d  _snd_nxt=%d\n\r", tcp.ack_nr(), _snd_nxt)
                     if (    (tcp.flags() == (tcp.SYN|tcp.ACK)) and ...
@@ -214,9 +212,11 @@ pub process_arp()
             arp.cache_entry( arp.sender_hw_addr(), arp.sender_proto_addr() )
 
 
-pub recv_segment(len=0)
+pub recv_segment(): len
 ' Receive a TCP segment
-'   len (optional): length of payload data to read (up to RECVQ_SZ)
+'   Returns: length of payload data read
+    len := ( ip.dgram_len() - ip.IP_HDR_SZ - tcp.header_len_bytes() )
+
     'printf1(@"snd_wnd before: %d\n\r", _snd_wnd)
     _snd_wnd := tcp.window()
     'printf1(@"snd_wnd after: %d\n\r", _snd_wnd)
@@ -232,6 +232,7 @@ pub recv_segment(len=0)
         'printf1(@"final length: %d\n\r", len)
         _rcv_nxt += len                         ' update the expected next seq # from the remote
         send_segment()                          ' acknowledge the segment
+        return len
     else
         { out of order data? }
         return -1'XXX: specific error code
