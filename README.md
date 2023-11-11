@@ -19,24 +19,24 @@ This is a P8X32A/Propeller, P2X8C4M64P/Propeller 2 networking stack
 
 P1/SPIN1:
 * spin-standard-library
-* #inclusion by an object (e.g., network device driver) that provides FIFO R/W methods
+* an object (e.g., network device driver) that provides FIFO R/W methods
 
 P2/SPIN2:
 * p2-spin-standard-library
-* #inclusion by an object (e.g., network device driver) that provides FIFO R/W methods
+* an object (e.g., network device driver) that provides FIFO R/W methods
+
 
 ## Compiler Compatibility
 
 | Processor | Language | Compiler               | Backend     | Status                |
 |-----------|----------|------------------------|-------------|-----------------------|
-| P1        | SPIN1    | FlexSpin (5.9.25-beta) | Bytecode    | OK                    |
-| P1        | SPIN1    | FlexSpin (5.9.25-beta) | Native code | OK                    |
-| P1        | SPIN1    | OpenSpin (1.00.81)     | Bytecode    | Untested (deprecated) |
-| P2        | SPIN2    | FlexSpin (5.9.25-beta) | NuCode      | OK                    |
-| P2        | SPIN2    | FlexSpin (5.9.25-beta) | Native code | Untested              |
-| P1        | SPIN1    | Brad's Spin Tool (any) | Bytecode    | Unsupported           |
-| P1, P2    | SPIN1, 2 | Propeller Tool (any)   | Bytecode    | Unsupported           |
-| P1, P2    | SPIN1, 2 | PNut (any)             | Bytecode    | Unsupported           |
+| P1        | SPIN1    | FlexSpin (6.5.0-beta)  | Bytecode    | OK                    |
+| P1        | SPIN1    | FlexSpin (6.5.0-beta)  | Native code | OK                    |
+| P2        | SPIN2    | FlexSpin (6.5.0-beta)  | NuCode      | OK                    |
+| P2        | SPIN2    | FlexSpin (6.5.0-beta)  | Native code | Untested              |
+
+(other versions or toolchains not listed are __not supported__, and _may or may not_ work)
+
 
 ## Limitations
 
