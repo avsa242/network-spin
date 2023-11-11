@@ -110,25 +110,28 @@ pub loop() | l  ' XXX rename
         if ( net[netif].pkt_cnt() )
             get_frame()
             ser.strln(@"new frame")
-            if ( segment_matches_this_socket() )
-            { see if the segment is for this socket }
-                ser.strln(@"for this socket")
-                l := recv_segment(  ip.dgram_len() - ...
-                                    ip.IP_HDR_SZ - ...
-                                    tcp.header_len_bytes() )
-                ser.bin(tcp.flags(), 9)
-                ser.putchar(" ")
-                ser.printf2(@"ack_nr=%d  _snd_nxt=%d\n\r", tcp.ack_nr(), _snd_nxt)
-                if (    (tcp.flags() == (tcp.SYN|tcp.ACK)) and ...
-                        (tcp.ack_nr() == _snd_nxt) and ...
-                        _state == SYN_SENT )
-                { in the middle of a 3-way handshake? }
-                    ser.strln(@"SYN_SENT")
-                    _flags := tcp.ACK
-                    _rcv_nxt := tcp.seq_nr()+1
-                    send_segment()
-                    _state := ESTABLISHED
-                    ser.strln(@"connected")
+            if ( ethii.ethertype() == ETYP_ARP )
+                process_arp()
+            elseif ( ethii.ethertype() == ETYP_IPV4 )
+                if ( segment_matches_this_socket() )
+                { see if the segment is for this socket }
+                    ser.strln(@"for this socket")
+                    l := recv_segment(  ip.dgram_len() - ...
+                                        ip.IP_HDR_SZ - ...
+                                        tcp.header_len_bytes() )
+                    ser.bin(tcp.flags(), 9)
+                    ser.putchar(" ")
+                    ser.printf2(@"ack_nr=%d  _snd_nxt=%d\n\r", tcp.ack_nr(), _snd_nxt)
+                    if (    (tcp.flags() == (tcp.SYN|tcp.ACK)) and ...
+                            (tcp.ack_nr() == _snd_nxt) and ...
+                            _state == SYN_SENT )
+                    { in the middle of a 3-way handshake? }
+                        ser.strln(@"SYN_SENT")
+                        _flags := tcp.ACK
+                        _rcv_nxt := tcp.seq_nr()+1
+                        send_segment()
+                        _state := ESTABLISHED
+                        ser.strln(@"connected")
         if ( _conn )    ' XXX temp, for testing
             connect(10,42,0,1, 23)
             _conn := false
@@ -185,10 +188,38 @@ pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_ma
     return -1'XXX specific error code: socket already open
 
 
-pub get_frame()
+pub get_frame(): etype
 ' Get a frame of data from the network device
+'   Returns: ethertype of frame
     net[netif].get_frame()
     ethii.rd_ethii_frame()                      ' read in the Ethernet-II header
+    return ethii.ethertype()
+
+
+pub process_arp()
+' Process received ARP messages
+    arp.rd_arp_msg()
+    case arp.opcode()
+        arp.ARP_REQ:
+            ser.strln(@"[ARP]: REQ")
+            if ( arp.target_proto_addr() == _my_ip )
+                { respond to requests for our IP/MAC }
+                net[netif].start_frame()
+                ethii.new(arp.hw_ent(0), arp.sender_hw_addr(), ETYP_ARP)
+                arp.set_opcode(arp.ARP_REPL)
+                arp.set_target_proto_addr(arp.sender_proto_addr())
+                arp.set_target_hw_addr(arp.sender_hw_addr())
+                arp.set_sender_proto_addr(ip.my_ip())
+                arp.set_sender_hw_addr(arp.hw_ent(0))
+                arp.wr_arp_msg()
+                net[netif].send_frame()
+            if ( arp.sender_proto_addr() == arp.target_proto_addr() )
+                { gratuitous ARP announcement }
+                ser.strln(@"gratuitous ARP")
+                arp.cache_entry( arp.sender_hw_addr(), arp.sender_proto_addr() )
+        arp.ARP_REPL:
+            ser.strln(@"[ARP]: REPL")
+            arp.cache_entry( arp.sender_hw_addr(), arp.sender_proto_addr() )
 
 
 pub recv_segment(len=0)
