@@ -222,7 +222,7 @@ pub process_arp()
 pub recv_segment(): len
 ' Receive a TCP segment
 '   Returns: length of payload data read
-    len := ( ip.dgram_len() - ip.IP_HDR_SZ - tcp.header_len_bytes() )
+    len := ( ip.dgram_len() - ip.IP_HDR_SZ - tcp.header_len() )
 
     'printf1(@"snd_wnd before: %d\n\r", _snd_wnd)
     _snd_wnd := tcp.window()
@@ -347,8 +347,8 @@ pub send_segment(len=0) | tcplen, frm_end
                 tcp.set_dest_port(_remote_port)
                 tcp.set_seq_nr(_snd_nxt)
                 tcp.set_ack_nr(_rcv_nxt)
-                tcp.set_header_len_bytes(20)    ' XXX hardcode for now; no TCP options yet
-                tcplen := tcp.header_len_bytes() + len
+                tcp.set_header_len(20)    ' XXX hardcode for now; no TCP options yet
+                tcplen := tcp.header_len() + len
                 tcp.set_flags(_flags)
                 tcp.set_window(_rcv_wnd)
                 tcp.set_checksum(0)

@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Constants common to multiple networking objects
     Started Mar 12, 2022
-    Updated Nov 8, 2023
+    Updated Nov 12, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -121,7 +121,6 @@ CON
 
     { icmp }
     ICMP_ABS_ST     = IP_DSTIP + 4              ' add to the below for abs. position within frame
-
     ICMP_T          = 0
     ICMP_CD         = 1
     ICMP_CKSUM      = 2
@@ -130,16 +129,16 @@ CON
 
     { tcp }
     TCPH_ST         = IP_ABS_ST+20
-    TCPH_SRCP       = 0
-    TCPH_DESTP      = TCPH_SRCP+2
-    TCPH_SEQNR      = TCPH_DESTP+2
-    TCPH_ACKNR      = TCPH_SEQNR+4
-    TCPH_HDRLEN     = TCPH_ACKNR+4
-    TCPH_FLAGS      = TCPH_ACKNR+4
-    TCPH_WIN        = TCPH_FLAGS+2
-    TCPH_CKSUM      = TCPH_WIN+2
-    TCPH_URGPTR     = TCPH_CKSUM+2
-    TCPH_OPTS       = TCPH_URGPTR+2
+    TCPH_SRCP       = 0'..1
+    TCPH_DESTP      = 2'..3
+    TCPH_SEQNR      = 4'..7
+    TCPH_ACKNR      = 8'..11
+    TCPH_HDRLEN     = 12                        ' upper four bits only; LSB is MSB of FLAGS
+    TCPH_FLAGS      = 13                        ' bottom 8 bits of FLAGS
+    TCPH_WIN        = 14'..15
+    TCPH_CKSUM      = 16'..17
+    TCPH_URGPTR     = 18'..19
+    TCPH_OPTS       = 20'..n                    ' start of TCP options, if used
 
 
 DAT
