@@ -5,7 +5,7 @@
     Description: Socket manager
         * one TCP socket
     Started Nov 8, 2023
-    Updated Nov 11, 2023
+    Updated Nov 18, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -104,7 +104,7 @@ pub loop() | l  ' XXX rename
             if ( ethii.ethertype() == ETYP_ARP )
                 process_arp()
             elseif ( ethii.ethertype() == ETYP_IPV4 )
-                if ( segment_matches_this_socket() )
+                if ( segment_matches_this_socket() == true )
                 { see if the segment is for this socket }
                     strln(@"frame is for this socket")
                     l := recv_segment()
@@ -318,7 +318,7 @@ pub resolve_ip(remote_ip): ent_nr
             return -1'XXX specific error code
 
 
-pub segment_matches_this_socket(): tf
+pub segment_matches_this_socket(): tf | ack, seq, tcplen, frm_end, sp, dp
 ' Verify the segment received is for this socket
 '   Returns: TRUE (-1) or FALSE
     tf := false
@@ -330,6 +330,32 @@ pub segment_matches_this_socket(): tf
             if (    (tcp.dest_port() == _local_port) and ...
                     (tcp.source_port() == _remote_port) )
                 return true
+            else
+                ethii.new(_ptr_my_mac, _ptr_remote_mac, ETYP_IPV4)
+                    ip.new(ip.TCP, _my_ip, _remote_ip)
+                        ack := tcp.seq_nr()+1
+                        seq := tcp.ack_nr()
+                        dp := tcp.source_port()
+                        sp := tcp.dest_port()
+                        tcp.set_source_port(sp)
+                        tcp.set_dest_port(dp)
+                        tcp.set_seq_nr(seq)
+                        tcp.set_ack_nr(ack)
+                        tcp.set_header_len(20)    ' XXX hardcode for now; no TCP options yet
+                        tcplen := tcp.header_len()
+                        tcp.set_flags(tcp.RST | tcp.ACK)
+                        tcp.set_window(0)
+                        tcp.set_checksum(0)
+                        tcp.wr_tcp_header()
+                        frm_end := net[netif].fifo_wr_ptr()
+                        net[netif].inet_checksum_wr(tcp._tcp_start, ...
+                                                    tcplen, ...
+                                                    tcp._tcp_start+TCPH_CKSUM, ...
+                                                    tcp.pseudo_header_cksum(_my_ip, _remote_ip, 0))
+                    net[netif].fifo_set_wr_ptr(frm_end)
+                    ip.update_chksum(tcplen)
+                net[netif].send_frame()
+                return -2
 
 
 pub send_segment(len=0) | tcplen, frm_end
