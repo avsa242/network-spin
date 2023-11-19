@@ -25,7 +25,7 @@ con
     MAX_ARP_ATTEMPTS    = 5                     ' max tries to resolve an IP to a MAC
 
     { socket states }
-    #0, CLOSED, SYN_SENT, ESTABLISHED
+    #0, CLOSED, SYN_SENT, ESTABLISHED, FIN_WAIT_1
 
 
 var
@@ -176,6 +176,7 @@ pub close(): status | ack, seq, dp, sp, tcplen, frm_end
                         128, ...
                         0 )
             _snd_nxt++
+            _state := FIN_WAIT_1
         other:
             return -1'xxx specific error: socket not open
 
@@ -220,7 +221,7 @@ pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_ma
 pub get_frame(): etype
 ' Get a frame of data from the network device
 '   Returns: ethertype of frame
-    strln(@"get_frame()")
+    'strln(@"get_frame()")
     net[netif].get_frame()
     ethii.rd_ethii_frame()                      ' read in the Ethernet-II header
     return ethii.ethertype()
@@ -256,6 +257,7 @@ pub process_ipv4()
 ' Process incoming IPv4 header, and hand off to the appropriate layer-4 processor
     ip.rd_ip_header()
     if ( (ip.dest_addr() == _my_ip) and (ip.src_addr() == _remote_ip) )
+        strln(@"frame is sent to us")
         if ( ip.layer4_proto() == L4_TCP )
             process_tcp()
 
