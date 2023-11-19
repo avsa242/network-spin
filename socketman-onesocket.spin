@@ -355,32 +355,38 @@ pub process_tcp(): tf | ack, seq, tcplen, frm_end, sp, dp
 
     if ( _state == CLOSED )
         ifnot ( tcp.flags() & tcp.RST )
-            reset_connection()
+            tcp_send(   tcp.dest_port(), tcp.source_port(), ...
+                        tcp.ack_nr(), tcp.seq_nr()+1, ...
+                        tcp.RST|tcp.ACK, ...
+                        0 )
         return -1'xxx specific error code
 
     if (    (tcp.dest_port() == _local_port) and ...
             (tcp.source_port() == _remote_port) )
         return true
     else
-        reset_connection()
+        tcp_send(   tcp.dest_port(), tcp.source_port(), ...
+                    tcp.ack_nr(), tcp.seq_nr()+1, ...
+                    tcp.RST|tcp.ACK, ...
+                    0 )
         return -2
 
-pub reset_connection() | ack, seq, dp, sp, tcplen, frm_end
-
+pub tcp_send(sp, dp, seq, ack, flags, win) | tcplen, frm_end
+' Send a TCP segment
+'   sp, dp: source, destination ports
+'   seq, ack: sequence, acknowledgement numbers
+'   flags: control flags
+'   win: TCP window
     ethii.new(_ptr_my_mac, _ptr_remote_mac, ETYP_IPV4)
         ip.new(ip.TCP, _my_ip, _remote_ip)
-            ack := tcp.seq_nr()+1
-            seq := tcp.ack_nr()
-            dp := tcp.source_port()
-            sp := tcp.dest_port()
             tcp.set_source_port(sp)
             tcp.set_dest_port(dp)
             tcp.set_seq_nr(seq)
             tcp.set_ack_nr(ack)
             tcp.set_header_len(20)    ' XXX hardcode for now; no TCP options yet
             tcplen := tcp.header_len()
-            tcp.set_flags(tcp.RST | tcp.ACK)
-            tcp.set_window(0)
+            tcp.set_flags(flags)
+            tcp.set_window(win)
             tcp.set_checksum(0)
             tcp.wr_tcp_header()
             frm_end := net[netif].fifo_wr_ptr()
