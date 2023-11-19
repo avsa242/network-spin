@@ -107,16 +107,6 @@ pub loop() | l  ' XXX rename
                 process_ipv4()
                 'printf1(@"flags: %09.9b\n\r", tcp.flags())
                 'printf2(@"ack_nr=%d  _snd_nxt=%d\n\r", tcp.ack_nr(), _snd_nxt)
-                if (    (tcp.flags() == (tcp.SYN|tcp.ACK)) and ...
-                        (tcp.ack_nr() == _snd_nxt) and ...
-                        _state == SYN_SENT )
-                { in the middle of a 3-way handshake? }
-                    strln(@"SYN_SENT")
-                    _flags := tcp.ACK
-                    _rcv_nxt := tcp.seq_nr()+1
-                    send_segment()
-                    _state := ESTABLISHED
-                    strln(@"connected")
         if ( _conn )    ' XXX temp, for testing
             if ( connect(10,42,0,1, 23) == 1 )
                 _conn := false                  ' once connected, clear this flag
@@ -276,6 +266,16 @@ pub process_tcp(): tf | ack, seq, tcplen, frm_end, sp, dp
 
     if (    (tcp.dest_port() == _local_port) and ...
             (tcp.source_port() == _remote_port) )
+        if (    (tcp.flags() == (tcp.SYN|tcp.ACK)) and ...
+                (tcp.ack_nr() == _snd_nxt) and ...
+                _state == SYN_SENT )
+            strln(@"SYN_SENT")
+            _flags := tcp.ACK
+            _rcv_nxt := tcp.seq_nr()+1
+            send_segment()
+            _state := ESTABLISHED
+            strln(@"connected")
+
         return true
     else
         { ports don't match any open socket; refuse connection }
