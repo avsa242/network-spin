@@ -154,6 +154,23 @@ pub arp_request(): ent_nr
         _timestamp_last_arp_req := cnt          ' mark now as the last time we sent a request
 
 
+pub close()
+' Close the socket (effectively delete the transmission control block)
+    if ( _state <> CLOSED )
+        _ptr_remote_mac := 0
+        _local_port := 0
+        _remote_ip := 0
+        _remote_port := 0
+        _iss := 0
+        _ack_nr := 0
+        _flags := 0
+        _snd_una := _snd_nxt := _snd_wnd := _snd_wl1 := _snd_wl2 := 0
+        _irs := _rcv_wnd := _rcv_nxt := 0
+        _state := _prev_state := CLOSED
+        bytefill(@_txbuff, 0, SENDQ_SZ)
+        bytefill(@_rxbuff, 0, RECVQ_SZ)
+
+
 pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_mac, attempt
 ' Connect to a remote host
 '   ip0..ip3: IP address octets (e.g., for 192.168.1.1: 192,168,1,1)
