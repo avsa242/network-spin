@@ -104,22 +104,19 @@ pub loop() | l  ' XXX rename
             if ( ethii.ethertype() == ETYP_ARP )
                 process_arp()
             elseif ( ethii.ethertype() == ETYP_IPV4 )
-                if ( segment_matches_this_socket() == true )
-                { see if the segment is for this socket }
-                    strln(@"frame is for this socket")
-                    l := recv_segment()
-                    'printf1(@"flags: %09.9b\n\r", tcp.flags())
-                    'printf2(@"ack_nr=%d  _snd_nxt=%d\n\r", tcp.ack_nr(), _snd_nxt)
-                    if (    (tcp.flags() == (tcp.SYN|tcp.ACK)) and ...
-                            (tcp.ack_nr() == _snd_nxt) and ...
-                            _state == SYN_SENT )
-                    { in the middle of a 3-way handshake? }
-                        strln(@"SYN_SENT")
-                        _flags := tcp.ACK
-                        _rcv_nxt := tcp.seq_nr()+1
-                        send_segment()
-                        _state := ESTABLISHED
-                        strln(@"connected")
+                process_ipv4()
+                'printf1(@"flags: %09.9b\n\r", tcp.flags())
+                'printf2(@"ack_nr=%d  _snd_nxt=%d\n\r", tcp.ack_nr(), _snd_nxt)
+                if (    (tcp.flags() == (tcp.SYN|tcp.ACK)) and ...
+                        (tcp.ack_nr() == _snd_nxt) and ...
+                        _state == SYN_SENT )
+                { in the middle of a 3-way handshake? }
+                    strln(@"SYN_SENT")
+                    _flags := tcp.ACK
+                    _rcv_nxt := tcp.seq_nr()+1
+                    send_segment()
+                    _state := ESTABLISHED
+                    strln(@"connected")
         if ( _conn )    ' XXX temp, for testing
             if ( connect(10,42,0,1, 23) == 1 )
                 _conn := false                  ' once connected, clear this flag
@@ -345,46 +342,55 @@ pub resolve_ip(remote_ip): ent_nr
             strln(@"wrong ip")
             return -1'XXX specific error code
 
-
-pub segment_matches_this_socket(): tf | ack, seq, tcplen, frm_end, sp, dp
-' Verify the segment received is for this socket
-'   Returns: TRUE (-1) or FALSE
-    tf := false
+pub process_ipv4()
 
     ip.rd_ip_header()
     if ( (ip.dest_addr() == _my_ip) and (ip.src_addr() == _remote_ip) )
         if ( ip.layer4_proto() == L4_TCP )
-            tcp.rd_tcp_header()
-            if (    (tcp.dest_port() == _local_port) and ...
-                    (tcp.source_port() == _remote_port) )
-                return true
-            else
-                ethii.new(_ptr_my_mac, _ptr_remote_mac, ETYP_IPV4)
-                    ip.new(ip.TCP, _my_ip, _remote_ip)
-                        ack := tcp.seq_nr()+1
-                        seq := tcp.ack_nr()
-                        dp := tcp.source_port()
-                        sp := tcp.dest_port()
-                        tcp.set_source_port(sp)
-                        tcp.set_dest_port(dp)
-                        tcp.set_seq_nr(seq)
-                        tcp.set_ack_nr(ack)
-                        tcp.set_header_len(20)    ' XXX hardcode for now; no TCP options yet
-                        tcplen := tcp.header_len()
-                        tcp.set_flags(tcp.RST | tcp.ACK)
-                        tcp.set_window(0)
-                        tcp.set_checksum(0)
-                        tcp.wr_tcp_header()
-                        frm_end := net[netif].fifo_wr_ptr()
-                        net[netif].inet_checksum_wr(tcp._tcp_start, ...
-                                                    tcplen, ...
-                                                    tcp._tcp_start+TCPH_CKSUM, ...
-                                                    tcp.pseudo_header_cksum(_my_ip, _remote_ip, 0))
-                    net[netif].fifo_set_wr_ptr(frm_end)
-                    ip.update_chksum(tcplen)
-                net[netif].send_frame()
-                return -2
+            process_tcp()
 
+pub process_tcp(): tf | ack, seq, tcplen, frm_end, sp, dp
+
+    tcp.rd_tcp_header()
+
+    if ( _state == CLOSED )
+        ifnot ( tcp.flags() & tcp.RST )
+            reset_connection()
+        return -1'xxx specific error code
+
+    if (    (tcp.dest_port() == _local_port) and ...
+            (tcp.source_port() == _remote_port) )
+        return true
+    else
+        reset_connection()
+        return -2
+
+pub reset_connection() | ack, seq, dp, sp, tcplen, frm_end
+
+    ethii.new(_ptr_my_mac, _ptr_remote_mac, ETYP_IPV4)
+        ip.new(ip.TCP, _my_ip, _remote_ip)
+            ack := tcp.seq_nr()+1
+            seq := tcp.ack_nr()
+            dp := tcp.source_port()
+            sp := tcp.dest_port()
+            tcp.set_source_port(sp)
+            tcp.set_dest_port(dp)
+            tcp.set_seq_nr(seq)
+            tcp.set_ack_nr(ack)
+            tcp.set_header_len(20)    ' XXX hardcode for now; no TCP options yet
+            tcplen := tcp.header_len()
+            tcp.set_flags(tcp.RST | tcp.ACK)
+            tcp.set_window(0)
+            tcp.set_checksum(0)
+            tcp.wr_tcp_header()
+            frm_end := net[netif].fifo_wr_ptr()
+            net[netif].inet_checksum_wr(tcp._tcp_start, ...
+                                        tcplen, ...
+                                        tcp._tcp_start+TCPH_CKSUM, ...
+                                        tcp.pseudo_header_cksum(_my_ip, _remote_ip, 0))
+        net[netif].fifo_set_wr_ptr(frm_end)
+        ip.update_chksum(tcplen)
+    net[netif].send_frame()
 
 pub send_segment(len=0) | tcplen, frm_end
 ' Send a TCP segment
