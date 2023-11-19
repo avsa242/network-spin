@@ -5,7 +5,7 @@
     Description: Socket manager
         * one TCP socket
     Started Nov 8, 2023
-    Updated Nov 18, 2023
+    Updated Nov 19, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -134,7 +134,9 @@ pub loop() | l  ' XXX rename
                         (arp.read_entry_ip(_last_arp_answer) == _pending_arp_request) )
                     strln(@"last ARP reply was an answer to the pending ARP request; clearing")
                     _pending_arp_request := 0
-
+        if dbg[dptr].rx_check() == "c"
+            strln(@"closing")
+            close()
 
 var long testflag
 dat test_data byte "Test data", 10, 13, 0
@@ -145,6 +147,30 @@ pub send_test_data() | dlen
     send_segment(dlen)
     testflag := false
 
+
+pub close() | ack, seq, dp, sp, tcplen, frm_end
+
+    ethii.new(_ptr_my_mac, _ptr_remote_mac, ETYP_IPV4)
+        ip.new(ip.TCP, _my_ip, _remote_ip)
+            tcp.set_source_port(_local_port)
+            tcp.set_dest_port(_remote_port)
+            tcp.set_seq_nr(_snd_nxt)
+            tcp.set_ack_nr(_rcv_nxt)
+            tcp.set_header_len(20)    ' XXX hardcode for now; no TCP options yet
+            tcplen := tcp.header_len()
+            tcp.set_flags(tcp.FIN | tcp.ACK)
+            tcp.set_window(128)
+            tcp.set_checksum(0)
+            tcp.wr_tcp_header()
+            frm_end := net[netif].fifo_wr_ptr()
+            net[netif].inet_checksum_wr(tcp._tcp_start, ...
+                                        tcplen, ...
+                                        tcp._tcp_start+TCPH_CKSUM, ...
+                                        tcp.pseudo_header_cksum(_my_ip, _remote_ip, 0))
+        net[netif].fifo_set_wr_ptr(frm_end)
+        ip.update_chksum(tcplen)
+    net[netif].send_frame()
+    _snd_nxt++
 
 pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_mac, attempt
 ' Connect to a remote host
@@ -237,6 +263,8 @@ pub recv_segment(): len
             'ser.hexdump(@_rxbuff, 0, 2, len, 16 <# len)
         _flags := tcp.ACK
         'printf1(@"final length: %d\n\r", len)
+        if ( tcp.flags() & tcp.FIN )
+            len := 1
         _rcv_nxt += len                         ' update the expected next seq # from the remote
         send_segment()                          ' acknowledge the segment
         return len
