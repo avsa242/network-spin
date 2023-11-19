@@ -25,7 +25,8 @@ con
     MAX_ARP_ATTEMPTS    = 5                     ' max tries to resolve an IP to a MAC
 
     { socket states }
-    #0, CLOSED, SYN_SENT, ESTABLISHED, FIN_WAIT_1
+    #0, CLOSED, SYN_SENT, SYN_RECEIVED, ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, ...
+    CLOSING, LAST_ACK, TIME_WAIT, LISTEN
 
 
 var
@@ -44,9 +45,9 @@ var
     word _local_port
     long _remote_ip
     word _remote_port
-    long _isn, _ack_nr, _flags
+    long _iss, _ack_nr, _flags
     long _snd_una, _snd_nxt, _snd_wnd
-    long _rcv_wnd, _rcv_nxt
+    long _irs, _rcv_wnd, _rcv_nxt
     byte _state
 
     { socket buffers }
@@ -191,8 +192,8 @@ pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_ma
             _rcv_wnd := RECVQ_SZ
             _rcv_nxt := 0
             _snd_wnd := SENDQ_SZ
-            _snd_una := _isn := math.rndi(posx)
-            _snd_nxt := _isn
+            _snd_una := _iss := math.rndi(posx)
+            _snd_nxt := _iss
             send_segment()
             _snd_nxt++
             _state := SYN_SENT
@@ -252,47 +253,113 @@ pub process_ipv4()
             process_tcp()
 
 
-pub process_tcp(): tf | ack, seq, tcplen, frm_end, sp, dp, dlen
+pub process_tcp(): tf | ack, seq, tcplen, frm_end, sp, dp, dlen, ack_accept
 ' Process incoming TCP segment
     tcp.rd_tcp_header()
     dlen := ( ip.dgram_len() - ip.IP_HDR_SZ - tcp.header_len() )
-    if ( _state == CLOSED )
-        if ( tcp.flags() & tcp.RST )
-            return -1                           ' discard
-        else
-            ifnot ( tcp.flags() & tcp.ACK )     ' received with ACK bit clear
-                seq := 0
-                ack := tcp.seq_nr() + dlen
-                _flags := tcp.RST | tcp.ACK
-            else                                ' received with ACK bit set
-                seq := tcp.ack_nr()
-                _flags := tcp.RST
-            tcp_send(   tcp.dest_port(), tcp.source_port(), ...
-                        ack, seq, ...
-                        tcp.RST | tcp.ACK, ...
-                        0 )
-        return -1'xxx specific error code
-
-    if (    (tcp.dest_port() == _local_port) and ...
-            (tcp.source_port() == _remote_port) )
-        if (    (tcp.flags() == (tcp.SYN|tcp.ACK)) and ...
-                (tcp.ack_nr() == _snd_nxt) and ...
-                _state == SYN_SENT )
-            strln(@"SYN_SENT")
-            _flags := tcp.ACK
-            _rcv_nxt := tcp.seq_nr()+1
-            send_segment()
-            _state := ESTABLISHED
-            strln(@"connected")
-        return true
-    else
-        { ports don't match any open socket; refuse connection }
-        tcp_send(   tcp.dest_port(), tcp.source_port(), ...
-                    tcp.ack_nr(), tcp.seq_nr()+1, ...
-                    tcp.RST | tcp.ACK, ...
-                    0 )
-        return -2
-
+    case _state
+        CLOSED:
+            strln(@"state: CLOSED")
+            if ( tcp.flags() & tcp.RST )
+                return -1                           ' discard
+            else
+                ifnot ( tcp.flags() & tcp.ACK )     ' received with ACK bit clear
+                    seq := 0
+                    ack := tcp.seq_nr() + dlen
+                    _flags := tcp.RST | tcp.ACK
+                else                                ' received with ACK bit set
+                    seq := tcp.ack_nr()
+                    _flags := tcp.RST
+                tcp_send(   tcp.dest_port(), tcp.source_port(), ...
+                            ack, seq, ...
+                            tcp.RST | tcp.ACK, ...
+                            0 )
+            return -1'xxx specific error code
+        LISTEN:
+            strln(@"state: LISTEN")
+            '1. check for RST
+                'ignore
+            '2. check for ACK
+                'bad - send reset, seq=tcp.ack, _flags=RST, return
+            '3. check for SYN
+                'check security (ignored for now)
+            '_rcv_nxt := tcp.seq_nr()+1
+            '_irs := tcp.seq_nr()
+            '_iss := math.rndi(posx)
+            'send segment: seq=_iss, ack=rcv.nxt, _flags=SYN|ACK
+            '_snd_nxt := _iss+1
+            '_snd_una := _iss
+            '_state := SYN_RECEIVED
+            ' other ctrl or data will be processed in SYN_RECEIVED state (proc of SYN|ACK don't repeat)
+            ' if listen not fully specd (foreign socket not fully specd), fill in unspec fields
+            '4. other text or ctrl
+                'drop segment
+        SYN_SENT:
+            strln(@"state: SYN_SENT")
+            '1. check ACK bit
+            ack_accept := false
+            if ( tcp.flags() & tcp.ACK )
+                if ( (tcp.ack_nr() =< _iss) or (tcp.ack_nr() > _snd_nxt) )
+                    if ( tcp.flags() & tcp.RST )
+                        return -1'drop
+                    else
+                        seq := tcp.ack_nr()
+                        ack := 0    'xxx not specd in RFC...this ok?
+                        _flags := tcp.RST
+                        tcp_send(   tcp.dest_port(), tcp.source_port(), ...
+                                    seq, ack, ...
+                                    _flags, ...
+                                    0 )
+                        return -1'xxx
+                if ( (tcp.ack_nr() => _snd_una) and (tcp.ack_nr() =< _snd_nxt) )
+                    ' ACK is acceptable
+                    ack_accept := true
+                    strln(@"ACK")
+            '2. check RST bit
+            if ( tcp.flags() & tcp.RST )
+                if ( ack_accept )
+                    strln(@"error: connection reset")
+                    close()
+                    return -1
+                else
+                    return -1
+            '3. check security/precedence (ignored for now)
+            ifnot ( ack_accept )
+                strln(@"ack_accept != true")
+                return -1'xxx
+            '4. check the SYN bit
+            if ( tcp.flags & tcp.SYN )
+                strln(@"SYN")
+                _rcv_nxt := tcp.seq_nr() + 1
+                _irs := tcp.seq_nr()
+                _snd_una := tcp.ack_nr()
+                ' future: any segments on the retrans queue which are ack'd should be removed
+                if ( _snd_una > _iss )
+                    strln(@"SND.UNA > ISS")
+                    _state := ESTABLISHED
+                    seq := _snd_nxt
+                    ack := _rcv_nxt
+                    _flags := tcp.ACK
+                    tcp_send(   _local_port, _remote_port, ...
+                                seq, ack, ...
+                                _flags, ...
+                                _snd_wnd )  'xxx is window param correct here?
+                else
+                    _state := SYN_RECEIVED
+                    seq := _iss
+                    ack := _rcv_nxt
+                    _flags := tcp.SYN | tcp.ACK
+                    tcp_send(   _local_port, _remote_port, ...
+                                seq, ack, ...
+                                _flags, ...
+                                _snd_wnd )
+            '5. if no SYN or RST, drop
+            ifnot ( (tcp.flags() & tcp.SYN) or (tcp.flags() & tcp.RST) )
+                strln(@"no SYN, no RST - drop")
+                return -1'xxx drop
+        SYN_RECEIVED, ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, CLOSING, ...
+        LAST_ACK, TIME_WAIT:
+            strln(@"in some post-syn state")
 
 pub recv_segment(): len
 ' Receive a TCP segment
