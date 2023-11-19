@@ -135,14 +135,32 @@ pub loop() | l  ' XXX rename
             strln(@"closing")
             close()
 
-var long testflag
-dat test_data byte "Test data", 10, 13, 0
-pub send_test_data() | dlen
 
-    dlen := strsize(@test_data)
-    bytemove(@_txbuff, @test_data, dlen)
-    send_segment(dlen)
-    testflag := false
+pub arp_request(): ent_nr
+' Send an ARP request to resolve an IP
+    if ( _pending_arp_request )                 ' basic sanity check
+        strln(@"arp_request(): received request")
+        ent_nr := -1'XXX specific error code
+
+        { see if the IP is already in the ARP cache }
+        ent_nr := arp.read_entry_by_proto_addr(_pending_arp_request)
+        if ( ent_nr > 0 )
+            printf1(@"arp_request(): found IP in ARP cache: entry #%d\n\r", ent_nr)
+            'xxx review: why were we setting these ARP params after the lookup? should we still?
+            arp.set_target_hw_addr( arp.hw_ent(ent_nr) )
+            arp.set_target_proto_addr( _pending_arp_request )
+            arp.set_sender_hw_addr( _ptr_my_mac )
+            arp.set_sender_proto_addr( _my_ip )
+            _last_arp_answer := ent_nr
+            return ent_nr                       ' == the entry # in the table/cache
+
+        { not yet cached; ask the network for who the IP belongs to }
+        strln(@"arp_request(): not cached; requesting resolution...")
+        net[netif].start_frame()
+        ethii.new(_ptr_my_mac, @_mac_bcast, ETYP_ARP)
+        arp.who_has(_my_ip, _pending_arp_request)
+        net[netif].send_frame()
+        _timestamp_last_arp_req := cnt          ' mark now as the last time we sent a request
 
 
 pub close(): status | ack, seq, dp, sp, tcplen, frm_end
@@ -234,6 +252,38 @@ pub process_arp()
             arp.cache_entry( arp.sender_hw_addr(), arp.sender_proto_addr() )
 
 
+pub process_ipv4()
+' Process incoming IPv4 header, and hand off to the appropriate layer-4 processor
+    ip.rd_ip_header()
+    if ( (ip.dest_addr() == _my_ip) and (ip.src_addr() == _remote_ip) )
+        if ( ip.layer4_proto() == L4_TCP )
+            process_tcp()
+
+
+pub process_tcp(): tf | ack, seq, tcplen, frm_end, sp, dp
+' Process incoming TCP segment
+    tcp.rd_tcp_header()
+
+    if ( _state == CLOSED )
+        ifnot ( tcp.flags() & tcp.RST )
+            tcp_send(   tcp.dest_port(), tcp.source_port(), ...
+                        tcp.ack_nr(), tcp.seq_nr()+1, ...
+                        tcp.RST | tcp.ACK, ...
+                        0 )
+        return -1'xxx specific error code
+
+    if (    (tcp.dest_port() == _local_port) and ...
+            (tcp.source_port() == _remote_port) )
+        return true
+    else
+        { ports don't match any open socket; refuse connection }
+        tcp_send(   tcp.dest_port(), tcp.source_port(), ...
+                    tcp.ack_nr(), tcp.seq_nr()+1, ...
+                    tcp.RST | tcp.ACK, ...
+                    0 )
+        return -2
+
+
 pub recv_segment(): len
 ' Receive a TCP segment
 '   Returns: length of payload data read
@@ -261,32 +311,6 @@ pub recv_segment(): len
         { out of order data? }
         return -1'XXX: specific error code
         'printf2(@"got seq_nr %d, expected %d\n\r", tcp.seq_nr(), _rcv_nxt)
-
-pub arp_request(): ent_nr
-' Send an ARP request to resolve an IP
-    if ( _pending_arp_request )                 ' basic sanity check
-        strln(@"arp_request(): received request")
-        ent_nr := -1'XXX specific error code
-
-        { see if the IP is already in the ARP cache }
-        ent_nr := arp.read_entry_by_proto_addr(_pending_arp_request)
-        if ( ent_nr > 0 )
-            printf1(@"arp_request(): found IP in ARP cache: entry #%d\n\r", ent_nr)
-            'xxx review: why were we setting these ARP params after the lookup? should we still?
-            arp.set_target_hw_addr( arp.hw_ent(ent_nr) )
-            arp.set_target_proto_addr( _pending_arp_request )
-            arp.set_sender_hw_addr( _ptr_my_mac )
-            arp.set_sender_proto_addr( _my_ip )
-            _last_arp_answer := ent_nr
-            return ent_nr                       ' == the entry # in the table/cache
-
-        { not yet cached; ask the network for who the IP belongs to }
-        strln(@"arp_request(): not cached; requesting resolution...")
-        net[netif].start_frame()
-        ethii.new(_ptr_my_mac, @_mac_bcast, ETYP_ARP)
-        arp.who_has(_my_ip, _pending_arp_request)
-        net[netif].send_frame()
-        _timestamp_last_arp_req := cnt          ' mark now as the last time we sent a request
 
 
 pub resolve_ip(remote_ip): ent_nr
@@ -334,35 +358,26 @@ pub resolve_ip(remote_ip): ent_nr
             strln(@"wrong ip")
             return -1'XXX specific error code
 
-pub process_ipv4()
 
-    ip.rd_ip_header()
-    if ( (ip.dest_addr() == _my_ip) and (ip.src_addr() == _remote_ip) )
-        if ( ip.layer4_proto() == L4_TCP )
-            process_tcp()
+pub send_segment(len=0) | tcplen, frm_end
+' Send a TCP segment
+    'printf1(@"_snd_nxt: %d\n\r", _snd_nxt)
+    'printf1(@"_snd_una: %d\n\r", _snd_una)
+    'printf1(@"_snd_wnd: %d\n\r", _snd_wnd)
+    'printf1(@"_snd_nxt-_snd_una: %d\n\r", _snd_nxt-_snd_una)
 
-pub process_tcp(): tf | ack, seq, tcplen, frm_end, sp, dp
+    if ( (_snd_nxt - _snd_una) < _snd_wnd )     'check for space in the send window first
+        'strln(@"snd_nxt-snd_una < snd_wnd")
+        tcp_send(   _local_port, _remote_port, ...
+                    _snd_nxt, _rcv_nxt, ...
+                    _flags, ...
+                    _rcv_wnd, ...
+                    len )
+        _snd_nxt += len
+        'printf1(@"snd_nxt now %d\n\r", _snd_nxt)
+    'else
+        'strln(@"snd_nxt-snd_una is not < snd_wnd")
 
-    tcp.rd_tcp_header()
-
-    if ( _state == CLOSED )
-        ifnot ( tcp.flags() & tcp.RST )
-            tcp_send(   tcp.dest_port(), tcp.source_port(), ...
-                        tcp.ack_nr(), tcp.seq_nr()+1, ...
-                        tcp.RST | tcp.ACK, ...
-                        0 )
-        return -1'xxx specific error code
-
-    if (    (tcp.dest_port() == _local_port) and ...
-            (tcp.source_port() == _remote_port) )
-        return true
-    else
-        { ports don't match any open socket; refuse connection }
-        tcp_send(   tcp.dest_port(), tcp.source_port(), ...
-                    tcp.ack_nr(), tcp.seq_nr()+1, ...
-                    tcp.RST | tcp.ACK, ...
-                    0 )
-        return -2
 
 pub tcp_send(sp, dp, seq, ack, flags, win, dlen=0) | tcplen, frm_end
 ' Send a TCP segment
@@ -395,25 +410,6 @@ pub tcp_send(sp, dp, seq, ack, flags, win, dlen=0) | tcplen, frm_end
         ip.update_chksum(tcplen)
     net[netif].send_frame()
 
-pub send_segment(len=0) | tcplen, frm_end
-' Send a TCP segment
-    'printf1(@"_snd_nxt: %d\n\r", _snd_nxt)
-    'printf1(@"_snd_una: %d\n\r", _snd_una)
-    'printf1(@"_snd_wnd: %d\n\r", _snd_wnd)
-    'printf1(@"_snd_nxt-_snd_una: %d\n\r", _snd_nxt-_snd_una)
-
-    if ( (_snd_nxt - _snd_una) < _snd_wnd )     'check for space in the send window first
-        'strln(@"snd_nxt-snd_una < snd_wnd")
-        tcp_send(   _local_port, _remote_port, ...
-                    _snd_nxt, _rcv_nxt, ...
-                    _flags, ...
-                    _rcv_wnd, ...
-                    len )
-        _snd_nxt += len
-        'printf1(@"snd_nxt now %d\n\r", _snd_nxt)
-    'else
-        'strln(@"snd_nxt-snd_una is not < snd_wnd")
-
 
 { debugging methods }
 pub set_debug_obj(p)
@@ -445,6 +441,15 @@ pub printf2(pfmt, p1, p2)
     dbg[dptr].str(@objname)
     dbg[dptr].printf2(pfmt, p1, p2)
 
+
+var long testflag
+dat test_data byte "Test data", 10, 13, 0
+pub send_test_data() | dlen
+
+    dlen := strsize(@test_data)
+    bytemove(@_txbuff, @test_data, dlen)
+    send_segment(dlen)
+    testflag := false
 
 
 DAT
