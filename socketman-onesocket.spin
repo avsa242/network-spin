@@ -124,7 +124,7 @@ pub loop() | l  ' XXX rename
                     _pending_arp_request := 0
         if dbg[dptr].rx_check() == "c"
             strln(@"closing")
-            close()
+            disconnect()
 
 
 pub arp_request(): ent_nr
@@ -153,23 +153,6 @@ pub arp_request(): ent_nr
         net[netif].send_frame()
         _timestamp_last_arp_req := cnt          ' mark now as the last time we sent a request
 
-
-pub close(): status | ack, seq, dp, sp, tcplen, frm_end
-' Close the connection
-'   Returns:
-'       0: success
-'       -1: error (socket not open)
-    case _state
-        ESTABLISHED:                            ' connection must be established to close it
-            tcp_send(   _local_port, _remote_port, ...
-                        _snd_nxt, _rcv_nxt, ...
-                        tcp.FIN | tcp.ACK, ...
-                        128, ...
-                        0 )
-            _snd_nxt++
-            set_state(FIN_WAIT_1)
-        other:
-            return -1'xxx specific error: socket not open
 
 pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_mac, attempt
 ' Connect to a remote host
@@ -207,6 +190,24 @@ pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_ma
                 return -1'XXX specific error code: arp busy
         return -1'XXX specific error code: arp can't resolve
     return -1'XXX specific error code: socket already open
+
+
+pub disconnect(): status | ack, seq, dp, sp, tcplen, frm_end
+' Disconnect the socket
+'   Returns:
+'       0: success
+'       -1: error (socket not open)
+    case _state
+        ESTABLISHED:                            ' connection must be established to close it
+            tcp_send(   _local_port, _remote_port, ...
+                        _snd_nxt, _rcv_nxt, ...
+                        tcp.FIN | tcp.ACK, ...
+                        128, ...
+                        0 )
+            _snd_nxt++
+            set_state(FIN_WAIT_1)
+        other:
+            return -1'xxx specific error: socket not open
 
 
 pub get_frame(): etype
@@ -319,7 +320,7 @@ pub process_tcp(): tf | ack, seq, tcplen, frm_end, sp, dp, dlen, ack_accept, seq
             if ( tcp.flags() & tcp.RST )
                 if ( ack_accept )
                     strln(@"error: connection reset")
-                    close()
+                    disconnect()
                     return -1
                 else
                     return -1
