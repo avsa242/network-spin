@@ -274,6 +274,17 @@ pub process_ipv4()
 pub process_tcp(): tf | ack, seq, tcplen, frm_end, sp, dp, dlen, ack_accept, seq_accept
 ' Process incoming TCP segment
     tcp.rd_tcp_header()
+    ifnot ( (tcp.dest_port() == _local_port) and (tcp.source_port() == _remote_port) )
+        strln(@"connection refused")
+        sp := tcp.dest_port()
+        dp := tcp.source_port()
+        seq := tcp.ack_nr()
+        ack := tcp.seq_nr()
+        tcp_send(   sp, dp, ...
+                    seq, ack, ...
+                    tcp.RST | tcp.ACK, ...
+                    0 )
+        return -1'xxx connection refused - doesn't match this socket
     dlen := ( ip.dgram_len() - ip.IP_HDR_SZ - tcp.header_len() )
     case _state
         CLOSED:
