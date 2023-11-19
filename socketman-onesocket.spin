@@ -252,14 +252,23 @@ pub process_ipv4()
             process_tcp()
 
 
-pub process_tcp(): tf | ack, seq, tcplen, frm_end, sp, dp
+pub process_tcp(): tf | ack, seq, tcplen, frm_end, sp, dp, dlen
 ' Process incoming TCP segment
     tcp.rd_tcp_header()
-
+    dlen := ( ip.dgram_len() - ip.IP_HDR_SZ - tcp.header_len() )
     if ( _state == CLOSED )
-        ifnot ( tcp.flags() & tcp.RST )
+        if ( tcp.flags() & tcp.RST )
+            return -1                           ' discard
+        else
+            ifnot ( tcp.flags() & tcp.ACK )     ' received with ACK bit clear
+                seq := 0
+                ack := tcp.seq_nr() + dlen
+                _flags := tcp.RST | tcp.ACK
+            else                                ' received with ACK bit set
+                seq := tcp.ack_nr()
+                _flags := tcp.RST
             tcp_send(   tcp.dest_port(), tcp.source_port(), ...
-                        tcp.ack_nr(), tcp.seq_nr()+1, ...
+                        ack, seq, ...
                         tcp.RST | tcp.ACK, ...
                         0 )
         return -1'xxx specific error code
@@ -275,7 +284,6 @@ pub process_tcp(): tf | ack, seq, tcplen, frm_end, sp, dp
             send_segment()
             _state := ESTABLISHED
             strln(@"connected")
-
         return true
     else
         { ports don't match any open socket; refuse connection }
