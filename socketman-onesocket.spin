@@ -145,14 +145,21 @@ pub send_test_data() | dlen
     testflag := false
 
 
-pub close() | ack, seq, dp, sp, tcplen, frm_end
-
-    tcp_send(   _local_port, _remote_port, ...
-                _snd_nxt, _rcv_nxt, ...
-                tcp.FIN | tcp.ACK, ...
-                128, ...
-                0 )
-    _snd_nxt++
+pub close(): status | ack, seq, dp, sp, tcplen, frm_end
+' Close the connection
+'   Returns:
+'       0: success
+'       -1: error (socket not open)
+    case _state
+        ESTABLISHED:                            ' connection must be established to close it
+            tcp_send(   _local_port, _remote_port, ...
+                        _snd_nxt, _rcv_nxt, ...
+                        tcp.FIN | tcp.ACK, ...
+                        128, ...
+                        0 )
+            _snd_nxt++
+        other:
+            return -1'xxx specific error: socket not open
 
 pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_mac, attempt
 ' Connect to a remote host
