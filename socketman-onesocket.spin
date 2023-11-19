@@ -147,26 +147,11 @@ pub send_test_data() | dlen
 
 pub close() | ack, seq, dp, sp, tcplen, frm_end
 
-    ethii.new(_ptr_my_mac, _ptr_remote_mac, ETYP_IPV4)
-        ip.new(ip.TCP, _my_ip, _remote_ip)
-            tcp.set_source_port(_local_port)
-            tcp.set_dest_port(_remote_port)
-            tcp.set_seq_nr(_snd_nxt)
-            tcp.set_ack_nr(_rcv_nxt)
-            tcp.set_header_len(20)    ' XXX hardcode for now; no TCP options yet
-            tcplen := tcp.header_len()
-            tcp.set_flags(tcp.FIN | tcp.ACK)
-            tcp.set_window(128)
-            tcp.set_checksum(0)
-            tcp.wr_tcp_header()
-            frm_end := net[netif].fifo_wr_ptr()
-            net[netif].inet_checksum_wr(tcp._tcp_start, ...
-                                        tcplen, ...
-                                        tcp._tcp_start+TCPH_CKSUM, ...
-                                        tcp.pseudo_header_cksum(_my_ip, _remote_ip, 0))
-        net[netif].fifo_set_wr_ptr(frm_end)
-        ip.update_chksum(tcplen)
-    net[netif].send_frame()
+    tcp_send(   _local_port, _remote_port, ...
+                _snd_nxt, _rcv_nxt, ...
+                tcp.FIN | tcp.ACK, ...
+                128, ...
+                0 )
     _snd_nxt++
 
 pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_mac, attempt
@@ -371,12 +356,13 @@ pub process_tcp(): tf | ack, seq, tcplen, frm_end, sp, dp
                     0 )
         return -2
 
-pub tcp_send(sp, dp, seq, ack, flags, win) | tcplen, frm_end
+pub tcp_send(sp, dp, seq, ack, flags, win, dlen=0) | tcplen, frm_end
 ' Send a TCP segment
 '   sp, dp: source, destination ports
 '   seq, ack: sequence, acknowledgement numbers
 '   flags: control flags
 '   win: TCP window
+'   dlen (optional): payload data length
     ethii.new(_ptr_my_mac, _ptr_remote_mac, ETYP_IPV4)
         ip.new(ip.TCP, _my_ip, _remote_ip)
             tcp.set_source_port(sp)
@@ -384,16 +370,19 @@ pub tcp_send(sp, dp, seq, ack, flags, win) | tcplen, frm_end
             tcp.set_seq_nr(seq)
             tcp.set_ack_nr(ack)
             tcp.set_header_len(20)    ' XXX hardcode for now; no TCP options yet
-            tcplen := tcp.header_len()
+            tcplen := tcp.header_len() + dlen
             tcp.set_flags(flags)
             tcp.set_window(win)
             tcp.set_checksum(0)
             tcp.wr_tcp_header()
+            if ( dlen > 0 )                  ' attach payload (XXX untested)
+                printf1(@"send_segment(): length is %d, attaching payload\n\r", dlen)
+                net[netif].wrblk_lsbf(@_txbuff, dlen <# SENDQ_SZ)
             frm_end := net[netif].fifo_wr_ptr()
             net[netif].inet_checksum_wr(tcp._tcp_start, ...
                                         tcplen, ...
                                         tcp._tcp_start+TCPH_CKSUM, ...
-                                        tcp.pseudo_header_cksum(_my_ip, _remote_ip, 0))
+                                        tcp.pseudo_header_cksum(_my_ip, _remote_ip, dlen))
         net[netif].fifo_set_wr_ptr(frm_end)
         ip.update_chksum(tcplen)
     net[netif].send_frame()
@@ -407,29 +396,11 @@ pub send_segment(len=0) | tcplen, frm_end
 
     if ( (_snd_nxt - _snd_una) < _snd_wnd )     'check for space in the send window first
         'strln(@"snd_nxt-snd_una < snd_wnd")
-        ethii.new(_ptr_my_mac, _ptr_remote_mac, ETYP_IPV4)
-            ip.new(ip.TCP, _my_ip, _remote_ip)
-                tcp.set_source_port(_local_port)
-                tcp.set_dest_port(_remote_port)
-                tcp.set_seq_nr(_snd_nxt)
-                tcp.set_ack_nr(_rcv_nxt)
-                tcp.set_header_len(20)    ' XXX hardcode for now; no TCP options yet
-                tcplen := tcp.header_len() + len
-                tcp.set_flags(_flags)
-                tcp.set_window(_rcv_wnd)
-                tcp.set_checksum(0)
-                tcp.wr_tcp_header()
-                if ( len > 0 )                  ' attach payload (XXX untested)
-                    printf1(@"send_segment(): length is %d, attaching payload\n\r", len)
-                    net[netif].wrblk_lsbf(@_txbuff, len <# SENDQ_SZ)
-                frm_end := net[netif].fifo_wr_ptr()
-                net[netif].inet_checksum_wr(tcp._tcp_start, ...
-                                            tcplen, ...
-                                            tcp._tcp_start+TCPH_CKSUM, ...
-                                            tcp.pseudo_header_cksum(_my_ip, _remote_ip, len))
-            net[netif].fifo_set_wr_ptr(frm_end)
-            ip.update_chksum(tcplen)
-        net[netif].send_frame()
+        tcp_send(   _local_port, _remote_port, ...
+                    _snd_nxt, _rcv_nxt, ...
+                    _flags, ...
+                    _rcv_wnd, ...
+                    len )
         _snd_nxt += len
         'printf1(@"snd_nxt now %d\n\r", _snd_nxt)
     'else
