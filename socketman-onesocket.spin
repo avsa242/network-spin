@@ -29,6 +29,11 @@ con
     CLOSING, LAST_ACK, TIME_WAIT, LISTEN
 
 
+    { error codes }
+    OK                  = 0
+    NO_ERROR            = OK
+
+
 var
 
     long netif                                  ' pointer to network interface driver object
@@ -152,6 +157,30 @@ pub arp_request(): ent_nr
         arp.who_has(_my_ip, _pending_arp_request)
         net[netif].send_frame()
         _timestamp_last_arp_req := cnt          ' mark now as the last time we sent a request
+
+
+pub check_seq_nr(dlen): status | seq
+' Check/validate the sequence number during a synchronized connection state
+'   Returns:
+'       0: sequence number acceptable
+'       -1: sequence number bad
+    strln(@"check the seq num")
+    status := OK
+    seq := tcp.seq_nr()
+    if ( (dlen == 0) and (_rcv_wnd == 0) )
+        if ( seq == _rcv_nxt )
+            status := OK
+    if ( (dlen == 0) and (_rcv_wnd > 0) )
+        if ( (seq => _rcv_nxt) and (seq < (_rcv_nxt+_rcv_wnd)) )
+            status := OK
+    if ( (dlen > 0) and (_rcv_wnd == 0) )
+        strln(@"    SEQ bad")
+        return -1'xxx
+    if ( (dlen > 0) and (_rcv_wnd > 0) )
+        if (    (seq => _rcv_nxt) and ( seq < (_rcv_nxt+_rcv_wnd) ) ...
+                    or ...
+                (((seq+(dlen-1)) => _rcv_nxt) and (seq+(dlen-1)) < (_rcv_nxt+_rcv_wnd)) )
+            status := OK
 
 
 pub close()
@@ -416,25 +445,9 @@ pub process_tcp(): tf | ack, seq, tcplen, frm_end, sp, dp, dlen, ack_accept, seq
             if ( _state == ESTABLISHED )
                 strln(@"state: ESTABLISHED")
             '1. check the seq num
-            strln(@"check the seq num")
-            seq_accept := false
-            if ( (dlen == 0) and (_rcv_wnd == 0) )
-                if ( tcp.seq_nr() == _rcv_nxt )
-                    seq_accept := true
-            if ( (dlen == 0) and (_rcv_wnd > 0) )
-                if ( (tcp.seq_nr() => _rcv_nxt) and (tcp.seq_nr() < (_rcv_nxt+_rcv_wnd)) )
-                    seq_accept := true
-            if ( (dlen > 0) and (_rcv_wnd == 0) )
-                strln(@"    SEQ bad")
-                return -1'xxx
-            if ( (dlen > 0) and (_rcv_wnd > 0) )
-                if (    (tcp.seq_nr() => _rcv_nxt) and ( tcp.seq_nr() < (_rcv_nxt+_rcv_wnd) )...
-                            or ...
-                        ((tcp.seq_nr()+(dlen-1)) => _rcv_nxt) and (tcp.seq_nr()+(dlen-1)) < ...
-                        (_rcv_nxt+_rcv_wnd) )
-                    seq_accept := true
+            seq_accept := (check_seq_nr(dlen) == OK)
             if ( seq_accept )
-                strln(@"seq_nr acceptable")
+                strln(@"        seq_nr acceptable")
                 _rcv_nxt += dlen
                 tcp_send(   _local_port, _remote_port, ...
                             _snd_nxt, _rcv_nxt, ...
@@ -442,7 +455,7 @@ pub process_tcp(): tf | ack, seq, tcplen, frm_end, sp, dp, dlen, ack_accept, seq
                             _rcv_wnd )
                 return dlen
             else
-                strln(@"bad seq_nr - dropping")
+                strln(@"        bad seq_nr - dropping")
                 ifnot ( tcp.flags() & tcp.RST )
                     tcp_send(   _local_port, _remote_port, ...
                                 _snd_nxt, _rcv_nxt, ...
@@ -450,7 +463,7 @@ pub process_tcp(): tf | ack, seq, tcplen, frm_end, sp, dp, dlen, ack_accept, seq
                                 _rcv_wnd )
                 return -1'xxx drop
             '2. check the RST bit
-            str(@"check the RST bit: ")
+            str(@"    check the RST bit: ")
             if ( tcp.flags() & tcp.RST )
                 strln(@" set")
                 case _state
@@ -748,6 +761,7 @@ pub send_segment(len=0) | tcplen, frm_end
         'printf1(@"snd_nxt now %d\n\r", _snd_nxt)
     'else
         'strln(@"snd_nxt-snd_una is not < snd_wnd")
+
 
 
 pub set_state(new_state)
