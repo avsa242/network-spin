@@ -5,7 +5,7 @@
     Description: Socket manager
         * one TCP socket
     Started Nov 8, 2023
-    Updated Nov 20, 2023
+    Updated Nov 21, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -335,11 +335,15 @@ pub process_tcp(): tf | ack, seq, tcplen, frm_end, sp, dp, dlen, ack_accept, seq
             if ( tcp.flags() & tcp.ACK )
                 strln(@"    ACK received")
                 if ( (tcp.ack_nr() =< _iss) or (tcp.ack_nr() > _snd_nxt) )
+                { if the remote's ACK is bad, send a reset (unless the remote segment also
+                    had the RST bit set - in that case, simply drop the segment) }
                     str(@"    bad ACK num - ")
                     if ( tcp.flags() & tcp.RST )
+                        { drop }
                         strln(@"    dropping")
-                        return -1'drop
+                        return -1'xxx
                     else
+                        { send reset }
                         strln(@"    sending reset")
                         seq := tcp.ack_nr()
                         ack := 0    'xxx not specd in RFC...this ok?
