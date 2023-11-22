@@ -167,20 +167,22 @@ pub check_seq_nr(dlen): status | seq
     strln(@"check the seq num")
     status := OK
     seq := tcp.seq_nr()
-    if ( (dlen == 0) and (_rcv_wnd == 0) )
-        if ( seq == _rcv_nxt )
-            status := OK
-    if ( (dlen == 0) and (_rcv_wnd > 0) )
-        if ( (seq => _rcv_nxt) and (seq < (_rcv_nxt+_rcv_wnd)) )
-            status := OK
-    if ( (dlen > 0) and (_rcv_wnd == 0) )
-        strln(@"    SEQ bad")
-        return -1'xxx
-    if ( (dlen > 0) and (_rcv_wnd > 0) )
-        if (    (seq => _rcv_nxt) and ( seq < (_rcv_nxt+_rcv_wnd) ) ...
-                    or ...
-                (((seq+(dlen-1)) => _rcv_nxt) and (seq+(dlen-1)) < (_rcv_nxt+_rcv_wnd)) )
-            status := OK
+    if ( _rcv_wnd == 0 )
+        if ( dlen > 0 )
+            strln(@"    SEQ bad")
+            return -1'xxx
+        else
+            if ( seq == _rcv_nxt )
+                return OK
+    elseif ( _rcv_wnd > 0 )
+        if ( dlen > 0)
+            if (    (seq => _rcv_nxt) and ( seq < (_rcv_nxt+_rcv_wnd) ) ...
+                        or ...
+                    (((seq+(dlen-1)) => _rcv_nxt) and (seq+(dlen-1)) < (_rcv_nxt+_rcv_wnd)) )
+                return OK
+        elseif ( dlen == 0 )
+            if ( (seq => _rcv_nxt) and (seq < (_rcv_nxt+_rcv_wnd)) )
+                return OK
 
 
 pub close()
