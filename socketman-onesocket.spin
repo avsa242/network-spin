@@ -82,7 +82,6 @@ pub init(net_ptr, local_ip, local_mac)
 '   net_ptr: pointer to the network device driver object
 '   local_ip: this node's IP address, in 32-bit form
 '   local_mac: pointer to this node's MAC address
-    set_state(LISTEN)
     netif := net_ptr
     bytemove(@_my_mac, @net[netif]._mac_local, MACADDR_LEN)
     _ptr_my_mac := @_my_mac
@@ -98,17 +97,13 @@ pub init(net_ptr, local_ip, local_mac)
     _my_ip := local_ip
     _remote_ip := $01_00_2a_0a
     arp.cache_entry(local_mac, local_ip)
-    _local_port := 23
-    _snd_wnd := 128
-    _ptr_remote_mac := @_remote_mac
-
 
 var long _pending_arp_request
 var long _conn  ' XXX temp, for testing
 pub loop() | l  ' XXX rename
 ' Main loop
-    '_conn := 1  'XXX temp, for testing
-    'testflag := true
+    _conn := 1  'XXX temp, for testing
+    testflag := true
     repeat
         if ( net[netif].pkt_cnt() )
             get_frame()
@@ -372,6 +367,33 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                 _snd_nxt := _iss+1
                 _snd_una := _iss
                 _state := SYN_RECEIVED
+                return 1
+        SYN_SENT:
+            { first check the ACK bit }
+            strln(@"    state: SYN_SENT")
+            if ( tcp.flags() & tcp.ACK )        ' if the ACK bit is set, check the ACK number
+                strln(@"    ACK set")
+                if ( (tcp.ack_nr() =< _iss) or (tcp.ack_nr() > _snd_nxt) )
+                    { bad ACK number }
+                    strln(@"    ACK number bad")
+                    if ( tcp.flags() & tcp.RST )
+                        { received with reset; ignore }
+                        strln(@"    RST set; drop")
+                        return -1'xxx           ' drop segment and return
+                    else
+                        { received without reset; send one }
+                        strln(@"    RST not set; sending RST")
+                        seq := tcp.ack_nr()
+                        ack := 0
+                        tcp_send(   _local_port, _remote_port, ...
+                                    seq, ack, ...
+                                    tcp.RST, ...
+                                    0 )
+                        return -1'xxx           ' drop segment and return
+                if ( (tcp.ack_nr() > _snd_una) and (tcp.ack_nr() =< _snd_nxt) )
+                    { ACK number is acceptable }
+                    strln(@"    ACK number is good")
+                    ack_accept := true
 
 pub recv_segment(): len
 ' Receive a TCP segment
