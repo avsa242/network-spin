@@ -369,13 +369,14 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                 _state := SYN_RECEIVED
                 return 1
         SYN_SENT:
-            { first check the ACK bit }
+            { first, check the ACK bit }
             strln(@"    state: SYN_SENT")
+            ack_accept := false
             if ( tcp.flags() & tcp.ACK )        ' if the ACK bit is set, check the ACK number
                 strln(@"    ACK set")
                 if ( (tcp.ack_nr() =< _iss) or (tcp.ack_nr() > _snd_nxt) )
                     { bad ACK number }
-                    strln(@"    ACK number bad")
+                    strln(@"    ACK number bad")'xxx behavior unverified
                     if ( tcp.flags() & tcp.RST )
                         { received with reset; ignore }
                         strln(@"    RST set; drop")
@@ -394,6 +395,18 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                     { ACK number is acceptable }
                     strln(@"    ACK number is good")
                     ack_accept := true
+            { second, check the RST bit }
+            if ( tcp.flags() & tcp.RST )        ' if the RST bit is set
+                strln(@"    RST set")
+                if ( ack_accept )
+                    strln(@"    (ACK was acceptable)")
+                    'xxx _signal := ECONN_RESET
+                    'xxx callback function for user signals?
+                    strln(@"    state -> CLOSED")
+                    set_state(CLOSED)
+                    'xxx delete_tcb()
+                strln(@"    error: connection reset")
+                return -1'xxx
 
 pub recv_segment(): len
 ' Receive a TCP segment
