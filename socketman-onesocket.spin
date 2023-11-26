@@ -407,6 +407,43 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                     'xxx delete_tcb()
                 strln(@"    error: connection reset")
                 return -1'xxx
+            { third: check the security/compartment }
+            { NOTE: ignored }
+            { fourth check the SYN bit }
+            { NOTE: This step should be reached only if the ACK is ok, or there is
+                no ACK, and it the segment did not contain a RST. }
+            if ( tcp.flags() & tcp.SYN )
+                strln(@"    SYN set")
+                _rcv_nxt := tcp.seq_nr()+1
+                _irs := tcp.seq_nr()
+                if ( ack_accept )
+                    _snd_una := tcp.ack_nr()
+                    { any segments on the retransmission queue that this acknowledges
+                        should be removed }
+                if ( _snd_una > _iss )
+                    { our SYN has been ACKed }
+                    strln(@"    SND.UNA > ISS")
+                    set_state(ESTABLISHED)
+                    '_snd_una := _snd_nxt       'xxx level-ip does this
+                    tcp_send(   _local_port, _remote_port, ...
+                                _snd_nxt, _rcv_nxt, ...
+                                tcp.ACK, ...
+                                _snd_wnd ) 'xxx window settings?
+                    return 0
+                else                            'xxx behavior unverified
+                    { Otherwise, enter SYN-RECEIVED, form a SYN,ACK segment and send it }
+                    strln(@"    SND.UNA =< ISS")
+                    set_state(SYN_RECEIVED)
+                    '_snd_una := _iss           ' xxx level-ip does this
+                    _snd_wnd := tcp.window()
+                    _snd_wl1 := tcp.seq_nr()
+                    _snd_wl2 := tcp.ack_nr()
+                    tcp_send(   _local_port, _remote_port, ...
+                                _iss, _rcv_nxt, ...
+                                tcp.SYN | tcp.ACK, ...
+                                _snd_wnd )
+                    return 0
+            return 0                        ' SYN not set; drop segment
 
 pub recv_segment(): len
 ' Receive a TCP segment
@@ -508,6 +545,8 @@ pub set_state(new_state)
 ' Change the connection state of the socket
     _prev_state := _state                       ' record the previous state
     _state := new_state
+    printf2(@"state change %s -> %s\n\r", state_str(_prev_state), state_str(_state))
+
 
 pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
 ' Send a TCP segment
@@ -516,6 +555,7 @@ pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
 '   flags: control flags
 '   win: TCP window
 '   seg_len (optional): payload data length
+    strln(@"tcp_send()")
     ethii.new(_ptr_my_mac, _ptr_remote_mac, ETYP_IPV4)
         ip.new(ip.TCP, _my_ip, _remote_ip)
             tcp.set_source_port(sp)
@@ -529,7 +569,7 @@ pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
             tcp.set_checksum(0)
             tcp.wr_tcp_header()
             if ( seg_len > 0 )                  ' attach payload (XXX untested)
-                printf1(@"send_segment(): length is %d, attaching payload\n\r", seg_len)
+                printf1(@"    length is %d, attaching payload\n\r", seg_len)
                 net[netif].wrblk_lsbf(@_txbuff, seg_len <# SENDQ_SZ)
             frm_end := net[netif].fifo_wr_ptr()
             net[netif].inet_checksum_wr(tcp._tcp_start, ...
@@ -578,9 +618,29 @@ pub send_test_data() | seg_len
 
     seg_len := strsize(@test_data)
     bytemove(@_txbuff, @test_data, seg_len)
-    send_segment(seg_len)
+    tcp_send(   _local_port, _remote_port, ...
+                _snd_nxt, _rcv_nxt, ...
+                tcp.ACK, ...
+                _snd_wnd, ...
+                seg_len )
+
     testflag := false
 
+pub state_str(st): pstr
+
+    pstr := @"???"
+    case st
+        CLOSED: return @"CLOSED"
+        SYN_SENT: return @"SYN_SENT"
+        SYN_RECEIVED: return @"SYN_RECEIVED"
+        ESTABLISHED: return @"ESTABLISHED"
+        FIN_WAIT_1: return @"FIN_WAIT_1"
+        FIN_WAIT_2: return @"FIN_WAIT_2"
+        CLOSE_WAIT: return @"CLOSE_WAIT"
+        CLOSING: return @"CLOSING"
+        LAST_ACK: return @"LAST_ACK"
+        TIME_WAIT: return @"TIME_WAIT"
+        LISTEN: return @"LISTEN"
 
 DAT
 {
