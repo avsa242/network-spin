@@ -82,7 +82,7 @@ pub init(net_ptr, local_ip, local_mac)
 '   net_ptr: pointer to the network device driver object
 '   local_ip: this node's IP address, in 32-bit form
 '   local_mac: pointer to this node's MAC address
-    set_state(CLOSED)
+    set_state(LISTEN)
     netif := net_ptr
     bytemove(@_my_mac, @net[netif]._mac_local, MACADDR_LEN)
     _ptr_my_mac := @_my_mac
@@ -98,6 +98,9 @@ pub init(net_ptr, local_ip, local_mac)
     _my_ip := local_ip
     _remote_ip := $01_00_2a_0a
     arp.cache_entry(local_mac, local_ip)
+    _local_port := 23
+    _snd_wnd := 128
+    _ptr_remote_mac := @_remote_mac
 
 
 var long _pending_arp_request
@@ -335,7 +338,40 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                             flags, ...
                             0 )
             return -1'xxx error: socket/TCB doesn't exist
-
+        LISTEN:
+            strln(@"    state: LISTEN")
+            if ( tcp.flags() & tcp.RST )
+                { first check for an RST }
+                strln(@"    RST set")
+                return 0                        ' ignore
+            if ( tcp.flags() & tcp.ACK )        ' xxx behavior unverified
+                { second, check for an ACK: Any acknowledgment is bad if it arrives on a
+                    connection still in the LISTEN state }
+                strln(@"    ACK set")
+                tcp_send(   _local_port, tcp.source_port(), ...
+                            tcp.ack_nr(), 0, ...
+                            tcp.RST, ...
+                            0 )
+                return 0                        ' ignore
+            if ( tcp.flags() & tcp.SYN )
+                { third check for a SYN }
+                { NOTE: security/compartment is ignored }
+                strln(@"    SYN set")
+                _rcv_nxt := tcp.seq_nr()+1
+                _irs := tcp.seq_nr()
+                _iss := math.rndi(posx)         ' select our initial send sequence
+                { fill in the remote socket data and complete the handshake }
+                _remote_ip := ip.src_addr()
+                _remote_port := tcp.source_port()
+                util.show_ip_addr(@"    remote socket: ", _remote_ip, @":")
+                printf1(@"%d\n\r", _remote_port)
+                tcp_send(   _local_port, _remote_port, ...
+                            _iss, _rcv_nxt, ...
+                            tcp.SYN | tcp.ACK, ...
+                            _snd_wnd )
+                _snd_nxt := _iss+1
+                _snd_una := _iss
+                _state := SYN_RECEIVED
 
 pub recv_segment(): len
 ' Receive a TCP segment
