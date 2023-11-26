@@ -474,6 +474,37 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                             tcp.ACK, ...
                             _snd_wnd )
                 return -1'xxx                   ' drop the unacceptable segment and return
+            if ( tcp.flags() & tcp.RST )
+                strln(@"    RST is set")
+                case _state
+                    SYN_RECEIVED:
+                        strln(@"    state: SYN_RECEIVED")
+                        if ( _prev_state == LISTEN )
+                            { connection was initiated with a passive open }
+                            strln(@"    was passive OPEN")
+                            set_state(LISTEN)
+                            'xxx the retransmission queue should be flushed
+                            return 0'
+                        elseif ( _prev_state == SYN_SENT )
+                            { connection was initiated with an active open }
+                            strln(@"    was active OPEN")
+                            strln(@"    error: connection refused")
+                            '_signal := ECONN_REFUSED
+                            'xxx the retransmission queue should be flushed
+                            set_state(CLOSED)
+                            'xxx delete the TCB
+                            return -1'xxx error: connection refused
+                    ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT:
+                        { any outstanding RECEIVEs and SEND should receive "reset" responses.
+                            All segment queues should be flushed. }
+                        '_signal := ECONN_RESET ' signal to the user the connection was reset
+                        set_state(CLOSED)
+                        'xxx delete the TCB
+                        return -1'xxx error: connection reset
+                    CLOSING, LAST_ACK, TIME_WAIT:
+                        set_state(CLOSED)
+                        'xxx delete the TCB
+                        return -1
 
 pub recv_segment(): len
 ' Receive a TCP segment
