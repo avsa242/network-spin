@@ -505,6 +505,25 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                         set_state(CLOSED)
                         'xxx delete the TCB
                         return -1
+            { third, check security and precedence }
+            { NOTE: ignored }
+            { fourth, check the SYN bit (NOTE: implementation follows RFC793) }
+            if ( tcp.flags() & tcp.SYN )
+                case _state
+                    SYN_RECEIVED:
+                        if ( _prev_state == LISTEN )
+                            { connection was initiated with a passive OPEN }
+                            set_state(LISTEN)
+                            return 0
+                    ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT:
+                        { RFC 5961 recommends that in these synchronized states,
+                            if the SYN bit is set, irrespective of the sequence number,
+                            TCP endpoints MUST send a "challenge ACK" to the remote peer }
+                        tcp_send(   _local_port, _remote_port, ...
+                                    _snd_nxt, _rcv_nxt, ...
+                                    tcp.ACK, ...
+                                    _snd_wnd )
+                        return 0                ' drop unacceptable segment
 
 pub recv_segment(): len
 ' Receive a TCP segment
