@@ -5,7 +5,7 @@
     Description: Socket manager
         * one TCP socket
     Started Nov 8, 2023
-    Updated Nov 21, 2023
+    Updated Nov 26, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -82,6 +82,7 @@ pub init(net_ptr, local_ip, local_mac)
 '   net_ptr: pointer to the network device driver object
 '   local_ip: this node's IP address, in 32-bit form
 '   local_mac: pointer to this node's MAC address
+    set_state(CLOSED)
     netif := net_ptr
     bytemove(@_my_mac, @net[netif]._mac_local, MACADDR_LEN)
     _ptr_my_mac := @_my_mac
@@ -95,6 +96,7 @@ pub init(net_ptr, local_ip, local_mac)
 
     ip.set_my_ip32(local_ip)
     _my_ip := local_ip
+    _remote_ip := $01_00_2a_0a
     arp.cache_entry(local_mac, local_ip)
 
 
@@ -102,8 +104,8 @@ var long _pending_arp_request
 var long _conn  ' XXX temp, for testing
 pub loop() | l  ' XXX rename
 ' Main loop
-    _conn := 1  'XXX temp, for testing
-    testflag := true
+    '_conn := 1  'XXX temp, for testing
+    'testflag := true
     repeat
         if ( net[netif].pkt_cnt() )
             get_frame()
@@ -159,7 +161,7 @@ pub arp_request(): ent_nr
         _timestamp_last_arp_req := cnt          ' mark now as the last time we sent a request
 
 
-pub check_seq_nr(dlen): status | seq
+pub check_seq_nr(seg_len): status | seq
 ' Check/validate the sequence number during a synchronized connection state
 '   Returns:
 '       0: sequence number acceptable
@@ -168,19 +170,19 @@ pub check_seq_nr(dlen): status | seq
     status := OK
     seq := tcp.seq_nr()
     if ( _rcv_wnd == 0 )
-        if ( dlen > 0 )
+        if ( seg_len > 0 )
             strln(@"    SEQ bad")
             return -1'xxx
         else
             if ( seq == _rcv_nxt )
                 return OK
     elseif ( _rcv_wnd > 0 )
-        if ( dlen > 0)
+        if ( seg_len > 0)
             if (    (seq => _rcv_nxt) and ( seq < (_rcv_nxt+_rcv_wnd) ) ...
                         or ...
-                    (((seq+(dlen-1)) => _rcv_nxt) and (seq+(dlen-1)) < (_rcv_nxt+_rcv_wnd)) )
+                    (((seq+(seg_len-1)) => _rcv_nxt) and (seq+(seg_len-1)) < (_rcv_nxt+_rcv_wnd)) )
                 return OK
-        elseif ( dlen == 0 )
+        elseif ( seg_len == 0 )
             if ( (seq => _rcv_nxt) and (seq < (_rcv_nxt+_rcv_wnd)) )
                 return OK
 
@@ -302,373 +304,38 @@ pub process_ipv4()
             process_tcp()
 
 
-pub process_tcp(): tf | ack, seq, tcplen, frm_end, sp, dp, dlen, ack_accept, seq_accept
+pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_accept, seq_accept
 ' Process incoming TCP segment
     tcp.rd_tcp_header()
-    ifnot ( (tcp.dest_port() == _local_port) and (tcp.source_port() == _remote_port) )
-        strln(@"connection refused")
-        sp := tcp.dest_port()
-        dp := tcp.source_port()
-        seq := tcp.ack_nr()
-        ack := tcp.seq_nr()
-        tcp_send(   sp, dp, ...
-                    seq, ack, ...
-                    tcp.RST | tcp.ACK, ...
-                    0 )
-        return -1'xxx connection refused - doesn't match this socket
-    dlen := ( ip.dgram_len() - ip.IP_HDR_SZ - tcp.header_len() )
+    seg_len := ( ip.dgram_len() - ip.IP_HDR_SZ - tcp.header_len() )
     case _state
         CLOSED:
+            { If the state is CLOSED (i.e., TCB does not exist) then all data in the incoming
+                segment is discarded }
             strln(@"    state: CLOSED")
             if ( tcp.flags() & tcp.RST )
+                { An incoming segment containing a RST is discarded }
                 strln(@"    RST received; discard")
-                return -1                           ' discard
+                return -1                       ' discard
             else
-                ifnot ( tcp.flags() & tcp.ACK )     ' received with ACK bit clear
-                    strln(@"    ACK clear")
-                    seq := 0
-                    ack := tcp.seq_nr() + dlen
-                    _flags := tcp.RST | tcp.ACK
-                else                                ' received with ACK bit set
-                    strln(@"    ACK set")
+                { An incoming segment not containing a RST causes a RST to be sent in response }
+                if ( tcp.flags() & tcp.ACK )    ' xxx behavior unverified
+                    { If the ACK bit is on... }
                     seq := tcp.ack_nr()
-                    _flags := tcp.RST
+                    ack := 0'xxx unspecified in RFC
+                    flags := tcp.RST
+                else
+                    { If the ACK bit is off, sequence number zero is used }
+                    seq := 0
+                    ack := tcp.seq_nr()+seg_len
+                    flags := tcp.RST | tcp.ACK
                 strln(@"    sending reset")
                 tcp_send(   tcp.dest_port(), tcp.source_port(), ...
                             ack, seq, ...
-                            tcp.RST | tcp.ACK, ...
+                            flags, ...
                             0 )
-            return -1'xxx specific error code
-        LISTEN:
-            strln(@"state: LISTEN")
-            '1. check for RST
-                'ignore
-            '2. check for ACK
-                'bad - send reset, seq=tcp.ack, _flags=RST, return
-            '3. check for SYN
-                'check security (ignored for now)
-            '_rcv_nxt := tcp.seq_nr()+1
-            '_irs := tcp.seq_nr()
-            '_iss := math.rndi(posx)
-            'send segment: seq=_iss, ack=rcv.nxt, _flags=SYN|ACK
-            '_snd_nxt := _iss+1
-            '_snd_una := _iss
-            '_state := SYN_RECEIVED
-            ' other ctrl or data will be processed in SYN_RECEIVED state (proc of SYN|ACK don't repeat)
-            ' if listen not fully specd (foreign socket not fully specd), fill in unspec fields
-            '4. other text or ctrl
-                'drop segment
-        SYN_SENT:
-            strln(@"state: SYN_SENT")
-            '1. check ACK bit
-            strln(@"check ACK bit")
-            ack_accept := false
-            if ( tcp.flags() & tcp.ACK )
-                strln(@"    ACK received")
-                if ( (tcp.ack_nr() =< _iss) or (tcp.ack_nr() > _snd_nxt) )
-                { if the remote's ACK is bad, send a reset (unless the remote segment also
-                    had the RST bit set - in that case, simply drop the segment) }
-                    str(@"    bad ACK num - ")
-                    if ( tcp.flags() & tcp.RST )
-                        { drop }
-                        strln(@"    dropping")
-                        return -1'xxx
-                    else
-                        { send reset }
-                        strln(@"    sending reset")
-                        seq := tcp.ack_nr()
-                        ack := 0    'xxx not specd in RFC...this ok?
-                        _flags := tcp.RST
-                        tcp_send(   tcp.dest_port(), tcp.source_port(), ...
-                                    seq, ack, ...
-                                    _flags, ...
-                                    0 )
-                        return -1'xxx
-                if ( (tcp.ack_nr() => _snd_una) and (tcp.ack_nr() =< _snd_nxt) )
-                    strln(@"    ACK is good")
-                    ' ACK is acceptable
-                    ack_accept := true
-            '2. check RST bit
-            str(@"check RST bit: ")
-            if ( tcp.flags() & tcp.RST )
-                str(@"    RST - ")
-                if ( ack_accept )
-                    strln(@"error: connection reset")
-                    disconnect()
-                    return -1
-                else
-                    strln(@"dropped")
-                    return -1
-            '---
-            '3. check security/precedence (ignored for now)
-            '---
-            ifnot ( ack_accept )
-                strln(@"ack_accept != true")
-                return -1'xxx
-            '4. check the SYN bit
-            str(@"check the SYN bit: ")
-            if ( tcp.flags & tcp.SYN )
-                strln(@"SYN")
-                _rcv_nxt := tcp.seq_nr() + 1
-                _irs := tcp.seq_nr()
-                _snd_una := tcp.ack_nr()
-                ' future: any segments on the retrans queue which are ack'd should be removed
-                if ( _snd_una > _iss )
-                    strln(@"    SYN_SENT -> ESTABLISHED")
-                    set_state(ESTABLISHED)
-                    seq := _snd_nxt
-                    ack := _rcv_nxt
-                    _flags := tcp.ACK
-                    tcp_send(   _local_port, _remote_port, ...
-                                seq, ack, ...
-                                _flags, ...
-                                _snd_wnd )  'xxx is window param correct here?
-                else
-                    strln(@"    LISTEN - > SYN_RECEIVED")
-                    set_state(SYN_RECEIVED)
-                    seq := _iss
-                    ack := _rcv_nxt
-                    _flags := tcp.SYN | tcp.ACK
-                    tcp_send(   _local_port, _remote_port, ...
-                                seq, ack, ...
-                                _flags, ...
-                                _snd_wnd )
-            '5. if no SYN or RST, drop
-            else                                ' SYN not set
-                ifnot ( tcp.flags() & tcp.RST ) ' no RST received
-                    strln(@"no SYN, no RST - drop")
-                    set_state(CLOSED)'xxx actually clean up the TCB
-                    return -1'xxx drop
-                else                            ' RST received
-                    strln(@"RESET")
-                    set_state(CLOSED)'xxx ditto
-                    return -1'xxx drop
-        SYN_RECEIVED, ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT:
-            if ( _state == ESTABLISHED )
-                strln(@"state: ESTABLISHED")
-            '1. check the seq num
-            seq_accept := (check_seq_nr(dlen) == OK)
-            if ( seq_accept )
-                strln(@"        seq_nr acceptable")
-                _rcv_nxt += dlen
-                tcp_send(   _local_port, _remote_port, ...
-                            _snd_nxt, _rcv_nxt, ...
-                            tcp.ACK, ...
-                            _rcv_wnd )
-                return dlen
-            else
-                strln(@"        bad seq_nr - dropping")
-                ifnot ( tcp.flags() & tcp.RST )
-                    tcp_send(   _local_port, _remote_port, ...
-                                _snd_nxt, _rcv_nxt, ...
-                                tcp.ACK, ...
-                                _rcv_wnd )
-                return -1'xxx drop
-            '2. check the RST bit
-            str(@"    check the RST bit: ")
-            if ( tcp.flags() & tcp.RST )
-                strln(@" set")
-                case _state
-                    SYN_RECEIVED:
-                        strln(@"    SYN_RECEIVED")
-                        if ( _prev_state == LISTEN )
-                        'xxx if this was a passive OPEN/LISTEN conn, return to that state
-                            set_state(LISTEN)
-                        elseif ( _prev_state == SYN_SENT )
-                        'xxx if it was an active OPEN (came from SYN_SENT),
-                        'xxx then the connection was refused
-                            'xxx signal connection refused
-                            set_state(CLOSED)
-                        'xxx in either case, empty the retrans queue
-                        'xxx if active open, enter CLOSED state, delete TCB, return
-                        return -1'xxx
-                    ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT:
-                        strln(@"    ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT -> CLOSED")
-                    'xxx if RST is set, any outstanding rx and tx should recv 'reset' resp
-                    'xxx flush all segment queues
-                    'xxx signal 'connection reset' to user
-                    'xxx enter CLOSED state, delete TCB, return
-                        set_state(CLOSED)
-                    CLOSING, LAST_ACK, TIME_WAIT:
-                        strln(@"    CLOSING, LAST_ACK, TIME_WAIT -> CLOSED")
-                        set_state(CLOSED)
-                        return -1'xxx
-            '3. check security/precedence (ignore for now)
-            '4. check the SYN bit
-            str(@"check the SYN bit: ")
-            if ( tcp.flags() & tcp.SYN )
-                strln(@"set")
-                if ( (tcp.seq_nr() => _rcv_nxt) and (tcp.seq_nr() < (_rcv_nxt+_rcv_wnd)) )
-                    strln(@"    bad SEQ; sending reset")
-                    seq := 0
-                    ack := tcp.seq_nr()
-                    tcp_send(   _local_port, _remote_port, ...
-                                seq, ack, ...
-                                tcp.RST, ...
-                                0 )
-                    'xxx flush queues
-                    'xxx send connection reset signal to user
-                    set_state(CLOSED)
-                    'xxx delete TCB
-                    return -1'xxx
-            '5. check the ACK field
-            str(@"check the ACK field: ")
-            ifnot ( tcp.flags() & tcp.ACK )
-                strln(@"not set; dropped")
-                return -1'xxx drop
-            else
-                strln(@"set")
-                case _state
-                    SYN_RECEIVED:
-                        strln(@"    SYN_RECEIVED")
-                        if ( (tcp.ack_nr() => _snd_una) and (tcp.ack_nr() =< _snd_nxt) )
-                            strln(@"    SYN_RECEIVED -> ESTABLISHED")
-                            set_state(ESTABLISHED)
-                            'xxx continue processing... put this case inside repeat loop?
-                        else
-                            'xxx explain this path
-                            strln(@"    RESET")
-                            seq := tcp.ack_nr()
-                            ack := 0
-                            tcp_send(   _local_port, _remote_port, ...
-                                        seq, ack, ...
-                                        tcp.RST, ...
-                                        0 )
-                            return -1'xxx
-                    ESTABLISHED:
-                        strln(@"    ESTABLISHED")
-                        if ( (tcp.ack_nr() > _snd_una) and (tcp.ack_nr() =< _snd_nxt) )
-                            strln(@"    OK: ACK > SND.UNA && ACK =< SND.NXT")
-                            _snd_una := tcp.ack_nr()
-                            'xxx any segs on the rt queue which that acks are removed
-                            'xxx signal to user SEND was 'ok'
-                        if ( tcp.ack_nr() < _snd_una )
-                            strln(@"    duplicate ACK; dropped")
-                            'duplicate ack
-                            return 0'ignore
-                        if ( tcp.ack_nr() > _snd_nxt )
-                            strln(@"    ACK to segment not yet seen; dropped")
-                            'segment not yet seen
-                            'xxx RFC says to ACK this, but why?
-                            'xxx other sources suggest some other TCP/IP stacks don't
-                            return 0'drop
-                        if ( (tcp.ack_nr() > _snd_una) and (tcp.ack_nr() =< _snd_nxt) )
-                            'xxx update send window
-                            strln(@"    OK: ACK > SND.UNA && ACK =< SND.NXT")
-                            if (    ((tcp.seq_nr() > _snd_wl1) or (_snd_wl1 == tcp.seq_nr())) and ...
-                                    (tcp.ack_nr() => _snd_wl2) )
-                                strln(@"        OK: (SEQ > WL1 || WL1 == SEQ) && (ACK => WL2)")
-                                _snd_wnd := tcp.window()
-                                _snd_wl1 := tcp.seq_nr()    ' seq_nr of last seg used to update win
-                                _snd_wl2 := tcp.ack_nr()    ' ack_nr of last seg used to update win
-                    FIN_WAIT_1:
-                        strln(@"    FIN_WAIT_1")
-                    'xxx if our FIN is ack'd, enter FIN_WAIT_2, continue processing
-                    FIN_WAIT_2:
-                        strln(@"    FIN_WAIT_2")
-                    'xxx if RT queue is empty, user's CLOSE can be ack'd (don't delete TCB yet)
-                    CLOSING:
-                        strln(@"    CLOSING")
-                    'xxx same processing as ESTABLISHED
-                    LAST_ACK:
-                        strln(@"    LAST_ACK")
-                    'xxx only ACK of our FIN is acceptable here. If it is, delete the TCB,
-                    'xxx enter CLOSED state, return
-                    TIME_WAIT:
-                        strln(@"    TIME_WAIT")
-                    'xxx only retransmission of remote FIN is acceptable here
-                    'xxx ACK it, and restart the 2MSL timeout
-            '6. check urgent bit
-            str(@"check urgent bit: ")
-            if ( tcp.flags() & tcp.URG )
-                strln(@"set")
-                case _state
-                    ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2:
-                        strln(@"    ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2")
-                        _rcv_up := ( _rcv_up #> tcp.urgent_ptr() )
-                        'xxx signal to user remote host has urgent data (if rcv_up is in advance of
-                        'xxx    the data consumed
-                        'xxx ifalready signalled, or still in urgent mode, don't repeat signal
-                    CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT:
-                        strln(@"    CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT")
-                        return 0'ignore
-            '7. process segment text
-            str(@"process segment text: ")
-            if ( dlen )
-                printf1(@"%d bytes\n\r", dlen)
-                case _state
-                    ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2:
-                        strln(@"    ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2")
-                        'xxx this needs to use a circular buffer and receive only what's
-                        'xxx    possible, i.e. how much there's existing space for
-                        net[netif].rdblk_lsbf(@_rxbuff, dlen)
-                    'xxx from the TCP RFC 793:
-                    {Once in the ESTABLISHED state, it is possible to deliver segment
-                            text to user RECEIVE buffers.  Text from segments can be moved
-                            into buffers until either the buffer is full or the segment is
-                            empty.  If the segment empties and carries an PUSH flag, then
-                            the user is informed, when the buffer is returned, that a PUSH
-                            has been received.
+            return -1'xxx error: socket/TCB doesn't exist
 
-                            When the TCP takes responsibility for delivering the data to the
-                            user it must also acknowledge the receipt of the data.
-
-                            Once the TCP takes responsibility for the data it advances
-                            RCV.NXT over the data accepted, and adjusts RCV.WND as
-                            apporopriate to the current buffer availability.  The total of
-                            RCV.NXT and RCV.WND should not be reduced.
-
-                            Please note the window management suggestions in section 3.7.
-
-                            Send an acknowledgment of the form:
-
-                              <SEQ=SND.NXT><ACK=RCV.NXT><CTL=ACK>
-
-                            This acknowledgment should be piggybacked on a segment being
-                            transmitted if possible without incurring undue delay.
-                    }
-                    CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT:
-                        strln(@"    EXCEPTION: dropped (CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT")
-                    { this shouldn't happen; if we're in this state, we received a FIN }
-                        return 0                ' ignore
-            '8. check the FIN bit
-            str(@"check FIN bit")
-            if ( tcp.flags() & tcp.FIN )
-                strln(@"set")
-                case _state
-                    CLOSED, LISTEN, SYN_SENT:
-                        strln(@"    EXCEPTION: dropped (CLOSED, LISTEN, SYN_SENT)")
-                        return -1               ' drop
-                'xxx signal user the connection is closing
-                'xxx deliver pending receives
-                _rcv_nxt++
-                tcp_send(   _local_port, _remote_port, ...
-                            _snd_nxt, _rcv_nxt, ...
-                            tcp.ACK, ...
-                            0 )
-                case _state
-                    SYN_RECEIVED, ESTABLISHED:
-                        strln(@"    SYN_RECEIVED, ESTABLISHED")
-                        set_state(CLOSE_WAIT)
-                    FIN_WAIT_1:
-                        strln(@"    FIN_WAIT_1")
-                        'xxx if our FIN has been ACKed, enter TIME_WAIT, start timer,
-                        'xxx    turn off other timers; else, enter CLOSING state
-                    FIN_WAIT_2:
-                        strln(@"    FIN_WAIT_2")
-                        'xxx enter TIME_WAIT; start timer, turn off other timers
-                    CLOSE_WAIT:
-                        strln(@"    CLOSE_WAIT")
-                        'xxx remain here
-                    CLOSING:
-                        strln(@"    CLOSING")
-                        'xxx remain here
-                    LAST_ACK:
-                        strln(@"    LAST_ACK")
-                        'xxx remain here
-                    TIME_WAIT:
-                        strln(@"    TIME_WAIT")
-                        'xxx remain here, but restart the 2MSL time-wait timeout
 
 pub recv_segment(): len
 ' Receive a TCP segment
@@ -771,13 +438,13 @@ pub set_state(new_state)
     _prev_state := _state                       ' record the previous state
     _state := new_state
 
-pub tcp_send(sp, dp, seq, ack, flags, win, dlen=0) | tcplen, frm_end
+pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
 ' Send a TCP segment
 '   sp, dp: source, destination ports
 '   seq, ack: sequence, acknowledgement numbers
 '   flags: control flags
 '   win: TCP window
-'   dlen (optional): payload data length
+'   seg_len (optional): payload data length
     ethii.new(_ptr_my_mac, _ptr_remote_mac, ETYP_IPV4)
         ip.new(ip.TCP, _my_ip, _remote_ip)
             tcp.set_source_port(sp)
@@ -785,19 +452,19 @@ pub tcp_send(sp, dp, seq, ack, flags, win, dlen=0) | tcplen, frm_end
             tcp.set_seq_nr(seq)
             tcp.set_ack_nr(ack)
             tcp.set_header_len(20)    ' XXX hardcode for now; no TCP options yet
-            tcplen := tcp.header_len() + dlen
+            tcplen := tcp.header_len() + seg_len
             tcp.set_flags(flags)
             tcp.set_window(win)
             tcp.set_checksum(0)
             tcp.wr_tcp_header()
-            if ( dlen > 0 )                  ' attach payload (XXX untested)
-                printf1(@"send_segment(): length is %d, attaching payload\n\r", dlen)
-                net[netif].wrblk_lsbf(@_txbuff, dlen <# SENDQ_SZ)
+            if ( seg_len > 0 )                  ' attach payload (XXX untested)
+                printf1(@"send_segment(): length is %d, attaching payload\n\r", seg_len)
+                net[netif].wrblk_lsbf(@_txbuff, seg_len <# SENDQ_SZ)
             frm_end := net[netif].fifo_wr_ptr()
             net[netif].inet_checksum_wr(tcp._tcp_start, ...
                                         tcplen, ...
                                         tcp._tcp_start+TCPH_CKSUM, ...
-                                        tcp.pseudo_header_cksum(_my_ip, _remote_ip, dlen))
+                                        tcp.pseudo_header_cksum(_my_ip, _remote_ip, seg_len))
         net[netif].fifo_set_wr_ptr(frm_end)
         ip.update_chksum(tcplen)
     net[netif].send_frame()
@@ -836,11 +503,11 @@ pub printf2(pfmt, p1, p2)
 
 var long testflag
 dat test_data byte "Test data", 10, 13, 0
-pub send_test_data() | dlen
+pub send_test_data() | seg_len
 
-    dlen := strsize(@test_data)
-    bytemove(@_txbuff, @test_data, dlen)
-    send_segment(dlen)
+    seg_len := strsize(@test_data)
+    bytemove(@_txbuff, @test_data, seg_len)
+    send_segment(seg_len)
     testflag := false
 
 
