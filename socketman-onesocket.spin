@@ -302,10 +302,13 @@ pub process_ipv4()
             process_tcp()
 
 
-pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_accept, seq_accept
+pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_accept, seq_accept, seg_accept
 ' Process incoming TCP segment
     tcp.rd_tcp_header()
     seg_len := ( ip.dgram_len() - ip.IP_HDR_SZ - tcp.header_len() )
+    strln(@"process_tcp()")
+    printf1(@"    SEG.LEN = %d\n\r", seg_len)
+    printf2(@"    socket port: %d, segment dest port: %d\n\r", _local_port, tcp.dest_port())
     case _state
         CLOSED:
             { If the state is CLOSED (i.e., TCB does not exist) then all data in the incoming
@@ -444,6 +447,33 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                                 _snd_wnd )
                     return 0
             return 0                        ' SYN not set; drop segment
+        SYN_RECEIVED, ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, CLOSING, LAST_ACK, ...
+        TIME_WAIT:
+        { Otherwise, ... }
+            { first check the sequence number }
+            if ( (_rcv_wnd == 0) and (seg_len > 0) )
+                { data received in segment, but the receive window is closed: not acceptable }
+                strln(@"    error: SEG.LEN > 0, but RCV.WND == 0")
+                seg_accept := false
+            ifnot ( (tcp.seq_nr() => _rcv_nxt) and (tcp.seq_nr() < (_rcv_nxt+_rcv_wnd)) or ...
+                    ( (tcp.seq_nr()+seg_len-1) => _rcv_nxt) and ...
+                    (tcp.seq_nr()+seg_len-1) < (_rcv_nxt+_rcv_wnd) )
+                strln(@"    error: SEG.SEQ or SEG.SEQ+SEG.LEN-1 outside receive window")
+                seg_accept := false
+            { If an incoming segment is not acceptable, an acknowledgment should be sent in reply
+                (unless the RST bit is set, if so drop the segment and return) }
+            ifnot ( seg_accept )
+                { If an incoming segment is not acceptable, an acknowledgment should be sent
+                    in reply }
+                strln(@"    error: segment not acceptable (seq_nr)")
+                if ( tcp.flags() & tcp.RST )
+                    { (unless the RST bit is set, if so drop the segment and return) }
+                    return 0'xxx                ' drop segment
+                tcp_send(   _local_port, _remote_port, ...
+                            _snd_nxt, _rcv_nxt, ...
+                            tcp.ACK, ...
+                            _snd_wnd )
+                return -1'xxx                   ' drop the unacceptable segment and return
 
 pub recv_segment(): len
 ' Receive a TCP segment
