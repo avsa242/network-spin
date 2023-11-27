@@ -636,8 +636,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                     do not signal the user again. }
             CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT:
                 { This should not occur since a FIN has been received from the
-                    remote side. }
-                return 0                ' ignore the URG
+                    remote side. Ignore the URG. }
     { Seventh, process the segment text }
     if ( seg_len )                      ' process only if there's actually a payload
         printf1(@"        SEG.LEN = %d\n\r", seg_len)
