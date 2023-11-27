@@ -409,9 +409,9 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                     'xxx delete_tcb()
                 strln(@"    error: connection reset")
                 return -1'xxx
-            { third: check the security/compartment }
+            { third, check the security/compartment }
             { NOTE: ignored }
-            { fourth check the SYN bit }
+            { fourth, check the SYN bit }
             { NOTE: This step should be reached only if the ACK is ok, or there is
                 no ACK, and it the segment did not contain a RST. }
             if ( tcp.flags() & tcp.SYN )
@@ -420,12 +420,12 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                 _irs := tcp.seq_nr()
                 if ( ack_accept )
                     _snd_una := tcp.ack_nr()
+                    strln(@"    updating SND.UNA")
                     print_ptrs()
                     { any segments on the retransmission queue that this acknowledges
                         should be removed }
                 if ( _snd_una > _iss )
                     { our SYN has been ACKed }
-                    strln(@"    SND.UNA > ISS")
                     set_state(ESTABLISHED)
                     '_snd_una := _snd_nxt       'xxx level-ip does this
                     print_ptrs()
@@ -436,7 +436,6 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                     return 0
                 else                            'xxx behavior unverified
                     { Otherwise, enter SYN-RECEIVED, form a SYN,ACK segment and send it }
-                    strln(@"    SND.UNA =< ISS")
                     set_state(SYN_RECEIVED)
                     '_snd_una := _iss           ' xxx level-ip does this
                     _snd_wnd := tcp.window()
