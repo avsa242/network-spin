@@ -306,9 +306,12 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
 ' Process incoming TCP segment
     tcp.rd_tcp_header()
     seg_len := ( ip.dgram_len() - ip.IP_HDR_SZ - tcp.header_len() )
-    strln(@"process_tcp()")
+
+    str(@"process_tcp() ")
+    util.show_tcp_flags(tcp.flags())
     printf1(@"    SEG.LEN = %d\n\r", seg_len)
     printf2(@"    socket port: %d, segment dest port: %d\n\r", _local_port, tcp.dest_port())
+
     case _state
         CLOSED:
             { If the state is CLOSED (i.e., TCB does not exist) then all data in the incoming
@@ -316,7 +319,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
             strln(@"    state: CLOSED")
             if ( tcp.flags() & tcp.RST )
                 { An incoming segment containing a RST is discarded }
-                strln(@"    RST received; discard")
+                strln(@"    discard")
                 return -1                       ' discard
             else
                 { An incoming segment not containing a RST causes a RST to be sent in response }
@@ -340,12 +343,11 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
             strln(@"    state: LISTEN")
             if ( tcp.flags() & tcp.RST )
                 { first check for an RST }
-                strln(@"    RST set")
                 return 0                        ' ignore
             if ( tcp.flags() & tcp.ACK )        ' xxx behavior unverified
                 { second, check for an ACK: Any acknowledgment is bad if it arrives on a
                     connection still in the LISTEN state }
-                strln(@"    ACK set")
+                strln(@"    resetting connection (re: ACK)")
                 tcp_send(   _local_port, tcp.source_port(), ...
                             tcp.ack_nr(), 0, ...
                             tcp.RST, ...
@@ -354,7 +356,6 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
             if ( tcp.flags() & tcp.SYN )
                 { third check for a SYN }
                 { NOTE: security/compartment is ignored }
-                strln(@"    SYN set")
                 _rcv_nxt := tcp.seq_nr()+1
                 _irs := tcp.seq_nr()
                 _iss := math.rndi(posx)         ' select our initial send sequence
@@ -377,16 +378,15 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
             strln(@"    state: SYN_SENT")
             ack_accept := false
             if ( tcp.flags() & tcp.ACK )        ' if the ACK bit is set, check the ACK number
-                strln(@"    ACK set")
                 if ( (tcp.ack_nr() =< _iss) or (tcp.ack_nr() > _snd_nxt) )
                     { bad ACK number }
                     strln(@"    ACK number bad")'xxx behavior unverified
                     if ( tcp.flags() & tcp.RST )
                         { received with reset; ignore }
-                        strln(@"    RST set; drop")
+                        strln(@"    drop (received RST)")
                     else
                         { received without reset; send one }
-                        strln(@"    RST not set; sending RST")
+                        strln(@"    sending RST")
                         seq := tcp.ack_nr()
                         ack := 0
                         tcp_send(   _local_port, _remote_port, ...
@@ -400,7 +400,6 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                     ack_accept := true
             { second, check the RST bit }
             if ( tcp.flags() & tcp.RST )        ' if the RST bit is set
-                strln(@"    RST set")
                 if ( ack_accept )
                     strln(@"    (ACK was acceptable)")
                     'xxx _signal := ECONN_RESET
@@ -415,7 +414,6 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
             { NOTE: This step should be reached only if the ACK is ok, or there is
                 no ACK, and it the segment did not contain a RST. }
             if ( tcp.flags() & tcp.SYN )
-                strln(@"    SYN set")
                 _rcv_nxt := tcp.seq_nr()+1
                 _irs := tcp.seq_nr()
                 if ( ack_accept )
@@ -477,7 +475,6 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
 
     { second, check the RST bit }
     if ( tcp.flags() & tcp.RST )
-        strln(@"    RST is set")
         case _state
             SYN_RECEIVED:
                 strln(@"    state: SYN_RECEIVED")
@@ -744,7 +741,7 @@ pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
 '   flags: control flags
 '   win: TCP window
 '   seg_len (optional): payload data length
-    strln(@"tcp_send()")
+    str(@"tcp_send() ")
     ethii.new(_ptr_my_mac, _ptr_remote_mac, ETYP_IPV4)
         ip.new(ip.TCP, _my_ip, _remote_ip)
             tcp.set_source_port(sp)
@@ -754,6 +751,7 @@ pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
             tcp.set_header_len(20)    ' XXX hardcode for now; no TCP options yet
             tcplen := tcp.header_len() + seg_len
             tcp.set_flags(flags)
+            util.show_tcp_flags(tcp.flags())
             tcp.set_window(win)
             tcp.set_checksum(0)
             tcp.wr_tcp_header()
