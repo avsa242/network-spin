@@ -302,7 +302,7 @@ pub process_ipv4()
             process_tcp()
 
 
-pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_accept, seq_accept, seg_accept, loop_nr
+pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_accept, seg_accept, loop_nr
 ' Process incoming TCP segment
     tcp.rd_tcp_header()
     seg_len := ( ip.dgram_len() - ip.IP_HDR_SZ - tcp.header_len() )
@@ -376,9 +376,9 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
         SYN_SENT:
             { first, check the ACK bit }
             strln(@"    state: SYN_SENT")
-            ack_accept := false
             if ( tcp.flags() & tcp.ACK )        ' if the ACK bit is set, check the ACK number
-                if ( (tcp.ack_nr() =< _iss) or (tcp.ack_nr() > _snd_nxt) )
+                if (    (tcp.ack_nr() =< _iss) or (tcp.ack_nr() > _snd_nxt) or ...
+                        (tcp.ack_nr() < _snd_una) )
                     { bad ACK number }
                     strln(@"    ACK number bad")'xxx behavior unverified
                     if ( tcp.flags() & tcp.RST )
@@ -394,58 +394,55 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                                     tcp.RST, ...
                                     0 )
                     return -1'xxx           ' drop segment and return
-                if ( (tcp.ack_nr() > _snd_una) and (tcp.ack_nr() =< _snd_nxt) )
-                    { ACK number is acceptable }
-                    strln(@"    ACK number is good")
-                    ack_accept := true
+            { ACK number is acceptable }
+            strln(@"    ACK number is good")
             { second, check the RST bit }
             if ( tcp.flags() & tcp.RST )        ' if the RST bit is set
-                if ( ack_accept )
-                    strln(@"    (ACK was acceptable)")
-                    'xxx _signal := ECONN_RESET
-                    'xxx callback function for user signals?
-                    set_state(CLOSED)
-                    'xxx delete_tcb()
+                strln(@"    (ACK was acceptable)")
+                'xxx _signal := ECONN_RESET
+                'xxx callback function for user signals?
+                set_state(CLOSED)
+                'xxx delete_tcb()
                 strln(@"    error: connection reset")
                 return -1'xxx
             { third, check the security/compartment }
             { NOTE: ignored }
             { fourth, check the SYN bit }
             { NOTE: This step should be reached only if the ACK is ok, or there is
-                no ACK, and it the segment did not contain a RST. }
-            if ( tcp.flags() & tcp.SYN )
-                _rcv_nxt := tcp.seq_nr()+1
-                _irs := tcp.seq_nr()
-                if ( ack_accept )
-                    _snd_una := tcp.ack_nr()
-                    strln(@"    updating SND.UNA")
-                    print_ptrs()
-                    { any segments on the retransmission queue that this acknowledges
-                        should be removed }
-                if ( _snd_una > _iss )
-                    { our SYN has been ACKed }
-                    set_state(ESTABLISHED)
-                    '_snd_una := _snd_nxt       'xxx level-ip does this
-                    print_ptrs()
-                    tcp_send(   _local_port, _remote_port, ...
-                                _snd_nxt, _rcv_nxt, ...
-                                tcp.ACK, ...
-                                _snd_wnd ) 'xxx window settings?
-                    return 0
-                else                            'xxx behavior unverified
-                    { Otherwise, enter SYN-RECEIVED, form a SYN,ACK segment and send it }
-                    set_state(SYN_RECEIVED)
-                    '_snd_una := _iss           ' xxx level-ip does this
-                    _snd_wnd := tcp.window()
-                    _snd_wl1 := tcp.seq_nr()
-                    _snd_wl2 := tcp.ack_nr()
-                    print_ptrs()
-                    tcp_send(   _local_port, _remote_port, ...
-                                _iss, _rcv_nxt, ...
-                                tcp.SYN | tcp.ACK, ...
-                                _snd_wnd )
-                    return 0
-            return 0                        ' SYN not set; drop segment
+                no ACK, and if the segment did not contain a RST. }
+            ifnot ( tcp.flags() & tcp.SYN )
+                return 0                        ' discard
+            _rcv_nxt := tcp.seq_nr()+1
+            _irs := tcp.seq_nr()
+            if ( tcp.flags() & tcp.ACK )
+                _snd_una := tcp.ack_nr()
+                strln(@"    updating SND.UNA")
+            print_ptrs()
+            { any segments on the retransmission queue that this acknowledges
+                should be removed }
+            if ( _snd_una > _iss )
+                { our SYN has been ACKed }
+                set_state(ESTABLISHED)
+                '_snd_una := _snd_nxt       'xxx level-ip does this
+                print_ptrs()
+                tcp_send(   _local_port, _remote_port, ...
+                            _snd_nxt, _rcv_nxt, ...
+                            tcp.ACK, ...
+                            _snd_wnd ) 'xxx window settings?
+                return 0
+            else                            'xxx behavior unverified
+                { Otherwise, enter SYN-RECEIVED, form a SYN,ACK segment and send it }
+                set_state(SYN_RECEIVED)
+                '_snd_una := _iss           ' xxx level-ip does this
+                _snd_wnd := tcp.window()
+                _snd_wl1 := tcp.seq_nr()
+                _snd_wl2 := tcp.ack_nr()
+                print_ptrs()
+                tcp_send(   _local_port, _remote_port, ...
+                            _iss, _rcv_nxt, ...
+                            tcp.SYN | tcp.ACK, ...
+                            _snd_wnd )
+                return 0
 
     { Otherwise, ... }
 
