@@ -450,6 +450,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
     { Otherwise, ... }
 
     { first, check the sequence number }
+    strln(@"    1. Check the sequence number")
     if ( (_rcv_wnd == 0) and (seg_len > 0) )
         { data received in segment, but the receive window is closed: not acceptable }
         strln(@"    error: SEG.LEN > 0, but RCV.WND == 0")
@@ -474,6 +475,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
         return 0'xxx                    ' drop the unacceptable segment and return
 
     { second, check the RST bit }
+    strln(@"    2. Check the RST bit")
     if ( tcp.flags() & tcp.RST )
         case _state
             SYN_RECEIVED:
@@ -507,8 +509,10 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
 
     { third, check security and precedence }
     { NOTE: ignored }
+    strln(@"    3. Check security and precedence (IGNORED)")
 
     { fourth, check the SYN bit (NOTE: implementation follows RFC793) }
+    strln(@"    4. Check the SYN bit")
     if ( tcp.flags() & tcp.SYN )
         case _state
             SYN_RECEIVED:
@@ -527,6 +531,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                 return 0                        ' drop unacceptable segment
 
     { fifth, check the ACK field }
+    strln(@"    5. Check the ACK field")
     ifnot ( tcp.flags() & tcp.ACK )
         { if the ACK bit is off drop the segment and return }
         return 0'xxx                            ' drop segment, return
@@ -624,7 +629,9 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                         'xxx restart 2MSL timeout
                         quit
         loop_nr++
+
     { Sixth, check the URG bit }        ' xxx behavior unverified
+    strln(@"    6. Check the URG bit")
     if ( tcp.flags() & tcp.URG )
         case _state
             ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2:
@@ -637,7 +644,9 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
             CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT:
                 { This should not occur since a FIN has been received from the
                     remote side. Ignore the URG. }
+
     { Seventh, process the segment text }
+    strln(@"    7. Process the segment text")
     if ( seg_len )                      ' process only if there's actually a payload
         printf1(@"        SEG.LEN = %d\n\r", seg_len)
         case _state
