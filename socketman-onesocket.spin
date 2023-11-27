@@ -297,7 +297,7 @@ pub process_ipv4()
 ' Process incoming IPv4 header, and hand off to the appropriate layer-4 processor
     ip.rd_ip_header()
     if ( (ip.dest_addr() == _my_ip) and (ip.src_addr() == _remote_ip) )
-        strln(@"frame is sent to us")
+        'strln(@"frame is sent to us")
         if ( ip.layer4_proto() == L4_TCP )
             process_tcp()
 
@@ -443,6 +443,8 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_a
                             tcp.SYN | tcp.ACK, ...
                             _snd_wnd )
                 return 0
+            { Fifth, if neither of the SYN or RST bits is set, then drop the segment and return.
+                NOTE: This would've been caught by fourth and second steps above, respectively. }
 
     { Otherwise, ... }
 
