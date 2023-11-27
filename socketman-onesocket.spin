@@ -617,6 +617,21 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                         'xxx restart 2MSL timeout
                         return 0
                 loop_nr++
+            { Sixth, check the URG bit }        ' xxx behavior unverified
+            if ( tcp.flags() & tcp.URG )
+                case _state
+                    ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2:
+                        _rcv_up := _rcv_up #> tcp.urgent_ptr()
+                        { signal the user that the remote side has urgent data if the
+                            urgent pointer (RCV.UP) is in advance of the data consumed.
+                            If the user has already been signaled (or is still in the
+                            "urgent mode") for this continuous sequence of urgent data,
+                            do not signal the user again. }
+                    CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT:
+                        { This should not occur since a FIN has been received from the
+                            remote side. }
+                        return 0                ' ignore
+
 
 pub print_ptrs()
 
