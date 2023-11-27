@@ -5,7 +5,7 @@
     Description: Socket manager
         * one TCP socket
     Started Nov 8, 2023
-    Updated Nov 26, 2023
+    Updated Nov 27, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -302,7 +302,7 @@ pub process_ipv4()
             process_tcp()
 
 
-pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_accept, seq_accept, seg_accept
+pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_accept, seq_accept, seg_accept, loop_nr
 ' Process incoming TCP segment
     tcp.rd_tcp_header()
     seg_len := ( ip.dgram_len() - ip.IP_HDR_SZ - tcp.header_len() )
@@ -369,7 +369,8 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                             _snd_wnd )
                 _snd_nxt := _iss+1
                 _snd_una := _iss
-                _state := SYN_RECEIVED
+                set_state(SYN_RECEIVED)
+                print_ptrs
                 return 1
         SYN_SENT:
             { first, check the ACK bit }
@@ -421,6 +422,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                 _irs := tcp.seq_nr()
                 if ( ack_accept )
                     _snd_una := tcp.ack_nr()
+                    print_ptrs()
                     { any segments on the retransmission queue that this acknowledges
                         should be removed }
                 if ( _snd_una > _iss )
@@ -428,6 +430,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                     strln(@"    SND.UNA > ISS")
                     set_state(ESTABLISHED)
                     '_snd_una := _snd_nxt       'xxx level-ip does this
+                    print_ptrs()
                     tcp_send(   _local_port, _remote_port, ...
                                 _snd_nxt, _rcv_nxt, ...
                                 tcp.ACK, ...
@@ -441,6 +444,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                     _snd_wnd := tcp.window()
                     _snd_wl1 := tcp.seq_nr()
                     _snd_wl2 := tcp.ack_nr()
+                    print_ptrs()
                     tcp_send(   _local_port, _remote_port, ...
                                 _iss, _rcv_nxt, ...
                                 tcp.SYN | tcp.ACK, ...
@@ -524,35 +528,101 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                                     tcp.ACK, ...
                                     _snd_wnd )
                         return 0                ' drop unacceptable segment
+            { fifth, check the ACK field }
+            ifnot ( tcp.flags() & tcp.ACK )
+                { if the ACK bit is off drop the segment and return }
+                return -1'xxx                   ' drop segment, return
+            { ACK bit is set: }
+            'xxx1 decide if we should implement MAY-12 (check ACK value is in range)
+            loop_nr := 1
+            repeat
+                printf1(@"    loop_nr=%d\n\r", loop_nr)
+                case _state
+                    SYN_RECEIVED:               'xxx behavior unverified
+                        strln(@"    state: SYN_RECEIVED")
+                        if ( (tcp.ack_nr() > _snd_una) and (tcp.ack_nr() =< _snd_nxt) )
+                            strln(@"    good ACK")
+                            set_state(ESTABLISHED)
+                            print_ptrs()
+                            { continue processing in the ESTABLISHED state with the variables
+                                below }
+                            _snd_wnd := tcp.window()
+                            _snd_wl1 := tcp.seq_nr()
+                            _snd_wl2 := tcp.ack_nr()
+                        else
+                            { the acknowledgement is unacceptable }
+                            strln(@"    bad ACK")
+                            tcp_send(   _local_port, _remote_port, ...
+                                        tcp.ack_nr(), 0, ...
+                                        tcp.RST, ...
+                                        0 ) 'xxx verify window setting
+                            return -1'xxx
+                    ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, CLOSING:
+                        if ( (tcp.ack_nr() > _snd_una) and (tcp.ack_nr() =< _snd_nxt) )
+                            strln(@"    updating unacknowledged ptr")
+                            _snd_una := tcp.ack_nr()
+                            'xxx any segments on the retransmission queue that this acknowledges
+                            '   are removed
+                            'xxx signal user buffers that've been sent and fully ACKed
+                            { update the send window }
+                            if (    (_snd_wl1 < tcp.seq_nr()) or ...
+                                    ((_snd_wl1 == tcp.seq_nr()) and (_snd_wl2 =< tcp.ack_nr())) )
+                                strln(@"    updating send window")
+                                _snd_wnd := tcp.window()
+                                _snd_wl1 := tcp.seq_nr()
+                                _snd_wl2 := tcp.ack_nr()
+                                print_ptrs()
+                        if ( tcp.ack_nr() =< _snd_una )
+                            { duplicate ACK: ACK num is older than the oldest unacknowledged data }
+                            strln(@"    duplicate ACK")
+                            return 0                ' ignore
+                        if ( tcp.ack_nr() > _snd_nxt )
+                            { segment ACKs something that hasn't even been sent yet }
+                            'xxx level-ip just drops segs here, and suggests that Linux does also.
+                            'xxx investigate more. Is it meant to be a 'challenge ACK?'
+                            strln(@"    warning: ACKed unsent segment")
+                            tcp_send(   _local_port, _remote_port, ...
+                                        _snd_nxt, _rcv_nxt, ...
+                                        tcp.ACK, ...
+                                        _snd_wnd )
+                            return 0
+                        case _state
+                            FIN_WAIT_1:
+                                strln(@"    state: FIN_WAIT_1")
+                                set_state(FIN_WAIT_2)
+                            FIN_WAIT_2:
+                                strln(@"    state: FIN_WAIT_2")
+                                quit
+                            CLOSING:
+                                strln(@"    state: CLOSING")
+                                set_state(TIME_WAIT)
+                                quit
+                    LAST_ACK:
+                        { The only thing that can arrive in this state is an acknowledgment of our FIN.
+                            If our FIN is now acknowledged, delete the TCB, enter the CLOSED state,
+                            and return. }
+                        'xxx delete TCB
+                        strln(@"    state: LAST_ACK")
+                        set_state(CLOSED)
+                        return 0
+                    TIME_WAIT:
+                        { The only thing that can arrive in this state is a retransmission of the
+                            remote FIN. Acknowledge it, and restart the 2 MSL timeout. }
+                        strln(@"    state: TIME_WAIT")
+                        if ( tcp.seq_nr() == _rcv_nxt )
+                            tcp_send(   _local_port, _remote_port, ...
+                                        _snd_nxt, _rcv_nxt, ...
+                                        tcp.FIN | tcp.ACK, ...
+                                        0 )'xxx verify window settings
+                        'xxx restart 2MSL timeout
+                        return 0
+                loop_nr++
 
-pub recv_segment(): len
-' Receive a TCP segment
-'   Returns: length of payload data read
-    len := ( ip.dgram_len() - ip.IP_HDR_SZ - tcp.header_len() )
+pub print_ptrs()
 
-    'printf1(@"snd_wnd before: %d\n\r", _snd_wnd)
-    _snd_wnd := tcp.window()
-    'printf1(@"snd_wnd after: %d\n\r", _snd_wnd)
-    if ( tcp.seq_nr() == _rcv_nxt )
-        'strln(@"got expected seq_nr")
-        if ( tcp.ack_nr() > _snd_una )          ' update unacknowledged sent data pointer
-            'strln(@"ack_nr > snd_una")
-            _snd_una := tcp.ack_nr()
-        if ( len )                              ' read the payload, if specified
-            net[netif].rdblk_lsbf(@_rxbuff, len <# RECVQ_SZ)
-            'ser.hexdump(@_rxbuff, 0, 2, len, 16 <# len)
-        _flags := tcp.ACK
-        'printf1(@"final length: %d\n\r", len)
-        if ( tcp.flags() & tcp.FIN )
-            len := 1
-        _rcv_nxt += len                         ' update the expected next seq # from the remote
-        send_segment()                          ' acknowledge the segment
-        return len
-    else
-        { out of order data? }
-        return -1'XXX: specific error code
-        'printf2(@"got seq_nr %d, expected %d\n\r", tcp.seq_nr(), _rcv_nxt)
-
+    printf1(@"    SND.UNA: %d\n\r", _snd_una)
+    printf1(@"    SND.NXT: %d\n\r", _snd_nxt)
+    printf1(@"    RCV.NXT: %d\n\r", _rcv_nxt)
 
 pub resolve_ip(remote_ip): ent_nr
 ' Use ARP to resolve an IP address to a MAC address
@@ -703,7 +773,7 @@ pub send_test_data() | seg_len
                 tcp.ACK, ...
                 _snd_wnd, ...
                 seg_len )
-
+    _snd_nxt += seg_len
     testflag := false
 
 pub state_str(st): pstr
