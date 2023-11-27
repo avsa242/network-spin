@@ -668,6 +668,46 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_a
                     remote side. }
                 return 0                ' ignore segment text
 
+    { Eighth, check the FIN bit }
+    strln(@"    8. Check the FIN bit")
+    ifnot ( tcp.flags() & tcp.FIN )
+        return 0
+
+    if ( lookdown(_state: CLOSED, LISTEN, SYN_SENT) )
+        { Do not process the FIN if the state is CLOSED, LISTEN, or SYN-SENT since the
+            SEG.SEQ cannot be validated; drop the segment and return. }
+        return 0
+
+    { If the FIN bit is set (if we got here, it is), }
+
+    { signal the user "connection closing" and return any pending
+        RECEIVEs with same message, }
+
+    { advance RCV.NXT over the FIN, and send an acknowledgment for the FIN.
+        Note that FIN implies PUSH for any segment text not yet delivered to the user. }
+    _rcv_nxt++
+    tcp_send(   _local_port, _remote_port, ...
+                _snd_nxt, _rcv_nxt, ...
+                (tcp.FIN | tcp.ACK), ...
+                _snd_wnd )
+
+    case _state
+        SYN_RECEIVED, ESTABLISHED:
+            set_state(CLOSE_WAIT)
+        FIN_WAIT_1:
+            { If our FIN has been ACKed (perhaps in this segment), then enter TIME-WAIT,
+                start the time-wait timer, turn off the other timers; otherwise,
+                enter the CLOSING state }
+            set_state(CLOSING)
+        FIN_WAIT_2:
+            set_state(TIME_WAIT)
+        CLOSE_WAIT, CLOSING, LAST_ACK:
+            { remain in this state }
+        TIME_WAIT:
+            { Remain in the TIME-WAIT state. Restart the 2 MSL time-wait timeout. }
+    return 0
+
+
 pub print_ptrs()
 
     printf1(@"    SND.UNA: %d\n\r", _snd_una)
