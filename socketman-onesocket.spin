@@ -470,7 +470,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
             tcp_send(   _local_port, _remote_port, ...
                         _snd_nxt, _rcv_nxt, ...
                         tcp.ACK, ...
-                        _snd_wnd )
+                        _snd_wnd )'xxx verify window settings
         return 0'xxx                    ' drop the unacceptable segment and return
 
     { second, check the RST bit }
@@ -488,7 +488,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                     { connection was initiated with an active open }
                     strln(@"    was active OPEN")
                     strln(@"    error: connection refused")
-                    '_signal := ECONN_REFUSED
+                    '_signal := ECONN_REFUSED   ' remote incoming connection refused
                     'xxx the retransmission queue should be flushed
                     set_state(CLOSED)
                     'xxx delete the TCB
@@ -523,15 +523,16 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                 tcp_send(   _local_port, _remote_port, ...
                             _snd_nxt, _rcv_nxt, ...
                             tcp.ACK, ...
-                            _snd_wnd )
-                return 0                ' drop unacceptable segment
+                            _snd_wnd )'xxx verify window settings
+                return 0                        ' drop unacceptable segment
 
     { fifth, check the ACK field }
     ifnot ( tcp.flags() & tcp.ACK )
         { if the ACK bit is off drop the segment and return }
-        return -1'xxx                   ' drop segment, return
-    { ACK bit is set: }
-    'xxx1 decide if we should implement MAY-12 (check ACK value is in range)
+        return 0'xxx                            ' drop segment, return
+
+    { ACK bit is set, if we got here }
+    'xxx decide if we should implement MAY-12 (check ACK value is in range)
     loop_nr := 1
     repeat
         printf1(@"        loop_nr=%d\n\r", loop_nr)
@@ -539,6 +540,8 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
             SYN_RECEIVED:               'xxx behavior unverified
                 strln(@"        state: SYN_RECEIVED")
                 if ( (tcp.ack_nr() > _snd_una) and (tcp.ack_nr() =< _snd_nxt) )
+                    'xxx level-ip does first comparison with > (actually, 'snd_una =< ack')
+                    'xxx    and second comparison with '<'
                     strln(@"        good ACK")
                     set_state(ESTABLISHED)
                     print_ptrs()
@@ -554,23 +557,16 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                                 tcp.ack_nr(), 0, ...
                                 tcp.RST, ...
                                 0 ) 'xxx verify window setting
-                    return -1'xxx
-            ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, CLOSING:
+                    'xxx should we send the user a signal?
+                    return 0'xxx
+            ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, CLOSING, LAST_ACK:
                 if ( (tcp.ack_nr() > _snd_una) and (tcp.ack_nr() =< _snd_nxt) )
                     strln(@"        updating unacknowledged ptr")
                     _snd_una := tcp.ack_nr()
                     'xxx any segments on the retransmission queue that this acknowledges
                     '   are removed
                     'xxx signal user buffers that've been sent and fully ACKed
-                    { update the send window }
-                    if (    (_snd_wl1 < tcp.seq_nr()) or ...
-                            ((_snd_wl1 == tcp.seq_nr()) and (_snd_wl2 =< tcp.ack_nr())) )
-                        strln(@"        updating send window")
-                        _snd_wnd := tcp.window()
-                        _snd_wl1 := tcp.seq_nr()
-                        _snd_wl2 := tcp.ack_nr()
-                        print_ptrs()
-                if ( tcp.ack_nr() =< _snd_una )
+                if ( tcp.ack_nr() =< _snd_una )'xxx level-ip compares with '<'
                     { duplicate ACK: ACK num is older than the oldest unacknowledged data }
                     strln(@"        duplicate ACK")
                     return 0                ' ignore
@@ -584,36 +580,49 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, ack_a
                                 tcp.ACK, ...
                                 _snd_wnd )
                     return 0
+                if (    (_snd_wl1 < tcp.seq_nr()) or ...
+                        ((_snd_wl1 == tcp.seq_nr()) and (_snd_wl2 =< tcp.ack_nr())) )
+                    { update the send window }
+                    strln(@"        updating send window")
+                    _snd_wnd := tcp.window()
+                    _snd_wl1 := tcp.seq_nr()
+                    _snd_wl2 := tcp.ack_nr()
+                    print_ptrs()
                 case _state
                     FIN_WAIT_1:
                         strln(@"        state: FIN_WAIT_1")
                         set_state(FIN_WAIT_2)
                     FIN_WAIT_2:
                         strln(@"        state: FIN_WAIT_2")
+                        { if the retransmission queue is empty, the user's CLOSE can be
+                            acknowledged ("ok") but do not delete the TCB. }
+                        quit
+                    CLOSE_WAIT:
+                        strln(@"        state: CLOSE_WAIT")
                         quit
                     CLOSING:
                         strln(@"        state: CLOSING")
                         set_state(TIME_WAIT)
                         quit
-            LAST_ACK:
-                { The only thing that can arrive in this state is an acknowledgment of our FIN.
-                    If our FIN is now acknowledged, delete the TCB, enter the CLOSED state,
-                    and return. }
-                'xxx delete TCB
-                strln(@"        state: LAST_ACK")
-                set_state(CLOSED)
-                return 0
-            TIME_WAIT:
-                { The only thing that can arrive in this state is a retransmission of the
-                    remote FIN. Acknowledge it, and restart the 2 MSL timeout. }
-                strln(@"        state: TIME_WAIT")
-                if ( tcp.seq_nr() == _rcv_nxt )
-                    tcp_send(   _local_port, _remote_port, ...
-                                _snd_nxt, _rcv_nxt, ...
-                                tcp.FIN | tcp.ACK, ...
-                                0 )'xxx verify window settings
-                'xxx restart 2MSL timeout
-                return 0
+                    LAST_ACK:
+                        { The only thing that can arrive in this state is an acknowledgment of our
+                            FIN. If our FIN is now acknowledged, delete the TCB,
+                            enter the CLOSED state, and return. }
+                        'xxx delete TCB
+                        strln(@"        state: LAST_ACK")
+                        set_state(CLOSED)
+                        return 0
+                    TIME_WAIT:
+                        { The only thing that can arrive in this state is a retransmission of the
+                            remote FIN. Acknowledge it, and restart the 2 MSL timeout. }
+                        strln(@"        state: TIME_WAIT")
+                        if ( tcp.seq_nr() == _rcv_nxt )
+                            tcp_send(   _local_port, _remote_port, ...
+                                        _snd_nxt, _rcv_nxt, ...
+                                        tcp.FIN | tcp.ACK, ...
+                                        0 )'xxx verify window settings
+                        'xxx restart 2MSL timeout
+                        quit
         loop_nr++
     { Sixth, check the URG bit }        ' xxx behavior unverified
     if ( tcp.flags() & tcp.URG )
