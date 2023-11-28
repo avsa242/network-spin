@@ -55,9 +55,6 @@ var
     long _irs, _rcv_wnd, _rcv_nxt, _rcv_up
     byte _state, _prev_state
 
-    { socket buffers }
-    byte _txbuff[SENDQ_SZ]   ' XXX use ring buffers
-
 
 obj
 
@@ -74,6 +71,7 @@ obj
 
     { ring buffer objects }
     rxq:    "memory.ring-buffer" | RBUFF_SZ=RECVQ_SZ
+    txq:    "memory.ring-buffer" | RBUFF_SZ=SENDQ_SZ
 
     { debugging output }
     util:   "net-util"
@@ -97,6 +95,7 @@ pub init(net_ptr, local_ip, local_mac)
     tcp.init(net_ptr)                           ' .
 
     rxq.set_rdblk_lsbf(@net[netif].rdblk_lsbf)  ' bind the RXQ to the enet driver's read function
+    txq.set_wrblk_lsbf(@net[netif].wrblk_lsbf)  ' bind the TXQ to the enet driver's write function
     ip.set_my_ip32(local_ip)
     _my_ip := local_ip
     _remote_ip := $01_00_2a_0a
@@ -107,7 +106,6 @@ var long _conn  ' XXX temp, for testing
 pub loop() | l  ' XXX rename
 ' Main loop
     _conn := 1  'XXX temp, for testing
-    testflag := true
     repeat
         if ( net[netif].pkt_cnt() )
             get_frame()
@@ -120,8 +118,6 @@ pub loop() | l  ' XXX rename
         if ( _conn )    ' XXX temp, for testing
             if ( connect(10,42,0,1, 23) == 1 )
                 _conn := false                  ' once connected, clear this flag
-        'if ( _state == ESTABLISHED and testflag == true)
-        '    send_test_data()
         if ( _pending_arp_request )
             if ( ||(cnt-_timestamp_last_arp_req) => clkfreq )
                 strln(@"new pending ARP request")
@@ -136,11 +132,17 @@ pub loop() | l  ' XXX rename
                 strln(@"closing")
                 disconnect()
             "r":
-                if ( rxq.available() )
+                if ( rxq.unread_bytes() )
                     printf1(@"%d bytes in rxq\n\r", rxq.unread_bytes())
                     dbg[dptr].hexdump(rxq.ptr_ringbuff(), 0, 2, RECVQ_SZ, 16)
+                    _rcv_wnd += rxq.flush()
                 else
                     strln(@"no data available in RXQ")
+            "s":
+                if ( _state == ESTABLISHED )
+                    dbg[dptr].hexdump(txq.ptr_ringbuff(), 0, 2, SENDQ_SZ, 16)
+                    send_test_data()
+                    txq.flush()
 
 pub arp_request(): ent_nr
 ' Send an ARP request to resolve an IP
@@ -182,7 +184,7 @@ pub close()
         _snd_una := _snd_nxt := _snd_wnd := _snd_wl1 := _snd_wl2 := 0
         _irs := _rcv_wnd := _rcv_nxt := 0
         _state := _prev_state := CLOSED
-        bytefill(@_txbuff, 0, SENDQ_SZ)
+        txq.flush()
         rxq.flush()
 
 
@@ -792,7 +794,7 @@ pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
             tcp.wr_tcp_header()
             if ( seg_len > 0 )                  ' attach payload (XXX untested)
                 printf1(@"    length is %d, attaching payload\n\r", seg_len)
-                net[netif].wrblk_lsbf(@_txbuff, seg_len <# SENDQ_SZ)
+                net[netif].wrblk_lsbf(txq.ptr_ringbuff(), seg_len <# SENDQ_SZ)
             frm_end := net[netif].fifo_wr_ptr()
             net[netif].inet_checksum_wr(tcp._tcp_start, ...
                                         tcplen, ...
@@ -834,19 +836,17 @@ pub printf2(pfmt, p1, p2)
     dbg[dptr].printf2(pfmt, p1, p2)
 
 
-var long testflag
-dat test_data byte "Test data", 10, 13, 0
+dat test_data byte "Test data", 13, 10, 0
 pub send_test_data() | seg_len
 
     seg_len := strsize(@test_data)
-    bytemove(@_txbuff, @test_data, seg_len)
+    txq.receive(@test_data, seg_len)
     tcp_send(   _local_port, _remote_port, ...
                 _snd_nxt, _rcv_nxt, ...
-                tcp.ACK, ...
+                tcp.PSH|tcp.ACK, ...
                 _rcv_wnd, ...
                 seg_len )
     _snd_nxt += seg_len
-    testflag := false
 
 pub state_str(st): pstr
 
