@@ -312,6 +312,13 @@ pub process_ipv4()
 pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_accept, seg_accept, loop_nr
 ' Process incoming TCP segment
     tcp.rd_tcp_header()
+    if ( (tcp.dest_port() <> _local_port) or (tcp.source_port() <> _remote_port) )
+        strln(@"connection refused (no matching socket)")
+        tcp_send(   tcp.dest_port(), tcp.source_port(), ...
+                    tcp.ack_nr(), tcp.seq_nr()+1, ...
+                    (tcp.RST | tcp.ACK), ...
+                    0 )
+        return 0
     seg_len := ( ip.dgram_len() - ip.IP_HDR_SZ - tcp.header_len() )
 
     str(@"process_tcp() ")
