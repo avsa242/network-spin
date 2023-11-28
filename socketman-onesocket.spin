@@ -56,7 +56,7 @@ var
     byte _state, _prev_state
 
     { socket buffers }
-    byte _txbuff[SENDQ_SZ], _rxbuff[RECVQ_SZ]   ' XXX use ring buffers
+    byte _txbuff[SENDQ_SZ]   ' XXX use ring buffers
 
 
 obj
@@ -71,6 +71,9 @@ obj
     crc:    "math.crc"
     math:   "math.int"
     time:   "time"
+
+    { ring buffer objects }
+    rxq:    "memory.ring-buffer" | RBUFF_SZ=RECVQ_SZ
 
     { debugging output }
     util:   "net-util"
@@ -93,6 +96,7 @@ pub init(net_ptr, local_ip, local_mac)
     ip.init(net_ptr)                            ' .
     tcp.init(net_ptr)                           ' .
 
+    rxq.set_rdblk_lsbf(@net[netif].rdblk_lsbf)  ' bind the RXQ to the enet driver's read function
     ip.set_my_ip32(local_ip)
     _my_ip := local_ip
     _remote_ip := $01_00_2a_0a
@@ -127,10 +131,16 @@ pub loop() | l  ' XXX rename
                         (arp.read_entry_ip(_last_arp_answer) == _pending_arp_request) )
                     strln(@"last ARP reply was an answer to the pending ARP request; clearing")
                     _pending_arp_request := 0
-        if dbg[dptr].rx_check() == "c"
-            strln(@"closing")
-            disconnect()
-
+        case dbg[dptr].rx_check()
+            "c":
+                strln(@"closing")
+                disconnect()
+            "r":
+                if ( rxq.available() )
+                    printf1(@"%d bytes in rxq\n\r", rxq.unread_bytes())
+                    dbg[dptr].hexdump(rxq.ptr_ringbuff(), 0, 2, RECVQ_SZ, 16)
+                else
+                    strln(@"no data available in RXQ")
 
 pub arp_request(): ent_nr
 ' Send an ARP request to resolve an IP
@@ -173,7 +183,7 @@ pub close()
         _irs := _rcv_wnd := _rcv_nxt := 0
         _state := _prev_state := CLOSED
         bytefill(@_txbuff, 0, SENDQ_SZ)
-        bytefill(@_rxbuff, 0, RECVQ_SZ)
+        rxq.flush()
 
 
 pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_mac, attempt
@@ -644,9 +654,8 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_a
                     as appropriate to the current buffer availability. The total of
                     RCV.NXT and RCV.WND should not be reduced. }
                 printf1(@"        state: %s\n\r", state_str(_state))
-                net[netif].rdblk_lsbf(@_rxbuff, seg_len)'xxx recv into ring buffer
-                _rcv_nxt += seg_len
-                'xxx how should _rcv_wnd be updated?
+                _rcv_nxt += rxq.xreceive(seg_len)
+                _rcv_wnd := rxq.available()
                 print_ptrs()
                 tcp_send(   _local_port, _remote_port, ...
                             _snd_nxt, _rcv_nxt, ...
