@@ -5,7 +5,7 @@
     Description: Socket manager
         * one TCP socket
     Started Nov 8, 2023
-    Updated Nov 27, 2023
+    Updated Nov 28, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -577,7 +577,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_a
                     'xxx any segments on the retransmission queue that this acknowledges
                     '   are removed
                     'xxx signal user buffers that've been sent and fully ACKed
-                if ( tcp.ack_nr() =< _snd_una )'xxx level-ip compares with '<'
+                if ( tcp.ack_nr() < _snd_una )'xxx RFC9293 says use =<, but that doesn't seem to work?
                     { duplicate ACK: ACK num is older than the oldest unacknowledged data }
                     strln(@"        duplicate ACK")
                     return 0                ' ignore
@@ -634,6 +634,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_a
                                         _rcv_wnd )'xxx verify window settings
                         'xxx restart 2MSL timeout
                         quit
+                quit
         loop_nr++
 
     { Sixth, check the URG bit }        ' xxx behavior unverified
@@ -720,6 +721,8 @@ pub print_ptrs()
     printf1(@"    SND.UNA: %d\n\r", _snd_una)
     printf1(@"    SND.NXT: %d\n\r", _snd_nxt)
     printf1(@"    SND.WND: %d\n\r", _snd_wnd)
+    printf1(@"    SND.WL1: %d\n\r", _snd_wl1)
+    printf1(@"    SND.WL2: %d\n\r", _snd_wl2)
     printf1(@"    RCV.NXT: %d\n\r", _rcv_nxt)
     printf1(@"    RCV.WND: %d\n\r", _rcv_wnd)
 
