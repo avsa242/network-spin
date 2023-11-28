@@ -51,7 +51,7 @@ var
     long _remote_ip
     word _remote_port
     long _iss, _ack_nr, _flags
-    long _snd_una, _snd_nxt, _snd_wnd, _snd_wl1, _snd_wl2
+    long _snd_una, _snd_nxt, _snd_wnd, _snd_wl1, _snd_wl2, _snd_up
     long _irs, _rcv_wnd, _rcv_nxt, _rcv_up
     byte _state, _prev_state
 
@@ -220,12 +220,19 @@ pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_ma
             _ptr_remote_mac := arp.read_entry_mac(arp_ent)
             _local_port := 49152+math.rndi(16383)
             _flags := tcp.SYN                   ' will synchronize on first connection
+            _snd_una := _iss := math.rndi(posx)
+
+            _snd_wnd := 0
+            _snd_wl1 := 0
+            _snd_up := _iss
+            _snd_nxt := _iss
+
             _rcv_wnd := RECVQ_SZ
             _rcv_nxt := 0
-            _snd_wnd := SENDQ_SZ
-            _snd_una := _iss := math.rndi(posx)
-            _snd_nxt := _iss
-            send_segment()
+            tcp_send(   _local_port, _remote_port, ...
+                        _snd_nxt, _rcv_nxt, ...
+                        _flags, ...
+                        _rcv_wnd )
             _snd_nxt++
             set_state(SYN_SENT)
             return 1
@@ -250,7 +257,7 @@ pub disconnect(): status | ack, seq, dp, sp, tcplen, frm_end
             tcp_send(   _local_port, _remote_port, ...
                         _snd_nxt, _rcv_nxt, ...
                         tcp.FIN | tcp.ACK, ...
-                        128, ...
+                        _rcv_wnd, ...
                         0 )
             _snd_nxt++
             set_state(FIN_WAIT_1)
@@ -367,7 +374,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_a
                 tcp_send(   _local_port, _remote_port, ...
                             _iss, _rcv_nxt, ...
                             tcp.SYN | tcp.ACK, ...
-                            _snd_wnd )
+                            _rcv_wnd )
                 _snd_nxt := _iss+1
                 _snd_una := _iss
                 set_state(SYN_RECEIVED)
@@ -428,7 +435,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_a
                 tcp_send(   _local_port, _remote_port, ...
                             _snd_nxt, _rcv_nxt, ...
                             tcp.ACK, ...
-                            _snd_wnd ) 'xxx window settings?
+                            _rcv_wnd ) 'xxx window settings?
                 return 0
             else                            'xxx behavior unverified
                 { Otherwise, enter SYN-RECEIVED, form a SYN,ACK segment and send it }
@@ -441,7 +448,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_a
                 tcp_send(   _local_port, _remote_port, ...
                             _iss, _rcv_nxt, ...
                             tcp.SYN | tcp.ACK, ...
-                            _snd_wnd )
+                            _rcv_wnd )
                 return 0
             { Fifth, if neither of the SYN or RST bits is set, then drop the segment and return.
                 NOTE: This would've been caught by fourth and second steps above, respectively. }
@@ -470,7 +477,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_a
             tcp_send(   _local_port, _remote_port, ...
                         _snd_nxt, _rcv_nxt, ...
                         tcp.ACK, ...
-                        _snd_wnd )'xxx verify window settings
+                        _rcv_wnd )'xxx verify window settings
         return 0'xxx                    ' drop the unacceptable segment and return
 
     { second, check the RST bit }
@@ -526,7 +533,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_a
                 tcp_send(   _local_port, _remote_port, ...
                             _snd_nxt, _rcv_nxt, ...
                             tcp.ACK, ...
-                            _snd_wnd )'xxx verify window settings
+                            _rcv_wnd )'xxx verify window settings
                 return 0                        ' drop unacceptable segment
 
     { fifth, check the ACK field }
@@ -582,7 +589,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_a
                     tcp_send(   _local_port, _remote_port, ...
                                 _snd_nxt, _rcv_nxt, ...
                                 tcp.ACK, ...
-                                _snd_wnd )
+                                _rcv_wnd )
                     return 0
                 if (    (_snd_wl1 < tcp.seq_nr()) or ...
                         ((_snd_wl1 == tcp.seq_nr()) and (_snd_wl2 =< tcp.ack_nr())) )
@@ -624,7 +631,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_a
                             tcp_send(   _local_port, _remote_port, ...
                                         _snd_nxt, _rcv_nxt, ...
                                         tcp.FIN | tcp.ACK, ...
-                                        0 )'xxx verify window settings
+                                        _rcv_wnd )'xxx verify window settings
                         'xxx restart 2MSL timeout
                         quit
         loop_nr++
@@ -662,7 +669,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_a
                 tcp_send(   _local_port, _remote_port, ...
                             _snd_nxt, _rcv_nxt, ...
                             tcp.ACK, ...
-                            _snd_wnd )
+                            _rcv_wnd )
             CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT:
                 { This should not occur since a FIN has been received from the
                     remote side. }
@@ -689,7 +696,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_a
     tcp_send(   _local_port, _remote_port, ...
                 _snd_nxt, _rcv_nxt, ...
                 (tcp.FIN | tcp.ACK), ...
-                _snd_wnd )
+                _rcv_wnd )
 
     case _state
         SYN_RECEIVED, ESTABLISHED:
@@ -760,27 +767,6 @@ pub resolve_ip(remote_ip): ent_nr
         else
             strln(@"wrong ip")
             return -1'XXX specific error code
-
-
-pub send_segment(len=0) | tcplen, frm_end
-' Send a TCP segment
-    'printf1(@"_snd_nxt: %d\n\r", _snd_nxt)
-    'printf1(@"_snd_una: %d\n\r", _snd_una)
-    'printf1(@"_snd_wnd: %d\n\r", _snd_wnd)
-    'printf1(@"_snd_nxt-_snd_una: %d\n\r", _snd_nxt-_snd_una)
-
-    if ( (_snd_nxt - _snd_una) < _snd_wnd )     'check for space in the send window first
-        'strln(@"snd_nxt-snd_una < snd_wnd")
-        tcp_send(   _local_port, _remote_port, ...
-                    _snd_nxt, _rcv_nxt, ...
-                    _flags, ...
-                    _rcv_wnd, ...
-                    len )
-        _snd_nxt += len
-        'printf1(@"snd_nxt now %d\n\r", _snd_nxt)
-    'else
-        'strln(@"snd_nxt-snd_una is not < snd_wnd")
-
 
 
 pub set_state(new_state)
@@ -864,7 +850,7 @@ pub send_test_data() | seg_len
     tcp_send(   _local_port, _remote_port, ...
                 _snd_nxt, _rcv_nxt, ...
                 tcp.ACK, ...
-                _snd_wnd, ...
+                _rcv_wnd, ...
                 seg_len )
     _snd_nxt += seg_len
     testflag := false
