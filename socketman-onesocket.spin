@@ -159,32 +159,6 @@ pub arp_request(): ent_nr
         _timestamp_last_arp_req := cnt          ' mark now as the last time we sent a request
 
 
-pub check_seq_nr(seg_len): status | seq
-' Check/validate the sequence number during a synchronized connection state
-'   Returns:
-'       0: sequence number acceptable
-'       -1: sequence number bad
-    strln(@"check the seq num")
-    status := OK
-    seq := tcp.seq_nr()
-    if ( _rcv_wnd == 0 )
-        if ( seg_len > 0 )
-            strln(@"    SEQ bad")
-            return -1'xxx
-        else
-            if ( seq == _rcv_nxt )
-                return OK
-    elseif ( _rcv_wnd > 0 )
-        if ( seg_len > 0)
-            if (    (seq => _rcv_nxt) and ( seq < (_rcv_nxt+_rcv_wnd) ) ...
-                        or ...
-                    (((seq+(seg_len-1)) => _rcv_nxt) and (seq+(seg_len-1)) < (_rcv_nxt+_rcv_wnd)) )
-                return OK
-        elseif ( seg_len == 0 )
-            if ( (seq => _rcv_nxt) and (seq < (_rcv_nxt+_rcv_wnd)) )
-                return OK
-
-
 pub close()
 ' Close the socket (effectively delete the transmission control block)
     if ( _state <> CLOSED )
