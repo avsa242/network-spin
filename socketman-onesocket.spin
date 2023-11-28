@@ -794,7 +794,7 @@ pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
             tcp.wr_tcp_header()
             if ( seg_len > 0 )                  ' attach payload (XXX untested)
                 printf1(@"    length is %d, attaching payload\n\r", seg_len)
-                net[netif].wrblk_lsbf(txq.ptr_ringbuff(), seg_len <# SENDQ_SZ)
+                txq.xsend(seg_len)
             frm_end := net[netif].fifo_wr_ptr()
             net[netif].inet_checksum_wr(tcp._tcp_start, ...
                                         tcplen, ...
