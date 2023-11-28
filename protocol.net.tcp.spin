@@ -4,7 +4,7 @@
     Author: Jesse Burt
     Description: Transmission Control Protocol
     Started Apr 5, 2022
-    Updated Nov 12, 2023
+    Updated Nov 28, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -19,7 +19,6 @@ CON
     TCP_HDR_SZ      = 20
 
     { TCP flags/control bits }
-    NONCE_BIT       = 8
     CWR_BIT         = 7
     ECN_ECHO_BIT    = 6
     URG_BIT         = 5
@@ -29,7 +28,6 @@ CON
     SYN_BIT         = 1
     FIN_BIT         = 0
 
-    NONCE           = 1 << NONCE_BIT
     CWR             = 1 << CWR_BIT
     ECN_ECHO        = 1 << ECN_ECHO_BIT
     URG             = 1 << URG_BIT
@@ -118,14 +116,12 @@ PUB set_dest_port(p)
 
 PUB set_flags(flags)
 ' Set TCP header flags
-    _tcp_data[TCPH_HDRLEN] |= (( flags >> NONCE_BIT) & 1)
     _tcp_data[TCPH_FLAGS] := (flags & $ff)
 
 
 PUB set_header_len(length)
 ' Set TCP header length, in bytes
-    _tcp_data[TCPH_HDRLEN] &= $0f
-    _tcp_data[TCPH_HDRLEN] |= ((length / 4) << 4)
+    _tcp_data[TCPH_HDRLEN] := ((length / 4) << 4)
 
 
 PUB set_mss(sz)
@@ -205,7 +201,7 @@ PUB dest_port(): p
 
 PUB flags(): flags
 ' Get TCP header flags
-    flags := _tcp_data[TCPH_FLAGS] | ( (_tcp_data[TCPH_HDRLEN] & 1) << NONCE_BIT )
+    flags := _tcp_data[TCPH_FLAGS]
 
 
 PUB header_len(): len
