@@ -5,7 +5,7 @@
     Description: Socket manager
         * one TCP socket
     Started Nov 8, 2023
-    Updated Nov 28, 2023
+    Updated Nov 29, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -299,9 +299,13 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_a
 ' Process incoming TCP segment
     tcp.rd_tcp_header()
     if ( (tcp.dest_port() <> _local_port) or (tcp.source_port() <> _remote_port) )
+        { refuse connection if the socket doesn't exist }
         strln(@"connection refused (no matching socket)")
+        ack := tcp.seq_nr()
+        if ( tcp.flags() & tcp.FIN )            ' our ACK needs to be "believable" - inc by one
+            ack++                               '   if the FIN bit was set
         tcp_send(   tcp.dest_port(), tcp.source_port(), ...
-                    tcp.ack_nr(), tcp.seq_nr()+1, ...
+                    tcp.ack_nr(), ack, ...
                     (tcp.RST | tcp.ACK), ...
                     0 )
         return 0
