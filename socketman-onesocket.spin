@@ -172,23 +172,6 @@ pub arp_request(): ent_nr
         _timestamp_last_arp_req := cnt          ' mark now as the last time we sent a request
 
 
-pub close()
-' Close the socket (effectively delete the transmission control block)
-    if ( _state <> CLOSED )
-        _ptr_remote_mac := 0
-        _local_port := 0
-        _remote_ip := 0
-        _remote_port := 0
-        _iss := 0
-        _ack_nr := 0
-        _flags := 0
-        _snd_una := _snd_nxt := _snd_wnd := _snd_wl1 := _snd_wl2 := 0
-        _irs := _rcv_wnd := _rcv_nxt := 0
-        _state := _prev_state := CLOSED
-        txq.flush()
-        rxq.flush()
-
-
 pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_mac, attempt
 ' Connect to a remote host
 '   ip0..ip3: IP address octets (e.g., for 192.168.1.1: 192,168,1,1)
@@ -232,6 +215,21 @@ pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_ma
                 return -1'XXX specific error code: arp busy
         return -1'XXX specific error code: arp can't resolve
     return -1'XXX specific error code: socket already open
+
+
+pub delete_tcb()
+' Delete the transmission control block
+    if ( _state <> CLOSED )
+        strln(@"delete_tcb()")
+        _ptr_remote_mac := 0
+        _my_ip := 0
+        _local_port := 0
+        _remote_ip := 0
+        _remote_port := 0
+        longfill(@_iss, 0, 13)
+        _state := _prev_state := CLOSED
+        txq.flush()
+        rxq.flush()
 
 
 pub disconnect(): status
@@ -408,7 +406,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr
                 'xxx _signal := ECONN_RESET
                 'xxx callback function for user signals?
                 set_state(CLOSED)
-                'xxx delete_tcb()
+                delete_tcb()
                 strln(@"    error: connection reset")
                 return -1'xxx
             { third, check the security/compartment }
@@ -498,18 +496,18 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr
                     '_signal := ECONN_REFUSED   ' remote incoming connection refused
                     'xxx the retransmission queue should be flushed
                     set_state(CLOSED)
-                    'xxx delete the TCB
+                    delete_tcb()
                     return -1'xxx error: connection refused
             ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT:
                 { any outstanding RECEIVEs and SEND should receive "reset" responses.
                     All segment queues should be flushed. }
                 '_signal := ECONN_RESET ' signal to the user the connection was reset
                 set_state(CLOSED)
-                'xxx delete the TCB
+                delete_tcb()
                 return -1'xxx error: connection reset
             CLOSING, LAST_ACK, TIME_WAIT:
                 set_state(CLOSED)
-                'xxx delete the TCB
+                delete_tcb()
                 return -1
 
     { third, check security and precedence }
@@ -618,7 +616,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr
                         { The only thing that can arrive in this state is an acknowledgment of our
                             FIN. If our FIN is now acknowledged, delete the TCB,
                             enter the CLOSED state, and return. }
-                        'xxx delete TCB
+                        delete_tcb()
                         'strln(@"        state: LAST_ACK")
                         set_state(CLOSED)
                         return 0
@@ -713,8 +711,6 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr
                 _snd_nxt++, _rcv_nxt, ...       ' after sending FIN, increment SND.NXT
                 flags, ...
                 _rcv_wnd )
-
-
     return 0
 
 
