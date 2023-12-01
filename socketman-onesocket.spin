@@ -46,14 +46,15 @@ var
     long _ptr_remote_mac
     byte _my_mac[MACADDR_LEN]
 
-    long _my_ip
+    { Transmission Control Block }
+    long _my_ip                                 ' local socket
     word _local_port
-    long _remote_ip
+    long _remote_ip                             ' remote socket
     word _remote_port
-    long _iss, _ack_nr, _flags
+    long _iss, _ack_nr, _flags                  ' sequence number, segment control flags, send pointers
     long _snd_una, _snd_nxt, _snd_wnd, _snd_wl1, _snd_wl2, _snd_up
-    long _irs, _rcv_wnd, _rcv_nxt, _rcv_up
-    byte _state, _prev_state
+    long _irs, _rcv_wnd, _rcv_nxt, _rcv_up      ' remote sequence number, receive pointers
+    byte _state, _prev_state                    ' connection state
 
 
 obj
