@@ -234,7 +234,7 @@ pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_ma
     return -1'XXX specific error code: socket already open
 
 
-pub disconnect(): status | ack, seq, dp, sp, tcplen, frm_end
+pub disconnect(): status
 ' Disconnect the socket
 '   Returns:
 '       0: success
@@ -296,7 +296,7 @@ pub process_ipv4()
             process_tcp()
 
 
-pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_accept, seg_accept, loop_nr
+pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr
 ' Process incoming TCP segment
     tcp.rd_tcp_header()
     if (    (ip.src_addr() <> _remote_ip) or (tcp.dest_port() <> _local_port) or ...
@@ -716,7 +716,6 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_a
 
 
     return 0
-
 
 
 pub print_ptrs()
