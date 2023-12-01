@@ -5,7 +5,7 @@
     Description: Socket manager
         * one TCP socket
     Started Nov 8, 2023
-    Updated Nov 29, 2023
+    Updated Dec 1, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -239,7 +239,7 @@ pub disconnect(): status | ack, seq, dp, sp, tcplen, frm_end
 '       0: success
 '       -1: error (socket not open)
     case _state
-        ESTABLISHED:                            ' connection must be established to close it
+        ESTABLISHED, CLOSE_WAIT:                ' connection must be established to close it
             tcp_send(   _local_port, _remote_port, ...
                         _snd_nxt, _rcv_nxt, ...
                         tcp.FIN | tcp.ACK, ...
@@ -687,17 +687,11 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_a
     { signal the user "connection closing" and return any pending
         RECEIVEs with same message, }
 
-    { advance RCV.NXT over the FIN, and send an acknowledgment for the FIN.
-        Note that FIN implies PUSH for any segment text not yet delivered to the user. }
-    _rcv_nxt++
-    tcp_send(   _local_port, _remote_port, ...
-                _snd_nxt, _rcv_nxt, ...
-                (tcp.FIN | tcp.ACK), ...
-                _rcv_wnd )
-
+    flags := tcp.ACK
     case _state
         SYN_RECEIVED, ESTABLISHED:
             set_state(CLOSE_WAIT)
+            flags |= tcp.FIN
         FIN_WAIT_1:
             { If our FIN has been ACKed (perhaps in this segment), then enter TIME-WAIT,
                 start the time-wait timer, turn off the other timers; otherwise,
@@ -709,7 +703,18 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_a
             { remain in this state }
         TIME_WAIT:
             { Remain in the TIME-WAIT state. Restart the 2 MSL time-wait timeout. }
+
+    { advance RCV.NXT over the FIN, and send an acknowledgment for the FIN.
+        Note that FIN implies PUSH for any segment text not yet delivered to the user. }
+    _rcv_nxt++
+    tcp_send(   _local_port, _remote_port, ...
+                _snd_nxt++, _rcv_nxt, ...       ' after sending FIN, increment SND.NXT
+                flags, ...
+                _rcv_wnd )
+
+
     return 0
+
 
 
 pub print_ptrs()
