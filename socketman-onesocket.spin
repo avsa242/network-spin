@@ -290,7 +290,7 @@ pub process_arp()
 pub process_ipv4()
 ' Process incoming IPv4 header, and hand off to the appropriate layer-4 processor
     ip.rd_ip_header()
-    if ( (ip.dest_addr() == _my_ip) and (ip.src_addr() == _remote_ip) )
+    if ( (ip.dest_addr() == _my_ip) )
         'strln(@"frame is sent to us")
         if ( ip.layer4_proto() == L4_TCP )
             process_tcp()
@@ -299,7 +299,8 @@ pub process_ipv4()
 pub process_tcp(): tf | ack, seq, flags, seg_len, tcplen, frm_end, sp, dp, seq_accept, seg_accept, loop_nr
 ' Process incoming TCP segment
     tcp.rd_tcp_header()
-    if ( (tcp.dest_port() <> _local_port) or (tcp.source_port() <> _remote_port) )
+    if (    (ip.src_addr() <> _remote_ip) or (tcp.dest_port() <> _local_port) or ...
+            (tcp.source_port() <> _remote_port) )
         { refuse connection if the socket doesn't exist }
         strln(@"connection refused (no matching socket)")
         ack := tcp.seq_nr()
