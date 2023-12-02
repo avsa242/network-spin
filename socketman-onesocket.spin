@@ -5,7 +5,7 @@
     Description: Socket manager
         * one TCP socket
     Started Nov 8, 2023
-    Updated Dec 1, 2023
+    Updated Dec 2, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -47,7 +47,7 @@ var
     byte _my_mac[MACADDR_LEN]
 
     { Transmission Control Block }
-    long _my_ip                                 ' local socket
+    long _local_ip                              ' local socket
     word _local_port
     long _remote_ip                             ' remote socket
     word _remote_port
@@ -79,14 +79,10 @@ obj
     dbg=    "com.serial.terminal.ansi"
 
 var long dptr
-pub init(net_ptr, local_ip, local_mac)
+pub init(net_ptr)
 ' Initialize the socket
 '   net_ptr: pointer to the network device driver object
-'   local_ip: this node's IP address, in 32-bit form
-'   local_mac: pointer to this node's MAC address
     netif := net_ptr
-    bytemove(@_my_mac, @net[netif]._mac_local, MACADDR_LEN)
-    _ptr_my_mac := @_my_mac
 
     math.rndseed(cnt)                           ' seed the RNG
 
@@ -97,16 +93,12 @@ pub init(net_ptr, local_ip, local_mac)
 
     rxq.set_rdblk_lsbf(@net[netif].rdblk_lsbf)  ' bind the RXQ to the enet driver's read function
     txq.set_wrblk_lsbf(@net[netif].wrblk_lsbf)  ' bind the TXQ to the enet driver's write function
-    ip.set_my_ip32(local_ip)
-    _my_ip := local_ip
-    _remote_ip := $01_00_2a_0a
-    arp.cache_entry(local_mac, local_ip)
+
 
 var long _pending_arp_request
 var long _conn  ' XXX temp, for testing
-pub loop() | l  ' XXX rename
+pub loop() | l, arp_ent  ' XXX rename
 ' Main loop
-    _conn := 1  'XXX temp, for testing
     repeat
         if ( net[netif].pkt_cnt() )
             get_frame()
@@ -117,8 +109,24 @@ pub loop() | l  ' XXX rename
                 'printf1(@"flags: %09.9b\n\r", tcp.flags())
                 'printf2(@"ack_nr=%d  _snd_nxt=%d\n\r", tcp.ack_nr(), _snd_nxt)
         if ( _conn )    ' XXX temp, for testing
-            if ( connect(10,42,0,1, 23) == 1 )
-                _conn := false                  ' once connected, clear this flag
+            util.show_ip_addr(@"connecting to ", _remote_ip, string("...", 10, 13))
+            arp_ent := arp.read_entry_by_proto_addr(_remote_ip)
+            if ( arp_ent < 1 )
+                ifnot ( _pending_arp_request )
+                    strln(@"requesting IP resolution")
+                    _pending_arp_request := _remote_ip
+                else
+                    strln(@"another ARP request is already queued")
+            else
+                _ptr_remote_mac := arp.hw_ent(arp_ent)
+                util.show_mac_addr(@"Remote socket cached as ", _ptr_remote_mac, string(10, 13))
+                tcp_send(   _local_port, _remote_port, ...
+                            _snd_nxt, _rcv_nxt, ...
+                            _flags, ...
+                            _rcv_wnd )
+                _snd_nxt++
+                set_state(SYN_SENT)
+                _conn := false
         if ( _pending_arp_request )
             if ( ||(cnt-_timestamp_last_arp_req) => clkfreq )
                 strln(@"new pending ARP request")
@@ -158,63 +166,18 @@ pub arp_request(): ent_nr
             'xxx review: why were we setting these ARP params after the lookup? should we still?
             arp.set_target_hw_addr( arp.hw_ent(ent_nr) )
             arp.set_target_proto_addr( _pending_arp_request )
-            arp.set_sender_hw_addr( _ptr_my_mac )
-            arp.set_sender_proto_addr( _my_ip )
+            arp.set_sender_hw_addr( net[netif].my_mac() )
+            arp.set_sender_proto_addr( _local_ip )
             _last_arp_answer := ent_nr
             return ent_nr                       ' == the entry # in the table/cache
 
         { not yet cached; ask the network for who the IP belongs to }
         strln(@"arp_request(): not cached; requesting resolution...")
         net[netif].start_frame()
-        ethii.new(_ptr_my_mac, @_mac_bcast, ETYP_ARP)
-        arp.who_has(_my_ip, _pending_arp_request)
+        ethii.new(net[netif].my_mac(), @_mac_bcast, ETYP_ARP)
+        arp.who_has(_local_ip, _pending_arp_request)
         net[netif].send_frame()
         _timestamp_last_arp_req := cnt          ' mark now as the last time we sent a request
-
-
-pub connect(ip0, ip1, ip2, ip3, dest_port): status | dest_addr, arp_ent, dest_mac, attempt
-' Connect to a remote host
-'   ip0..ip3: IP address octets (e.g., for 192.168.1.1: 192,168,1,1)
-'   dest_port: remote port
-    dest_addr := ip0 | (ip1 << 8) | (ip2 << 16) | (ip3 << 24)
-    if ( _state == CLOSED )                     ' only attempt if the socket isn't in use
-        util.show_ip_addr(@"connecting to ", dest_addr, string("...", 10, 13))
-        arp_ent := arp.read_entry_by_proto_addr(dest_addr)
-        if ( arp_ent > 0 )
-        { if we know the MAC address associated with this IP, we can set up the socket
-            and request a connection }
-            strln(@"IP resolved; setting up socket")
-            { set up the remote node in the socket }
-            _remote_ip := dest_addr
-            _remote_port := dest_port
-            _ptr_remote_mac := arp.read_entry_mac(arp_ent)
-            _local_port := 49152+math.rndi(16383)
-            _flags := tcp.SYN                   ' will synchronize on first connection
-            _snd_una := _iss := math.rndi(posx)
-
-            _snd_wnd := 0
-            _snd_wl1 := 0
-            _snd_up := _iss
-            _snd_nxt := _iss
-
-            _rcv_wnd := RECVQ_SZ
-            _rcv_nxt := 0
-            tcp_send(   _local_port, _remote_port, ...
-                        _snd_nxt, _rcv_nxt, ...
-                        _flags, ...
-                        _rcv_wnd )
-            _snd_nxt++
-            set_state(SYN_SENT)
-            return 1
-        else
-            ifnot ( _pending_arp_request )
-                strln(@"requesting IP resolution")
-                _pending_arp_request := dest_addr
-            else
-                strln(@"another ARP request is already queued")
-                return -1'XXX specific error code: arp busy
-        return -1'XXX specific error code: arp can't resolve
-    return -1'XXX specific error code: socket already open
 
 
 pub delete_tcb()
@@ -222,7 +185,7 @@ pub delete_tcb()
     if ( _state <> CLOSED )
         strln(@"delete_tcb()")
         _ptr_remote_mac := 0
-        _my_ip := 0
+        _local_ip := 0
         _local_port := 0
         _remote_ip := 0
         _remote_port := 0
@@ -259,13 +222,101 @@ pub get_frame(): etype
     return ethii.ethertype()
 
 
+con #0, PASSIVE, ACTIVE
+con #0, UNSPEC
+pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE): s
+' Open a new socket
+'   lcl_ip: local IP address (always required)
+'   lcl_port: local port
+'       when mode == PASSIVE: required
+'       when mode == ACTIVE: optional; will be randomly assigned if unspecified or set to 0
+'   rem_ip: remote/foreign IP address
+'       when mode == PASSIVE: optional
+'       when mode == ACTIVE: required
+'   rem_port: remote port
+'       when mode == PASSIVE: optional (usually not known in this case)
+'       when mode == ACTIVE: required
+'   mode:
+'       PASSIVE (0): open a listening socket (default, if unspecified)
+'       ACITVE (1): actively open a connection to a remote host
+'   Returns:
+'       socket number (0 or higher)
+'       or a negative number, if an error occurs
+    ifnot ( _state == CLOSED )
+        strln(@"error: socket already in use")
+        return -1'xxx                           ' error: socket already open
+
+    _local_ip := lcl_ip
+    _local_port := lcl_port                     ' required for PASSIVE; optional for ACTIVE
+    _remote_ip := rem_ip                        ' optional for passive connections
+    _remote_port := rem_port                    '   (usually these won't be known yet in that case)
+
+    _rcv_wnd := RECVQ_SZ
+
+    if ( mode == PASSIVE )
+        strln(@"PASSIVE mode")
+        set_state(LISTEN)
+        { validate the local IP address }
+        ifnot ( _local_ip )
+            strln(@"error: invalid local IP")
+            return -1'xxx                       ' error: couldn't get a local IP address
+        ifnot ( _local_port )
+            strln(@"error: invalid local port")
+            return -1'xxx
+        s := 0
+    elseif ( mode == ACTIVE )
+        strln(@"ACTIVE MODE")
+        { validate the local IP address }
+        ifnot ( _local_ip )
+            strln(@"error: invalid local IP")
+            return -1'xxx                       ' error: couldn't get a local IP address
+        { check if a local port was specified; pick one at random if not }
+        ifnot ( _local_port )
+            strln(@"local port unspecified, picking a random one")
+            _local_port := 49152+math.rndi(16383)
+        { validate the remote IP address }
+        ifnot ( _remote_ip )
+            strln(@"error: invalid remote IP")
+            return -1'xxx                       ' error: bad remote IP
+        { validate the remote port }
+        ifnot ( _remote_port )
+            strln(@"error: invalid remote port")
+            return -1'xxx                       ' error: bad remote port
+
+        { set the initial send sequence # and the socket pointers }
+        _flags := tcp.SYN                       ' will synchronize on first connection
+        _snd_una := _iss := math.rndi(posx)     ' pick initial send sequence number
+        _snd_wnd := 0
+        _snd_wl1 := 0
+        _snd_up := _iss
+        _snd_nxt := _iss
+        _rcv_nxt := 0
+        _conn := true                           ' flag the main net loop we want to connect
+
+    { bind the attached network device's MAC address to our chosen IP address }
+    arp.cache_entry(net[netif].my_mac(), _local_ip)
+    ip.set_my_ip32(_local_ip)
+
+
+'{
+    util.show_ip_addr(@"Local IP: ", _local_ip, @":")
+    printf1(@"%d\n\r", _local_port)
+    util.show_mac_addr(@"Local MAC: ", net[netif].my_mac(), string(10, 13))
+    util.show_ip_addr(@"Remote IP: ", _remote_ip, @":")
+    printf1(@"%d\n\r", _remote_port)
+    if ( arp.find_mac_by_ip(_remote_ip) > 0 )
+        util.show_mac_addr(@"Remote MAC: ", arp.find_mac_by_ip(_remote_ip), string(10, 13))
+    else
+        strln(@"Remote MAC undefined")
+'}
+
 pub process_arp()
 ' Process received ARP messages
     arp.rd_arp_msg()
     case arp.opcode()
         arp.ARP_REQ:
             strln(@"process_arp(): REQ")
-            if ( arp.target_proto_addr() == _my_ip )
+            if ( arp.target_proto_addr() == _local_ip )
                 { respond to requests for our IP/MAC }
                 net[netif].start_frame()
                 ethii.new(arp.hw_ent(0), arp.sender_hw_addr(), ETYP_ARP)
@@ -288,17 +339,29 @@ pub process_arp()
 pub process_ipv4()
 ' Process incoming IPv4 header, and hand off to the appropriate layer-4 processor
     ip.rd_ip_header()
-    if ( (ip.dest_addr() == _my_ip) )
+    if ( (ip.dest_addr() == _local_ip) )
         'strln(@"frame is sent to us")
         if ( ip.layer4_proto() == L4_TCP )
             process_tcp()
 
 
-pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr
+pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
 ' Process incoming TCP segment
     tcp.rd_tcp_header()
-    if (    (ip.src_addr() <> _remote_ip) or (tcp.dest_port() <> _local_port) or ...
-            (tcp.source_port() <> _remote_port) )
+    reset := false
+    if ( (ip.src_addr() <> _remote_ip) )        ' source IP doesn't match the remote socket
+        if ( _remote_ip )                       '   (only matters if it was specified with open() )
+            strln(@"error: source address doesn't match remote socket")
+            reset := true
+    if ( (tcp.source_port() <> _remote_port) )  ' source port doesn't match the remote socket
+        if ( _remote_port )                     '   (only matters if it was specified with open() )
+            strln(@"error: source port doesn't match remote socket")
+            reset := true
+    if ( (tcp.dest_port() <> _local_port) )     ' destination port doesn't match the local socket
+        reset := true                           '   this is always an error
+        strln(@"error: destination port doesn't match local socket")
+
+    if ( reset )
         { refuse connection if the socket doesn't exist }
         strln(@"connection refused (no matching socket)")
         ack := tcp.seq_nr()
@@ -366,6 +429,8 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr
                 { fill in the remote socket data and complete the handshake }
                 _remote_ip := ip.src_addr()
                 _remote_port := tcp.source_port()
+                arp.cache_entry(ethii.src_addr(), _remote_ip)
+                _ptr_remote_mac := ethii.src_addr()'xxx should we really blindly do this? maybe validate with an ARP probe sometimes?
                 util.show_ip_addr(@"    remote socket: ", _remote_ip, @":")
                 printf1(@"%d\n\r", _remote_port)
                 tcp_send(   _local_port, _remote_port, ...
@@ -724,51 +789,6 @@ pub print_ptrs()
     printf1(@"    RCV.NXT: %d\n\r", _rcv_nxt)
     printf1(@"    RCV.WND: %d\n\r", _rcv_wnd)
 
-pub resolve_ip(remote_ip): ent_nr
-' Use ARP to resolve an IP address to a MAC address
-'   remote_ip: IP address to resolve, in 32-bit form
-'   Returns: entry number in the ARP cache/table, or -1 on failure
-    ent_nr := -1'XXX specific error code
-
-    { see if the IP is already in the ARP cache }
-    ent_nr := arp.read_entry_by_proto_addr(remote_ip)
-    if ( ent_nr > 0 )
-        'xxx review: why were we setting these ARP params after the lookup? should we still?
-        printf1(@"found IP in ARP cache entry %d\n\r", ent_nr)
-        arp.set_target_hw_addr( arp.hw_ent(ent_nr) )
-        arp.set_target_proto_addr( remote_ip )
-        arp.set_sender_hw_addr( _ptr_my_mac )
-        arp.set_sender_proto_addr( _my_ip )
-        _last_arp_answer := ent_nr
-        return ent_nr                           ' == the entry # in the table/cache
-
-    { not yet cached; ask the network for who the IP belongs to }
-    strln(@"not cached; requesting resolution...")
-    net[netif].start_frame()
-    ethii.new(_ptr_my_mac, @_mac_bcast, ETYP_ARP)
-    arp.who_has(_my_ip, remote_ip)
-    net[netif].send_frame()
-
-    { wait for a reply }
-    repeat
-        repeat until net[netif].pkt_cnt()
-        printf1(@"frame recvd: %04.4x\n\r", ethii.ethertype())
-        net[netif].get_frame()
-        ethii.rd_ethii_frame()
-    until ( ethii.ethertype() == ETYP_ARP )
-
-    'str(@"ARP ")
-    arp.rd_arp_msg()
-    if ( arp.opcode() == arp.ARP_REPL )
-        if ( arp.sender_proto_addr() == remote_ip )
-            { store this IP/MAC as the next available entry in the ARP table }
-            ent_nr := arp.cache_entry( arp.sender_hw_addr(), arp.sender_proto_addr() )
-            'printf1(@"caching as number %d\n\r", ent_nr)
-            _last_arp_answer := ent_nr
-        else
-            strln(@"wrong ip")
-            return -1'XXX specific error code
-
 
 pub set_state(new_state)
 ' Change the connection state of the socket
@@ -785,8 +805,9 @@ pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
 '   win: TCP window
 '   seg_len (optional): payload data length
     str(@"tcp_send() ")
-    ethii.new(_ptr_my_mac, _ptr_remote_mac, ETYP_IPV4)
-        ip.new(ip.TCP, _my_ip, _remote_ip)
+
+    ethii.new(net[netif].my_mac(), _ptr_remote_mac, ETYP_IPV4)
+        ip.new(ip.TCP, _local_ip, _remote_ip)
             tcp.set_source_port(sp)
             tcp.set_dest_port(dp)
             tcp.set_seq_nr(seq)
@@ -805,7 +826,7 @@ pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
             net[netif].inet_checksum_wr(tcp._tcp_start, ...
                                         tcplen, ...
                                         tcp._tcp_start+TCPH_CKSUM, ...
-                                        tcp.pseudo_header_cksum(_my_ip, _remote_ip, seg_len))
+                                        tcp.pseudo_header_cksum(_local_ip, _remote_ip, seg_len))
         net[netif].fifo_set_wr_ptr(frm_end)
         ip.update_chksum(tcplen)
     net[netif].send_frame()

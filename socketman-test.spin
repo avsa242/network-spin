@@ -11,19 +11,17 @@ obj
     fsyn:       "signal.synth"
     net:        NETIF_DRIVER | CS=1, SCK=2, MOSI=3, MISO=4
     time:       "time"
-
-
-dat
-
-    _mac_local  byte $02, $98, $0c, $06, $01, $c9
-    _my_ip      long 10 | (42 << 8) | (0 << 16) | (216 << 24)
-    _rem_ip     long 10 | (42 << 8) | (0 << 16) | (1 << 24)
+    str:        "string"
 
 
 pub main() | s
 
     setup()
-    sockmgr.init(@net, _my_ip, @_mac_local)
+    sockmgr.init(@net)
+    sockmgr.open(   str.strtoip(@"10.42.0.216"), 0, ...
+                    str.strtoip(@"10.42.0.1"), 23, ...
+                    sockmgr.ACTIVE )
+'    sockmgr.open(   str.strtoip(@10.42.0.216"), 23)    ' open a passive (LISTENing) socket, port 23
     sockmgr.loop()
     repeat
 
