@@ -1,5 +1,6 @@
 #define NETIF_DRIVER "../enc28j60-spin/net.eth.enc28j60"
 #pragma exportdef(NETIF_DRIVER)
+#define ip str.strtoip                          { provide a shorthand for the strtoip function }
 
 #include "net-common.spinh"
 
@@ -14,12 +15,14 @@ obj
     str:        "string"
 
 
+dat _mac_local  byte $02, $98, $0c, $06, $01, $c9
+
 pub main() | s
 
     setup()
     sockmgr.init(@net)
-    sockmgr.open(   str.strtoip(@"10.42.0.216"), 0, ...
-                    str.strtoip(@"10.42.0.1"), 23, ...
+    sockmgr.open(   ip(@"10.42.0.216"), 0, ...
+                    ip(@"10.42.0.1"), 23, ...
                     sockmgr.ACTIVE )
 '    sockmgr.open(   str.strtoip(@10.42.0.216"), 23)    ' open a passive (LISTENing) socket, port 23
     sockmgr.loop()
