@@ -25,7 +25,6 @@ pub main() | s
                     ip(@"10.42.0.1"), 23, ...
                     sockmgr.ACTIVE )
 '    sockmgr.open(   str.strtoip(@10.42.0.216"), 23)    ' open a passive (LISTENing) socket, port 23
-    sockmgr.loop()
     repeat
 
 

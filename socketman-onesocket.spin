@@ -37,6 +37,8 @@ var
 
     long netif                                  ' pointer to network interface driver object
 
+    long _cog                                   ' cog ID + 1 of main network I/O loop
+
     long _timestamp_last_arp_req                ' timestamp of last outgoing ARP request
     byte _last_arp_answer                       ' ARP cache entry # of answer to last request
 
@@ -77,10 +79,12 @@ obj
     util:   "net-util"
     dbg=    "com.serial.terminal.ansi"
 
+
 var long dptr
-pub init(net_ptr)
+pub init(net_ptr): c
 ' Initialize the socket
 '   net_ptr: pointer to the network device driver object
+'   Returns: cog ID+1 of network I/O loop
     netif := net_ptr
 
     math.rndseed(cnt)                           ' seed the RNG
@@ -93,7 +97,15 @@ pub init(net_ptr)
     rxq.set_rdblk_lsbf(@net[netif].rdblk_lsbf)  ' bind the RXQ to the enet driver's read function
     txq.set_wrblk_lsbf(@net[netif].wrblk_lsbf)  ' bind the TXQ to the enet driver's write function
 
+    _cog := c := cognew(loop(), @_loop_stk)
+'{
+    if ( _cog )
+        printf1(@"network I/O loop started on cog #%d\n\r", _cog-1)
+    else
+        strln(@"error: no free cogs available")
+'}
 
+var long _loop_stk[200]
 var long _pending_arp_request
 var long _conn  ' XXX temp, for testing
 pub loop() | l, arp_ent  ' XXX rename
