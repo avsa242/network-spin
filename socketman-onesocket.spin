@@ -131,10 +131,7 @@ pub loop() | l, arp_ent  ' XXX rename
             else
                 _ptr_remote_mac := arp.hw_ent(arp_ent)
                 util.show_mac_addr(@"Remote socket cached as ", _ptr_remote_mac, string(10, 13))
-                tcp_send(   _local_port, _remote_port, ...
-                            _snd_nxt, _rcv_nxt, ...
-                            _flags, ...
-                            _rcv_wnd )
+                tcp_send_socket( tcp.SYN )
                 _snd_nxt++
                 set_state(SYN_SENT)
                 _conn := false
@@ -154,11 +151,7 @@ pub loop() | l, arp_ent  ' XXX rename
         if ( _sendq )
             if ( _state == ESTABLISHED )
                 if ( txq.unread_bytes() )
-                    tcp_send(   _local_port, _remote_port, ...
-                                _snd_nxt, _rcv_nxt, ...
-                                tcp.PSH | tcp.ACK, ...
-                                _rcv_wnd, ...
-                                txq.unread_bytes() )
+                    tcp_send_socket( (tcp.PSH|tcp.ACK), txq.unread_bytes() )
             _sendq := false
 
 
@@ -216,11 +209,7 @@ pub disconnect(): status
 '       -1: error (socket not open)
     case _state
         ESTABLISHED, CLOSE_WAIT:                ' connection must be established to close it
-            tcp_send(   _local_port, _remote_port, ...
-                        _snd_nxt, _rcv_nxt, ...
-                        tcp.FIN | tcp.ACK, ...
-                        _rcv_wnd, ...
-                        0 )
+            tcp_send_socket(tcp.FIN | tcp.ACK)
             _snd_nxt++
             set_state(FIN_WAIT_1)
         other:
@@ -454,7 +443,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                 _snd_nxt := _iss+1
                 _snd_una := _iss
                 set_state(SYN_RECEIVED)
-                'print_ptrs
+                'print_ptrs()
                 return 1
         SYN_SENT:
             { first, check the ACK bit }
@@ -508,10 +497,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                 set_state(ESTABLISHED)
                 '_snd_una := _snd_nxt       'xxx level-ip does this
                 'print_ptrs()
-                tcp_send(   _local_port, _remote_port, ...
-                            _snd_nxt, _rcv_nxt, ...
-                            tcp.ACK, ...
-                            _rcv_wnd ) 'xxx window settings?
+                tcp_send_socket(tcp.ACK)
                 return 0
             else                            'xxx behavior unverified
                 { Otherwise, enter SYN-RECEIVED, form a SYN,ACK segment and send it }
@@ -550,10 +536,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
         strln(@"    error: segment not acceptable (seq_nr)")
         ifnot ( tcp.flags() & tcp.RST )
             { ...(unless the RST bit is set, if so drop the segment and return) }
-            tcp_send(   _local_port, _remote_port, ...
-                        _snd_nxt, _rcv_nxt, ...
-                        tcp.ACK, ...
-                        _rcv_wnd )'xxx verify window settings
+            tcp_send_socket(tcp.ACK)
         return 0'xxx                    ' drop the unacceptable segment and return
 
     { second, check the RST bit }
@@ -606,10 +589,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                 { RFC 5961 recommends that in these synchronized states,
                     if the SYN bit is set, irrespective of the sequence number,
                     TCP endpoints MUST send a "challenge ACK" to the remote peer }
-                tcp_send(   _local_port, _remote_port, ...
-                            _snd_nxt, _rcv_nxt, ...
-                            tcp.ACK, ...
-                            _rcv_wnd )'xxx verify window settings
+                tcp_send_socket(tcp.ACK)
                 return 0                        ' drop unacceptable segment
 
     { fifth, check the ACK field }
@@ -662,10 +642,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                     'xxx level-ip just drops segs here, and suggests that Linux does also.
                     'xxx investigate more. Is it meant to be a 'challenge ACK?'
                     strln(@"        warning: ACKed unsent segment")
-                    tcp_send(   _local_port, _remote_port, ...
-                                _snd_nxt, _rcv_nxt, ...
-                                tcp.ACK, ...
-                                _rcv_wnd )
+                    tcp_send_socket(tcp.ACK)
                     return 0
                 if (    (_snd_wl1 < tcp.seq_nr()) or ...
                         ((_snd_wl1 == tcp.seq_nr()) and (_snd_wl2 =< tcp.ack_nr())) )
@@ -704,10 +681,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                             remote FIN. Acknowledge it, and restart the 2 MSL timeout. }
                         'strln(@"        state: TIME_WAIT")
                         if ( tcp.seq_nr() == _rcv_nxt )
-                            tcp_send(   _local_port, _remote_port, ...
-                                        _snd_nxt, _rcv_nxt, ...
-                                        tcp.FIN | tcp.ACK, ...
-                                        _rcv_wnd )'xxx verify window settings
+                            tcp_send_socket(tcp.FIN | tcp.ACK)
                         'xxx restart 2MSL timeout
                         quit
                 quit
@@ -742,10 +716,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                 _rcv_nxt += rxq.xput(seg_len)
                 _rcv_wnd := rxq.available()
                 'print_ptrs()
-                tcp_send(   _local_port, _remote_port, ...
-                            _snd_nxt, _rcv_nxt, ...
-                            tcp.ACK, ...
-                            _rcv_wnd )
+                tcp_send_socket(tcp.ACK)
             CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT:
                 { This should not occur since a FIN has been received from the
                     remote side. }
@@ -786,10 +757,8 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
     { advance RCV.NXT over the FIN, and send an acknowledgment for the FIN.
         Note that FIN implies PUSH for any segment text not yet delivered to the user. }
     _rcv_nxt++
-    tcp_send(   _local_port, _remote_port, ...
-                _snd_nxt++, _rcv_nxt, ...       ' after sending FIN, increment SND.NXT
-                flags, ...
-                _rcv_wnd )
+    tcp_send_socket(flags)
+    _snd_nxt++
     return 0
 
 
@@ -826,7 +795,7 @@ pub set_state(new_state)
 
 
 pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
-' Send a TCP segment
+' Send a TCP segment with arbitrary socket settings
 '   sp, dp: source, destination ports
 '   seq, ack: sequence, acknowledgement numbers
 '   flags: control flags
@@ -859,6 +828,14 @@ pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
         net[netif].fifo_set_wr_ptr(frm_end)
         ip.update_chksum(tcplen)
     net[netif].send_frame()
+
+
+pub tcp_send_socket(flags, seg_len=0)
+' Send a TCP segment to the active socket
+    tcp_send(   _local_port, _remote_port, ...
+                _snd_nxt, _rcv_nxt, ...
+                flags, _rcv_wnd, ...
+                seg_len )
 
 
 { debugging methods }
