@@ -624,7 +624,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
     'xxx decide if we should implement MAY-12 (check ACK value is in range)
     loop_nr := 1
     repeat
-        printf1(@"        loop_nr=%d\n\r", loop_nr)
+        'printf1(@"        loop_nr=%d\n\r", loop_nr)
         case _state
             SYN_RECEIVED:               'xxx behavior unverified
                 'strln(@"        state: SYN_RECEIVED")
