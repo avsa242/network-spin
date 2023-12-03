@@ -32,7 +32,8 @@ pub main() | s, e, st, l
     s := cnt
     st := sockmgr.open(     ip(@"10.42.0.216"), 0, ...
                             ip(@"10.42.0.1"), 23, ...
-                            sockmgr.ACTIVE | sockmgr.O_BLOCK )
+                            sockmgr.ACTIVE | sockmgr.O_BLOCK, ...
+                            5000 )
 '    sockmgr.open(   str.strtoip(@10.42.0.216"), 23)    ' open a passive (LISTENing) socket, port 23
     e := ||(cnt-s) / 80
     if ( st < 0 )

@@ -22,6 +22,8 @@ con
     { limits }
     SENDQ_SZ            = 128
     RECVQ_SZ            = 128
+    MAX_ARP_ATTEMPTS    = 5
+
 
     { socket states }
     #0, CLOSED, SYN_SENT, SYN_RECEIVED, ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, ...
@@ -108,8 +110,9 @@ pub init(net_ptr): c
 var long _loop_stk[200]
 var long _pending_arp_request
 var long _conn, _disc, _sendq  ' XXX temp, for testing
-pub loop() | l, arp_ent  ' XXX rename
+pub loop() | l, arp_ent, arp_attempt  ' XXX rename
 ' Main loop
+    arp_attempt := 0
     repeat
         if ( net[netif].pkt_cnt() )
             get_frame()
@@ -120,14 +123,14 @@ pub loop() | l, arp_ent  ' XXX rename
                 'printf1(@"flags: %09.9b\n\r", tcp.flags())
                 'printf2(@"ack_nr=%d  _snd_nxt=%d\n\r", tcp.ack_nr(), _snd_nxt)
         if ( _conn )    ' XXX temp, for testing
-            util.show_ip_addr(@"connecting to ", _remote_ip, string("...", 10, 13))
+            'util.show_ip_addr(@"connecting to ", _remote_ip, string("...", 10, 13))
             arp_ent := arp.read_entry_by_proto_addr(_remote_ip)
             if ( arp_ent < 1 )
                 ifnot ( _pending_arp_request )
                     strln(@"requesting IP resolution")
                     _pending_arp_request := _remote_ip
-                else
-                    strln(@"another ARP request is already queued")
+                'else
+                    'strln(@"another ARP request is already queued")
             else
                 _ptr_remote_mac := arp.hw_ent(arp_ent)
                 util.show_mac_addr(@"Remote socket cached as ", _ptr_remote_mac, string(10, 13))
@@ -139,11 +142,20 @@ pub loop() | l, arp_ent  ' XXX rename
             if ( ||(cnt-_timestamp_last_arp_req) => clkfreq )
                 strln(@"new pending ARP request")
                 { don't send out another request unless at least 1 second has elapsed }
-                arp_request()
-                if (    (_last_arp_answer > 0) and ...
-                        (arp.read_entry_ip(_last_arp_answer) == _pending_arp_request) )
-                    strln(@"last ARP reply was an answer to the pending ARP request; clearing")
+                if ( arp_attempt < MAX_ARP_ATTEMPTS )
+                    arp_request()
+                    arp_attempt++
+                    printf1(@"attempt %d\n\r", arp_attempt)
+                    if (    (_last_arp_answer > 0) and ...
+                            (arp.read_entry_ip(_last_arp_answer) == _pending_arp_request) )
+                        strln(@"last ARP reply was an answer to the pending ARP request; clearing")
+                        _pending_arp_request := 0
+                        arp_attempt := 0
+                else
+                    strln(@"error: MAX_ARP_ATTEMPTS exceeded")
                     _pending_arp_request := 0
+                    arp_attempt := 0
+                    _conn := false
         if ( _disc )
             strln(@"closing")
             disconnect()
@@ -229,7 +241,7 @@ con #0, PASSIVE, ACTIVE
 con #0, UNSPEC
 con O_BLOCK = (1 << 16)                         ' option: block until complete
 
-pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE): s | opts
+pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE, tmout=0): s | tm
 ' Open a new socket
 '   lcl_ip: local IP address (always required)
 '   lcl_port: local port
@@ -244,6 +256,10 @@ pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE):
 '   mode:
 '       PASSIVE (0): open a listening socket (default, if unspecified)
 '       ACITVE (1): actively open a connection to a remote host
+'       options:
+'           O_BLOCK ($1_00_00): block/wait until the connection is established
+'   tmout: timeout in milliseconds to wait for the connection to be established
+'       (ignored unless mode uses option O_BLOCK)
 '   Returns:
 '       socket number (0 or higher)
 '       or a negative number, if an error occurs
@@ -258,9 +274,7 @@ pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE):
 
     _rcv_wnd := RECVQ_SZ
 
-    opts := mode.word[1]                        ' upper 16bits used for connection options
-    mode &= $ffff
-    if ( mode == PASSIVE )
+    if ( mode.word[0] == PASSIVE )
         strln(@"PASSIVE mode")
         set_state(LISTEN)
         { validate the local IP address }
@@ -271,7 +285,7 @@ pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE):
             strln(@"error: invalid local port")
             return -1'xxx
         s := 0
-    elseif ( mode == ACTIVE )
+    elseif ( mode.word[1] == ACTIVE )
         strln(@"ACTIVE MODE")
         { validate the local IP address }
         ifnot ( _local_ip )
@@ -315,9 +329,11 @@ pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE):
     else
         strln(@"Remote MAC undefined")
 '}
-    if ( opts & O_BLOCK )
+    if ( mode & O_BLOCK )
+        tm := cnt
         repeat until _state == ESTABLISHED
-
+            if ( (||(cnt-tm) / 80_000) > tmout )
+                return -1'xxx                   ' error: timeout waiting for connection
 
 pub process_arp()
 ' Process received ARP messages
