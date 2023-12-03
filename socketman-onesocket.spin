@@ -22,7 +22,6 @@ con
     { limits }
     SENDQ_SZ            = 128
     RECVQ_SZ            = 128
-    MAX_ARP_ATTEMPTS    = 5                     ' max tries to resolve an IP to a MAC
 
     { socket states }
     #0, CLOSED, SYN_SENT, SYN_RECEIVED, ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, ...
