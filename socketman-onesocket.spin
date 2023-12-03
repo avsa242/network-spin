@@ -5,7 +5,7 @@
     Description: Socket manager
         * one TCP socket
     Started Nov 8, 2023
-    Updated Dec 2, 2023
+    Updated Dec 3, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -725,7 +725,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                     as appropriate to the current buffer availability. The total of
                     RCV.NXT and RCV.WND should not be reduced. }
                 'printf1(@"        state: %s\n\r", state_str(_state))
-                _rcv_nxt += rxq.xreceive(seg_len)
+                _rcv_nxt += rxq.xput(seg_len)
                 _rcv_wnd := rxq.available()
                 'print_ptrs()
                 tcp_send(   _local_port, _remote_port, ...
@@ -821,7 +821,7 @@ pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
             tcp.wr_tcp_header()
             if ( seg_len > 0 )                  ' attach payload (XXX untested)
                 printf1(@"    length is %d, attaching payload\n\r", seg_len)
-                txq.xsend(seg_len)
+                txq.xget(seg_len)               ' get data from ring buffer into netif's FIFO
             frm_end := net[netif].fifo_wr_ptr()
             net[netif].inet_checksum_wr(tcp._tcp_start, ...
                                         tcplen, ...
@@ -867,7 +867,7 @@ dat test_data byte "Test data", 13, 10, 0
 pub send_test_data() | seg_len
 
     seg_len := strsize(@test_data)
-    txq.receive(@test_data, seg_len)
+    txq.put(@test_data, seg_len)
     tcp_send(   _local_port, _remote_port, ...
                 _snd_nxt, _rcv_nxt, ...
                 tcp.PSH|tcp.ACK, ...
