@@ -227,7 +227,9 @@ pub get_frame(): etype
 
 con #0, PASSIVE, ACTIVE
 con #0, UNSPEC
-pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE): s
+con O_BLOCK = (1 << 16)                         ' option: block until complete
+
+pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE): s | opts
 ' Open a new socket
 '   lcl_ip: local IP address (always required)
 '   lcl_port: local port
@@ -256,6 +258,8 @@ pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE):
 
     _rcv_wnd := RECVQ_SZ
 
+    opts := mode.word[1]                        ' upper 16bits used for connection options
+    mode &= $ffff
     if ( mode == PASSIVE )
         strln(@"PASSIVE mode")
         set_state(LISTEN)
@@ -300,7 +304,6 @@ pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE):
     arp.cache_entry(net[netif].my_mac(), _local_ip)
     ip.set_my_ip32(_local_ip)
 
-
 '{
     util.show_ip_addr(@"Local IP: ", _local_ip, @":")
     printf1(@"%d\n\r", _local_port)
@@ -312,6 +315,9 @@ pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE):
     else
         strln(@"Remote MAC undefined")
 '}
+    if ( opts & O_BLOCK )
+        repeat until _state == ESTABLISHED
+
 
 pub process_arp()
 ' Process received ARP messages

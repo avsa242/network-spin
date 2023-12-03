@@ -25,14 +25,24 @@ var
     byte _app_rxbuff[1000], _app_txbuff[1000]
 
 
-pub main() | s, l
+pub main() | s, e, st, l
 
     setup()
     sockmgr.init(@net)
-    sockmgr.open(   ip(@"10.42.0.216"), 0, ...
-                    ip(@"10.42.0.1"), 23, ...
-                    sockmgr.ACTIVE )
+    s := cnt
+    st := sockmgr.open(     ip(@"10.42.0.216"), 0, ...
+                            ip(@"10.42.0.1"), 23, ...
+                            sockmgr.ACTIVE | sockmgr.O_BLOCK )
 '    sockmgr.open(   str.strtoip(@10.42.0.216"), 23)    ' open a passive (LISTENing) socket, port 23
+    e := ||(cnt-s) / 80
+    if ( st < 0 )
+        ser.printf1(@"Error connecting: %d\n\r", st)
+        outa[10] := 0                           ' turn on ybox2 red LED
+        dira[10] := 1
+        repeat
+
+    outa[9]:=0                                  ' turn on ybox2 green LED
+    dira[9]:=1
 
     repeat
         case ser.rx_check()
@@ -48,6 +58,9 @@ pub main() | s, l
                 ser.hexdump(@_app_txbuff, 0, 4, s, 16)
                 l := sockmgr.send(@_app_txbuff, s, true)
                 ser.printf1(@"sent %d bytes\n\r", l)
+            "t":
+                ser.printf1(@"open() took %dus\n\r", e)
+
 
 pub setup()
 
