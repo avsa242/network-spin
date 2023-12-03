@@ -107,7 +107,7 @@ pub init(net_ptr): c
 
 var long _loop_stk[200]
 var long _pending_arp_request
-var long _conn  ' XXX temp, for testing
+var long _conn, _disc, _sendq  ' XXX temp, for testing
 pub loop() | l, arp_ent  ' XXX rename
 ' Main loop
     repeat
@@ -147,22 +147,20 @@ pub loop() | l, arp_ent  ' XXX rename
                         (arp.read_entry_ip(_last_arp_answer) == _pending_arp_request) )
                     strln(@"last ARP reply was an answer to the pending ARP request; clearing")
                     _pending_arp_request := 0
-        case dbg[dptr].rx_check()
-            "c":
-                strln(@"closing")
-                disconnect()
-            "r":
-                if ( rxq.unread_bytes() )
-                    printf1(@"%d bytes in rxq\n\r", rxq.unread_bytes())
-                    dbg[dptr].hexdump(rxq.ptr_ringbuff(), 0, 2, RECVQ_SZ, 16)
-                    _rcv_wnd += rxq.flush()
-                else
-                    strln(@"no data available in RXQ")
-            "s":
-                if ( _state == ESTABLISHED )
-                    dbg[dptr].hexdump(txq.ptr_ringbuff(), 0, 2, SENDQ_SZ, 16)
-                    send_test_data()
-                    txq.flush()
+        if ( _disc )
+            strln(@"closing")
+            disconnect()
+            _disc := 0
+        if ( _sendq )
+            if ( _state == ESTABLISHED )
+                if ( txq.unread_bytes() )
+                    tcp_send(   _local_port, _remote_port, ...
+                                _snd_nxt, _rcv_nxt, ...
+                                tcp.PSH | tcp.ACK, ...
+                                _rcv_wnd, ...
+                                txq.unread_bytes() )
+            _sendq := false
+
 
 pub arp_request(): ent_nr
 ' Send an ARP request to resolve an IP
@@ -189,6 +187,11 @@ pub arp_request(): ent_nr
         arp.who_has(_local_ip, _pending_arp_request)
         net[netif].send_frame()
         _timestamp_last_arp_req := cnt          ' mark now as the last time we sent a request
+
+
+pub close()
+
+    _disc := true
 
 
 pub delete_tcb()
@@ -790,15 +793,29 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
     return 0
 
 
-pub print_ptrs()
+pub read(ptr_buff, len=UNSPEC): l
+' Read socket buffer data
+'   ptr_buff: buffer to copy data to
+'   len (optional): length of data to copy - copy all available, if unspecified
+'   Returns: number of bytes actually copied
+    ifnot ( len )
+        len := RECVQ_SZ                         ' read whatever's available, if unspecified
 
-    printf1(@"    SND.UNA: %d\n\r", _snd_una)
-    printf1(@"    SND.NXT: %d\n\r", _snd_nxt)
-    printf1(@"    SND.WND: %d\n\r", _snd_wnd)
-    printf1(@"    SND.WL1: %d\n\r", _snd_wl1)
-    printf1(@"    SND.WL2: %d\n\r", _snd_wl2)
-    printf1(@"    RCV.NXT: %d\n\r", _rcv_nxt)
-    printf1(@"    RCV.WND: %d\n\r", _rcv_wnd)
+    l := rxq.get(ptr_buff, len)
+    if ( l => 0 )
+        _rcv_wnd += l                           ' open the receive window by how much was read
+
+
+pub send(ptr_buff, len, push=false): l
+' Send data to socket
+'   ptr_buff: buffer to copy data from
+'   len: length of data to copy
+'   Returns: number of bytes actually copied
+    l := txq.put(ptr_buff, len)                 ' put the data into the send buffer
+    if ( l < 0 )
+        return l                                ' error: buffer full
+    if ( push )
+        _sendq := true
 
 
 pub set_state(new_state)
@@ -833,6 +850,7 @@ pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
             if ( seg_len > 0 )                  ' attach payload (XXX untested)
                 printf1(@"    length is %d, attaching payload\n\r", seg_len)
                 txq.xget(seg_len)               ' get data from ring buffer into netif's FIFO
+                _snd_nxt += seg_len
             frm_end := net[netif].fifo_wr_ptr()
             net[netif].inet_checksum_wr(tcp._tcp_start, ...
                                         tcplen, ...
@@ -844,6 +862,17 @@ pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
 
 
 { debugging methods }
+pub print_ptrs()
+
+    printf1(@"    SND.UNA: %d\n\r", _snd_una)
+    printf1(@"    SND.NXT: %d\n\r", _snd_nxt)
+    printf1(@"    SND.WND: %d\n\r", _snd_wnd)
+    printf1(@"    SND.WL1: %d\n\r", _snd_wl1)
+    printf1(@"    SND.WL2: %d\n\r", _snd_wl2)
+    printf1(@"    RCV.NXT: %d\n\r", _rcv_nxt)
+    printf1(@"    RCV.WND: %d\n\r", _rcv_wnd)
+
+
 pub set_debug_obj(p)
 
     dptr := p
@@ -873,18 +902,6 @@ pub printf2(pfmt, p1, p2)
     'dbg[dptr].str(@objname)
     dbg[dptr].printf2(pfmt, p1, p2)
 
-
-dat test_data byte "Test data", 13, 10, 0
-pub send_test_data() | seg_len
-
-    seg_len := strsize(@test_data)
-    txq.put(@test_data, seg_len)
-    tcp_send(   _local_port, _remote_port, ...
-                _snd_nxt, _rcv_nxt, ...
-                tcp.PSH|tcp.ACK, ...
-                _rcv_wnd, ...
-                seg_len )
-    _snd_nxt += seg_len
 
 pub state_str(st): pstr
 

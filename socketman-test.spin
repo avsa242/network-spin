@@ -17,7 +17,15 @@ obj
 
 dat _mac_local  byte $02, $98, $0c, $06, $01, $c9
 
-pub main() | s
+dat _test byte "Test data", 13, 10, 13, 10, 0
+
+
+var
+
+    byte _app_rxbuff[1000], _app_txbuff[1000]
+
+
+pub main() | s, l
 
     setup()
     sockmgr.init(@net)
@@ -25,8 +33,21 @@ pub main() | s
                     ip(@"10.42.0.1"), 23, ...
                     sockmgr.ACTIVE )
 '    sockmgr.open(   str.strtoip(@10.42.0.216"), 23)    ' open a passive (LISTENing) socket, port 23
-    repeat
 
+    repeat
+        case ser.rx_check()
+            "d":
+                sockmgr.close()
+            "r":
+                l := sockmgr.read(@_app_rxbuff)
+                ser.printf1(@"recvd %d bytes\n\r", l)
+                ser.hexdump(@_app_rxbuff, 0, 4, l, 16)
+            "s":
+                s := strsize(@_test)
+                bytemove(@_app_txbuff, @_test, s)
+                ser.hexdump(@_app_txbuff, 0, 4, s, 16)
+                l := sockmgr.send(@_app_txbuff, s, true)
+                ser.printf1(@"sent %d bytes\n\r", l)
 
 pub setup()
 
