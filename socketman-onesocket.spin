@@ -50,7 +50,7 @@ var
     word _local_port
     long _remote_ip                             ' remote socket
     word _remote_port
-    long _iss, _ack_nr, _flags                  ' sequence number, segment control flags, send pointers
+    long _iss, _flags                           ' sequence number, segment control flags, send pointers
     long _snd_una, _snd_nxt, _snd_wnd, _snd_wl1, _snd_wl2, _snd_up
     long _irs, _rcv_wnd, _rcv_nxt, _rcv_up      ' remote sequence number, receive pointers
     byte _state, _prev_state                    ' connection state
@@ -188,7 +188,7 @@ pub delete_tcb()
         _local_port := 0
         _remote_ip := 0
         _remote_port := 0
-        longfill(@_iss, 0, 13)
+        longfill(@_iss, 0, 12)
         _state := _prev_state := CLOSED
         txq.flush()
         rxq.flush()
