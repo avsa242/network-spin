@@ -5,7 +5,7 @@
     Description: Socket manager
         * one TCP socket
     Started Nov 8, 2023
-    Updated Dec 3, 2023
+    Updated Dec 9, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -49,6 +49,10 @@ var
     long _ptr_remote_mac
     byte _my_mac[MACADDR_LEN]
 
+    { event callbacks/function pointers }
+    long on_disconnect, on_connect
+
+
     { Transmission Control Block }
     long _local_ip                              ' local socket
     word _local_port
@@ -82,11 +86,18 @@ obj
     dbg=    "com.serial.terminal.ansi"
 
 
+pub null()
+' This is not a top-level object
+
+
 var long dptr
 pub init(net_ptr): c
 ' Initialize the socket
 '   net_ptr: pointer to the network device driver object
 '   Returns: cog ID+1 of network I/O loop
+    on_disconnect := @null                      ' set func pointers to safe defaults
+    on_connect := @null
+
     netif := net_ptr
 
     math.rndseed(cnt)                           ' seed the RNG
@@ -106,6 +117,7 @@ pub init(net_ptr): c
     else
         strln(@"error: no free cogs available")
 '}
+
 
 var long _loop_stk[200]
 var long _pending_arp_request
@@ -224,6 +236,7 @@ pub disconnect(): status
             tcp_send_socket(tcp.FIN | tcp.ACK)
             _snd_nxt++
             set_state(FIN_WAIT_1)
+            on_disconnect()
         other:
             return -1'xxx specific error: socket not open
 
@@ -520,6 +533,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                 '_snd_una := _snd_nxt       'xxx level-ip does this
                 'print_ptrs()
                 tcp_send_socket(tcp.ACK)
+                on_connect()
                 return 0
             else                            'xxx behavior unverified
                 { Otherwise, enter SYN-RECEIVED, form a SYN,ACK segment and send it }
@@ -588,6 +602,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                 '_signal := ECONN_RESET ' signal to the user the connection was reset
                 set_state(CLOSED)
                 delete_tcb()
+                on_disconnect()
                 return -1'xxx error: connection reset
             CLOSING, LAST_ACK, TIME_WAIT:
                 set_state(CLOSED)
@@ -639,6 +654,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                     _snd_wnd := tcp.window()
                     _snd_wl1 := tcp.seq_nr()
                     _snd_wl2 := tcp.ack_nr()
+                    on_connect()
                 else
                     { the acknowledgement is unacceptable }
                     strln(@"        bad ACK")
@@ -781,6 +797,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
     _rcv_nxt++
     tcp_send_socket(flags)
     _snd_nxt++
+    on_disconnect()
     return 0
 
 
@@ -807,6 +824,16 @@ pub send(ptr_buff, len, push=false): l
         return l                                ' error: buffer full
     if ( push )
         _sendq := true
+
+
+pub set_connect_event_func(ptr)
+' Set function to call when the socket is connected
+    on_connect := ptr
+
+
+pub set_disconnect_event_func(ptr)
+' Set function to call when the socket is disconnected
+    on_disconnect := ptr
 
 
 pub set_state(new_state)
