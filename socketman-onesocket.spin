@@ -413,7 +413,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
     seg_len := ( ip.dgram_len() - ip.IP_HDR_SZ - tcp.header_len() )
 
     'str(@"process_tcp() ")
-    util.show_tcp_flags(tcp.flags())
+    'util.show_tcp_flags(tcp.flags())
     'printf1(@"    SEG.LEN = %d\n\r", seg_len)
     printf2(@"    socket port: %d, segment dest port: %d\n\r", _local_port, tcp.dest_port())
 
@@ -840,7 +840,7 @@ pub set_state(new_state)
 ' Change the connection state of the socket
     _prev_state := _state                       ' record the previous state
     _state := new_state
-    printf2(@"state change %s -> %s\n\r", state_str(_prev_state), state_str(_state))
+    'printf2(@"state change %s -> %s\n\r", state_str(_prev_state), state_str(_state))
 
 
 pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
@@ -862,7 +862,7 @@ pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
                 tcp.set_header_len(20)    ' XXX hardcode for now; no TCP options yet
                 tcplen := tcp.header_len() + seg_len
                 tcp.set_flags(flags)
-                util.show_tcp_flags(tcp.flags())
+                'util.show_tcp_flags(tcp.flags())
                 tcp.set_window(win)
                 tcp.set_checksum(0)
                 tcp.wr_tcp_header()
