@@ -5,7 +5,7 @@
     Description: Socket manager
         * one TCP socket
     Started Nov 8, 2023
-    Updated Dec 9, 2023
+    Updated Dec 16, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -852,30 +852,31 @@ pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
 '   seg_len (optional): payload data length
     str(@"tcp_send() ")
 
-    ethii.new(net[netif].my_mac(), _ptr_remote_mac, ETYP_IPV4)
-        ip.new(ip.TCP, _local_ip, _remote_ip)
-            tcp.set_source_port(sp)
-            tcp.set_dest_port(dp)
-            tcp.set_seq_nr(seq)
-            tcp.set_ack_nr(ack)
-            tcp.set_header_len(20)    ' XXX hardcode for now; no TCP options yet
-            tcplen := tcp.header_len() + seg_len
-            tcp.set_flags(flags)
-            util.show_tcp_flags(tcp.flags())
-            tcp.set_window(win)
-            tcp.set_checksum(0)
-            tcp.wr_tcp_header()
-            if ( seg_len > 0 )                  ' attach payload (XXX untested)
-                printf1(@"    length is %d, attaching payload\n\r", seg_len)
-                txq.xget(seg_len)               ' get data from ring buffer into netif's FIFO
-                _snd_nxt += seg_len
-            frm_end := net[netif].fifo_wr_ptr()
-            net[netif].inet_checksum_wr(tcp._tcp_start, ...
-                                        tcplen, ...
-                                        tcp._tcp_start+TCPH_CKSUM, ...
-                                        tcp.pseudo_header_cksum(_local_ip, _remote_ip, seg_len))
-        net[netif].fifo_set_wr_ptr(frm_end)
-        ip.update_chksum(tcplen)
+    net[netif].start_frame()
+        ethii.new(net[netif].my_mac(), _ptr_remote_mac, ETYP_IPV4)
+            ip.new(ip.TCP, _local_ip, _remote_ip)
+                tcp.set_source_port(sp)
+                tcp.set_dest_port(dp)
+                tcp.set_seq_nr(seq)
+                tcp.set_ack_nr(ack)
+                tcp.set_header_len(20)    ' XXX hardcode for now; no TCP options yet
+                tcplen := tcp.header_len() + seg_len
+                tcp.set_flags(flags)
+                util.show_tcp_flags(tcp.flags())
+                tcp.set_window(win)
+                tcp.set_checksum(0)
+                tcp.wr_tcp_header()
+                if ( seg_len > 0 )                  ' attach payload (XXX untested)
+                    printf1(@"    length is %d, attaching payload\n\r", seg_len)
+                    txq.xget(seg_len)               ' get data from ring buffer into netif's FIFO
+                    _snd_nxt += seg_len
+                frm_end := net[netif].fifo_wr_ptr()
+                net[netif].inet_checksum_wr(tcp._tcp_start, ...
+                                            tcplen, ...
+                                            tcp._tcp_start+TCPH_CKSUM, ...
+                                            tcp.pseudo_header_cksum(_local_ip, _remote_ip, seg_len))
+            net[netif].fifo_set_wr_ptr(frm_end)
+            ip.update_chksum(tcplen)
     net[netif].send_frame()
 
 
