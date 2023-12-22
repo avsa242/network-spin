@@ -213,6 +213,16 @@ pub arp_request(): ent_nr
         _timestamp_last_arp_req := cnt          ' mark now as the last time we sent a request
 
 
+pub available(): b
+' Get the number of unread bytes available in the receive queue
+    return rxq.available()
+
+
+pub bytes_free(): s
+' Get the amount of free space in the receive queue
+    return rxq.bytes_free()
+
+
 pub close()
 
     _disc := true
@@ -255,6 +265,12 @@ pub get_frame(): etype
     net[netif].get_frame()
     ethii.rd_ethii_frame()                      ' read in the Ethernet-II header
     return ethii.ethertype()
+
+pub getchar(): ch
+' Get a single character from the remote host (queued)
+    ch := 0
+    ifnot ( read(@ch, 1) )
+        return -1
 
 
 con #0, PASSIVE, ACTIVE
@@ -809,6 +825,17 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
     return 0
 
 
+pub push_now()
+' Signal to the network I/O loop that all data in the send queue should be pushed to the
+'   remote host immediately
+    _sendq := txq.bytes_queued()
+
+
+pub putchar(ch): s
+' Send a single character to the remote host (queue only)
+    s := send(@ch, 1)
+
+
 pub read(ptr_buff, len=UNSPEC): l
 ' Read socket buffer data
 '   ptr_buff: buffer to copy data to
@@ -957,6 +984,9 @@ pub state_str(st): pstr
         LISTEN: return @"LISTEN"
 
 #endif
+
+#include "terminal.common.spinh"
+
 
 DAT
 {
