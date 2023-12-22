@@ -5,7 +5,7 @@
     Description: Socket manager
         * one TCP socket
     Started Nov 8, 2023
-    Updated Dec 16, 2023
+    Updated Dec 22, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -63,6 +63,10 @@ var
     long _irs, _rcv_wnd, _rcv_nxt, _rcv_up      ' remote sequence number, receive pointers
     byte _state, _prev_state                    ' connection state
 
+#ifdef DEBUG
+    long dptr
+#endif
+
 
 obj
 
@@ -82,15 +86,15 @@ obj
     txq:    "memory.ring-buffer" | RBUFF_SZ=SENDQ_SZ
 
     { debugging output }
+#ifdef DEBUG
     util:   "net-util"
     dbg=    "com.serial.terminal.ansi"
-
+#endif
 
 pub null()
 ' This is not a top-level object
 
 
-var long dptr
 pub init(net_ptr): c
 ' Initialize the socket
 '   net_ptr: pointer to the network device driver object
@@ -107,16 +111,18 @@ pub init(net_ptr): c
     ip.init(net_ptr)                            ' .
     tcp.init(net_ptr)                           ' .
 
-    rxq.set_rdblk_lsbf(@net[netif].rdblk_lsbf)  ' bind the RXQ to the enet driver's read function
-    txq.set_wrblk_lsbf(@net[netif].wrblk_lsbf)  ' bind the TXQ to the enet driver's write function
+    { bind the ringbuffer objects to the Ethernet driver's FIFO read and write functions }
+    rxq.set_func_rdblk_lsbf(@net[netif].rdblk_lsbf)
+    txq.set_func_wrblk_lsbf(@net[netif].wrblk_lsbf)
 
     _cog := c := cognew(loop(), @_loop_stk)
-'{
+
+#ifdef DEBUG
     if ( _cog )
         printf1(@"network I/O loop started on cog #%d\n\r", _cog-1)
     else
         strln(@"error: no free cogs available")
-'}
+#endif
 
 
 var long _loop_stk[200]
@@ -139,56 +145,57 @@ pub loop() | l, arp_ent, arp_attempt  ' XXX rename
             arp_ent := arp.read_entry_by_proto_addr(_remote_ip)
             if ( arp_ent < 1 )
                 ifnot ( _pending_arp_request )
-                    strln(@"requesting IP resolution")
+                    'strln(@"requesting IP resolution")
                     _pending_arp_request := _remote_ip
                 'else
                     'strln(@"another ARP request is already queued")
             else
                 _ptr_remote_mac := arp.hw_ent(arp_ent)
-                util.show_mac_addr(@"Remote socket cached as ", _ptr_remote_mac, string(10, 13))
+                'util.show_mac_addr(@"Remote socket cached as ", _ptr_remote_mac, string(10, 13))
                 tcp_send_socket( tcp.SYN )
                 _snd_nxt++
                 set_state(SYN_SENT)
                 _conn := false
         if ( _pending_arp_request )
             if ( ||(cnt-_timestamp_last_arp_req) => clkfreq )
-                strln(@"new pending ARP request")
+                'strln(@"new pending ARP request")
+                time.msleep(10) 'xxx temp workaround
                 { don't send out another request unless at least 1 second has elapsed }
                 if ( arp_attempt < MAX_ARP_ATTEMPTS )
                     arp_request()
                     arp_attempt++
-                    printf1(@"attempt %d\n\r", arp_attempt)
+                    'printf1(@"attempt %d\n\r", arp_attempt)
                     if (    (_last_arp_answer > 0) and ...
                             (arp.read_entry_ip(_last_arp_answer) == _pending_arp_request) )
-                        strln(@"last ARP reply was an answer to the pending ARP request; clearing")
+                        'strln(@"last ARP reply was an answer to the pending ARP request; clearing")
                         _pending_arp_request := 0
                         arp_attempt := 0
                 else
-                    strln(@"error: MAX_ARP_ATTEMPTS exceeded")
+                    'strln(@"error: MAX_ARP_ATTEMPTS exceeded")
                     _pending_arp_request := 0
                     arp_attempt := 0
                     _conn := false
         if ( _disc )
-            strln(@"closing")
+            'strln(@"closing")
             disconnect()
             _disc := 0
         if ( _sendq )
             if ( _state == ESTABLISHED )
-                if ( txq.unread_bytes() )
-                    tcp_send_socket( (tcp.PSH|tcp.ACK), txq.unread_bytes() )
+                if ( txq.bytes_queued() )
+                    tcp_send_socket( (tcp.PSH|tcp.ACK), txq.bytes_queued() )
             _sendq := false
 
 
 pub arp_request(): ent_nr
 ' Send an ARP request to resolve an IP
     if ( _pending_arp_request )                 ' basic sanity check
-        strln(@"arp_request(): received request")
+        'strln(@"arp_request(): received request")
         ent_nr := -1'XXX specific error code
 
         { see if the IP is already in the ARP cache }
         ent_nr := arp.read_entry_by_proto_addr(_pending_arp_request)
         if ( ent_nr > 0 )
-            printf1(@"arp_request(): found IP in ARP cache: entry #%d\n\r", ent_nr)
+            'printf1(@"arp_request(): found IP in ARP cache: entry #%d\n\r", ent_nr)
             'xxx review: why were we setting these ARP params after the lookup? should we still?
             arp.set_target_hw_addr( arp.hw_ent(ent_nr) )
             arp.set_target_proto_addr( _pending_arp_request )
@@ -198,7 +205,7 @@ pub arp_request(): ent_nr
             return ent_nr                       ' == the entry # in the table/cache
 
         { not yet cached; ask the network for who the IP belongs to }
-        strln(@"arp_request(): not cached; requesting resolution...")
+        'strln(@"arp_request(): not cached; requesting resolution...")
         net[netif].start_frame()
         ethii.new(net[netif].my_mac(), @_mac_bcast, ETYP_ARP)
         arp.who_has(_local_ip, _pending_arp_request)
@@ -214,7 +221,7 @@ pub close()
 pub delete_tcb()
 ' Delete the transmission control block
     if ( _state <> CLOSED )
-        strln(@"delete_tcb()")
+        'strln(@"delete_tcb()")
         _ptr_remote_mac := 0
         _local_ip := 0
         _local_port := 0
@@ -277,7 +284,7 @@ pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE, 
 '       socket number (0 or higher)
 '       or a negative number, if an error occurs
     ifnot ( _state == CLOSED )
-        strln(@"error: socket already in use")
+        'strln(@"error: socket already in use")
         return -1'xxx                           ' error: socket already open
 
     _local_ip := lcl_ip
@@ -288,33 +295,33 @@ pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE, 
     _rcv_wnd := RECVQ_SZ
 
     if ( mode.word[0] == PASSIVE )
-        strln(@"PASSIVE mode")
+        'strln(@"PASSIVE mode")
         set_state(LISTEN)
         { validate the local IP address }
         ifnot ( _local_ip )
-            strln(@"error: invalid local IP")
+            'strln(@"error: invalid local IP")
             return -1'xxx                       ' error: couldn't get a local IP address
         ifnot ( _local_port )
-            strln(@"error: invalid local port")
+            'strln(@"error: invalid local port")
             return -1'xxx
         s := 0
     elseif ( mode.word[1] == ACTIVE )
-        strln(@"ACTIVE MODE")
+        'strln(@"ACTIVE MODE")
         { validate the local IP address }
         ifnot ( _local_ip )
-            strln(@"error: invalid local IP")
+            'strln(@"error: invalid local IP")
             return -1'xxx                       ' error: couldn't get a local IP address
         { check if a local port was specified; pick one at random if not }
         ifnot ( _local_port )
-            strln(@"local port unspecified, picking a random one")
+            'strln(@"local port unspecified, picking a random one")
             _local_port := 49152+math.rndi(16383)
         { validate the remote IP address }
         ifnot ( _remote_ip )
-            strln(@"error: invalid remote IP")
+            'strln(@"error: invalid remote IP")
             return -1'xxx                       ' error: bad remote IP
         { validate the remote port }
         ifnot ( _remote_port )
-            strln(@"error: invalid remote port")
+            'strln(@"error: invalid remote port")
             return -1'xxx                       ' error: bad remote port
 
         { set the initial send sequence # and the socket pointers }
@@ -331,7 +338,7 @@ pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE, 
     arp.cache_entry(net[netif].my_mac(), _local_ip)
     ip.set_my_ip32(_local_ip)
 
-'{
+{
     util.show_ip_addr(@"Local IP: ", _local_ip, @":")
     printf1(@"%d\n\r", _local_port)
     util.show_mac_addr(@"Local MAC: ", net[netif].my_mac(), string(10, 13))
@@ -341,7 +348,7 @@ pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE, 
         util.show_mac_addr(@"Remote MAC: ", arp.find_mac_by_ip(_remote_ip), string(10, 13))
     else
         strln(@"Remote MAC undefined")
-'}
+}
     if ( mode & O_BLOCK )
         tm := cnt
         repeat until _state == ESTABLISHED
@@ -353,7 +360,7 @@ pub process_arp()
     arp.rd_arp_msg()
     case arp.opcode()
         arp.ARP_REQ:
-            strln(@"process_arp(): REQ")
+            'strln(@"process_arp(): REQ")
             if ( arp.target_proto_addr() == _local_ip )
                 { respond to requests for our IP/MAC }
                 net[netif].start_frame()
@@ -370,7 +377,7 @@ pub process_arp()
                 'strln(@"gratuitous ARP")
                 _last_arp_answer := arp.cache_entry( arp.sender_hw_addr(), arp.sender_proto_addr() )
         arp.ARP_REPL:
-            strln(@"process_arp(): REPL")
+            'strln(@"process_arp(): REPL")
             arp.cache_entry( arp.sender_hw_addr(), arp.sender_proto_addr() )
 
 
@@ -389,19 +396,19 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
     reset := false
     if ( (ip.src_addr() <> _remote_ip) )        ' source IP doesn't match the remote socket
         if ( _remote_ip )                       '   (only matters if it was specified with open() )
-            strln(@"error: source address doesn't match remote socket")
+            'strln(@"error: source address doesn't match remote socket")
             reset := true
     if ( (tcp.source_port() <> _remote_port) )  ' source port doesn't match the remote socket
         if ( _remote_port )                     '   (only matters if it was specified with open() )
-            strln(@"error: source port doesn't match remote socket")
+            'strln(@"error: source port doesn't match remote socket")
             reset := true
     if ( (tcp.dest_port() <> _local_port) )     ' destination port doesn't match the local socket
         reset := true                           '   this is always an error
-        strln(@"error: destination port doesn't match local socket")
+        'strln(@"error: destination port doesn't match local socket")
 
     if ( reset )
         { refuse connection if the socket doesn't exist }
-        strln(@"connection refused (no matching socket)")
+        'strln(@"connection refused (no matching socket)")
         ack := tcp.seq_nr()
         if ( tcp.flags() & tcp.FIN )            ' our ACK needs to be "believable" - inc by one
             ack++                               '   if the FIN bit was set
@@ -415,7 +422,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
     'str(@"process_tcp() ")
     'util.show_tcp_flags(tcp.flags())
     'printf1(@"    SEG.LEN = %d\n\r", seg_len)
-    printf2(@"    socket port: %d, segment dest port: %d\n\r", _local_port, tcp.dest_port())
+    'printf2(@"    socket port: %d, segment dest port: %d\n\r", _local_port, tcp.dest_port())
 
     case _state
         CLOSED:
@@ -438,7 +445,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                     seq := 0
                     ack := tcp.seq_nr()+seg_len
                     flags := tcp.RST | tcp.ACK
-                strln(@"    sending reset")
+                'strln(@"    sending reset")
                 tcp_send(   tcp.dest_port(), tcp.source_port(), ...
                             ack, seq, ...
                             flags, ...
@@ -452,7 +459,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
             if ( tcp.flags() & tcp.ACK )        ' xxx behavior unverified
                 { second, check for an ACK: Any acknowledgment is bad if it arrives on a
                     connection still in the LISTEN state }
-                strln(@"    resetting connection (re: ACK)")
+                'strln(@"    resetting connection (re: ACK)")
                 tcp_send(   _local_port, tcp.source_port(), ...
                             tcp.ack_nr(), 0, ...
                             tcp.RST, ...
@@ -469,8 +476,8 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                 _remote_port := tcp.source_port()
                 arp.cache_entry(ethii.src_addr(), _remote_ip)
                 _ptr_remote_mac := ethii.src_addr()'xxx should we really blindly do this? maybe validate with an ARP probe sometimes?
-                util.show_ip_addr(@"    remote socket: ", _remote_ip, @":")
-                printf1(@"%d\n\r", _remote_port)
+                'util.show_ip_addr(@"    remote socket: ", _remote_ip, @":")
+                'printf1(@"%d\n\r", _remote_port)
                 tcp_send(   _local_port, _remote_port, ...
                             _iss, _rcv_nxt, ...
                             tcp.SYN | tcp.ACK, ...
@@ -487,13 +494,13 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                 if (    (tcp.ack_nr() =< _iss) or (tcp.ack_nr() > _snd_nxt) or ...
                         (tcp.ack_nr() < _snd_una) )
                     { bad ACK number }
-                    strln(@"    ACK number bad")'xxx behavior unverified
+                    'strln(@"    ACK number bad")'xxx behavior unverified
                     if ( tcp.flags() & tcp.RST )
                         { received with reset; ignore }
-                        strln(@"    drop (received RST)")
+                        'strln(@"    drop (received RST)")
                     else
                         { received without reset; send one }
-                        strln(@"    sending RST")
+                        'strln(@"    sending RST")
                         seq := tcp.ack_nr()
                         ack := 0
                         tcp_send(   _local_port, _remote_port, ...
@@ -510,7 +517,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                 'xxx callback function for user signals?
                 set_state(CLOSED)
                 delete_tcb()
-                strln(@"    error: connection reset")
+                'strln(@"    error: connection reset")
                 return -1'xxx
             { third, check the security/compartment }
             { NOTE: ignored }
@@ -557,19 +564,19 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
     'strln(@"    1. Check the sequence number")
     if ( (_rcv_wnd == 0) and (seg_len > 0) )
         { data received in segment, but the receive window is closed: not acceptable }
-        strln(@"    error: SEG.LEN > 0, but RCV.WND == 0")
+        'strln(@"    error: SEG.LEN > 0, but RCV.WND == 0")
         seg_accept := false
     ifnot ( (tcp.seq_nr() => _rcv_nxt) and (tcp.seq_nr() < (_rcv_nxt+_rcv_wnd)) or ...
             ( (tcp.seq_nr()+seg_len-1) => _rcv_nxt) and ...
             (tcp.seq_nr()+seg_len-1) < (_rcv_nxt+_rcv_wnd) )
-        strln(@"    error: SEG.SEQ or SEG.SEQ+SEG.LEN-1 outside receive window")
+        'strln(@"    error: SEG.SEQ or SEG.SEQ+SEG.LEN-1 outside receive window")
         seg_accept := false
     { If an incoming segment is not acceptable, an acknowledgment should be sent in reply
         (unless the RST bit is set, if so drop the segment and return) }
     ifnot ( seg_accept )
         { If an incoming segment is not acceptable, an acknowledgment should be sent
             in reply... }
-        strln(@"    error: segment not acceptable (seq_nr)")
+        'strln(@"    error: segment not acceptable (seq_nr)")
         ifnot ( tcp.flags() & tcp.RST )
             { ...(unless the RST bit is set, if so drop the segment and return) }
             tcp_send_socket(tcp.ACK)
@@ -657,7 +664,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                     on_connect()
                 else
                     { the acknowledgement is unacceptable }
-                    strln(@"        bad ACK")
+                    'strln(@"        bad ACK")
                     tcp_send(   _local_port, _remote_port, ...
                                 tcp.ack_nr(), 0, ...
                                 tcp.RST, ...
@@ -673,13 +680,13 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                     'xxx signal user buffers that've been sent and fully ACKed
                 if ( tcp.ack_nr() < _snd_una )'xxx RFC9293 says use =<, but that doesn't seem to work?
                     { duplicate ACK: ACK num is older than the oldest unacknowledged data }
-                    strln(@"        duplicate ACK")
+                    'strln(@"        duplicate ACK")
                     return 0                ' ignore
                 if ( tcp.ack_nr() > _snd_nxt )
                     { segment ACKs something that hasn't even been sent yet }
                     'xxx level-ip just drops segs here, and suggests that Linux does also.
                     'xxx investigate more. Is it meant to be a 'challenge ACK?'
-                    strln(@"        warning: ACKed unsent segment")
+                    'strln(@"        warning: ACKed unsent segment")
                     tcp_send_socket(tcp.ACK)
                     return 0
                 if (    (_snd_wl1 < tcp.seq_nr()) or ...
@@ -752,7 +759,8 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                     RCV.NXT and RCV.WND should not be reduced. }
                 'printf1(@"        state: %s\n\r", state_str(_state))
                 _rcv_nxt += rxq.xput(seg_len)
-                _rcv_wnd := rxq.available()
+                _rcv_wnd := rxq.bytes_free()
+                'printf1(@"RCV.WND=%d\n\r", _rcv_wnd)
                 'print_ptrs()
                 tcp_send_socket(tcp.ACK)
             CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT:
@@ -823,7 +831,7 @@ pub send(ptr_buff, len, push=false): l
     if ( l < 0 )
         return l                                ' error: buffer full
     if ( push )
-        _sendq := true
+        _sendq := txq.bytes_queued()
 
 
 pub set_connect_event_func(ptr)
@@ -850,7 +858,7 @@ pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
 '   flags: control flags
 '   win: TCP window
 '   seg_len (optional): payload data length
-    str(@"tcp_send() ")
+    'str(@"tcp_send() ")
 
     net[netif].start_frame()
         ethii.new(net[netif].my_mac(), _ptr_remote_mac, ETYP_IPV4)
@@ -867,8 +875,9 @@ pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
                 tcp.set_checksum(0)
                 tcp.wr_tcp_header()
                 if ( seg_len > 0 )                  ' attach payload (XXX untested)
-                    printf1(@"    length is %d, attaching payload\n\r", seg_len)
+                    'printf1(@"    length is %d, attaching payload\n\r", seg_len)
                     txq.xget(seg_len)               ' get data from ring buffer into netif's FIFO
+                    'strln(@"    attached")
                     _snd_nxt += seg_len
                 frm_end := net[netif].fifo_wr_ptr()
                 net[netif].inet_checksum_wr(tcp._tcp_start, ...
@@ -889,6 +898,7 @@ pub tcp_send_socket(flags, seg_len=0)
 
 
 { debugging methods }
+#ifdef DEBUG
 pub print_ptrs()
 
     printf1(@"    SND.UNA: %d\n\r", _snd_una)
@@ -945,6 +955,8 @@ pub state_str(st): pstr
         LAST_ACK: return @"LAST_ACK"
         TIME_WAIT: return @"TIME_WAIT"
         LISTEN: return @"LISTEN"
+
+#endif
 
 DAT
 {
