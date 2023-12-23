@@ -37,6 +37,7 @@ obj
     fsyn:       "signal.synth"
 #endif
     net:        NETIF_DRIVER | CS=1, SCK=2, MOSI=3, MISO=4
+    telnet:     "protocol.net.telnet"
     time:       "time"
     str:        "string"
 
@@ -44,9 +45,6 @@ var
 
     long _connected
     byte _state
-    byte _local_opts[40]
-    byte _remote_opts[40]
-    byte _negd_opts[40]
 
     byte _local_echo
 
@@ -58,7 +56,6 @@ pub main() | st, ser_ch, rx_ch, o, opts_q, my_ip, server_ip
     sockmgr.init(@net)
     sockmgr.set_disconnect_event_func(@disc)
     sockmgr.set_connect_event_func(@conn)
-    sockmgr.set_push_received_event_func(@push)
     opts_q := 0
 
     repeat
@@ -96,8 +93,8 @@ pub main() | st, ser_ch, rx_ch, o, opts_q, my_ip, server_ip
                             ser.strln(@">: go back online")
                         "o":
                             repeat o from 0 to 39
-                                if ( _negd_opts[o] )
-                                    show_opt_verb(o, _negd_opts[o])
+                                if ( telnet.option_is_negotiated(o) )
+                                    show_opt_verb(o, telnet.negotiated_option_verb(o))
                         "s":
                             if ( sockmgr._state == sockmgr.ESTABLISHED )
                                 ser.newline()
@@ -115,11 +112,11 @@ pub main() | st, ser_ch, rx_ch, o, opts_q, my_ip, server_ip
                     { check for received data from the server }
                     if ( sockmgr.available() )
                         rx_ch := sockmgr.getchar()
-                        if ( rx_ch == IAC )
+                        if ( rx_ch == telnet.IAC )
                             { $ff received? It could be an option negotiation }
-                            o := parse_remote_option()
+                            o := telnet.parse_remote_option()
                             if ( (o => 0) and (o =< 39) )
-                                negotiate_option(o)
+                                telnet.negotiate_option(o)
                                 opts_q := true
                         else
                             { just terminal data - show it locally }
@@ -143,86 +140,28 @@ pub main() | st, ser_ch, rx_ch, o, opts_q, my_ip, server_ip
                 while ( _state == ST_DATA )
 
 
-pub negotiate_option(opt) | out_verb
-' Check an option against what this telnet client supports or allows, and queue the
-'   negotiated response to it in the socket send queue.
-    case _remote_opts[opt]                      ' get remote's verb
-        DOO:
-            if ( _local_opts[opt] == SUPPORTED )
-                { if the server says "do", and we support this option, say we will }
-                out_verb := WILL
-            else
-                out_verb := WONT
-        DONT:
-            { if the server requests we suppress some option, honor it }
-            out_verb := WONT
-        WILL:
-            { if the server says it's willing to negotiate an option and we support it,
-                request that it do so }
-            if ( _local_opts[opt] == SUPPORTED )
-                out_verb := DOO
-            else
-                out_verb := DONT
-        WONT:
-
-    'xxx this seems a little unsafe as-written: an option is queued regardless
-    'xxx should we even queue anything for DONT or WONT? or should they just silently be honored?
-    queue_opt(opt, out_verb)
-    _negd_opts[opt] := out_verb
-    'ser.str(@">>> ")
-    'show_opt_verb(opt, out_verb)
-
-
-pub parse_remote_option(): opt | verb
-' Parse remote node's option
-'   Returns: the option number received
-    opt := 0
-    verb := sockmgr.getchar()
-    case verb
-        $ff:
-            { literal $ff - don't process further - just return }
-            ser.putchar($ff)
-            return $ff
-        DOO, DONT, WILL, WONT:
-            { cache the remote's option locally; the verb is stored in the array at the offset of
-                the particular option }
-            opt := sockmgr.getchar()
-            _remote_opts[opt] := verb
-    'ser.str(@"<<< ")
-    'show_opt_verb(opt, verb)
-
-
-pub push()
-
-
 pub putchar(ch): s
 ' Send a character to the remote host
     sockmgr.send(@ch, 1, true)
 
 
-pub queue_opt(opt, verb)
-' Queue a Telnet option
-    sockmgr.putchar(IAC)
-    sockmgr.putchar(verb)
-    sockmgr.putchar(opt)
-
-
 pub show_opt_verb(opt, verb)
 ' Show an option with its currently set verb
+
     case verb
-        WILL:
+        telnet.WILL:
             ser.fgcolor(ser.GREEN)
             ser.str(@"will ")
             ser.fgcolor(ser.GREY)
-        WONT:
+        telnet.WONT:
             ser.fgcolor(ser.RED)
             ser.str(@"won't ")
             ser.fgcolor(ser.GREY)
-        DOO:
+        telnet.DOO:
             ser.fgcolor(ser.GREEN)
             ser.str(@"do ")
             ser.fgcolor(ser.GREY)
-        DONT:
+        telnet.DONT:
             ser.fgcolor(ser.RED)
             ser.str(@"don't ")
             ser.fgcolor(ser.GREY)
@@ -230,133 +169,33 @@ pub show_opt_verb(opt, verb)
             ser.str(@"invalid")
 
     case opt
-        TRANSMIT_BIN:       ser.strln(@"transmit binary")
-        ECHO:               ser.strln(@"echo")
-        SUPPRESS_GO_AHEAD:  ser.strln(@"suppress go-ahead")
-        OPT_STATUS:         ser.strln(@"opt status")
-        TIMING_MARK:        ser.strln(@"timing mark")
-        NAOCRD:             ser.strln(@"NAOCRD")
-        NAOHTS:             ser.strln(@"NAOHTS")
-        NAOHTD:             ser.strln(@"NAOHTD")
-        NAOFFD:             ser.strln(@"NAOFFD")
-        NAOVTS:             ser.strln(@"NAOVTS")
-        NAOVTD:             ser.strln(@"NAOVTD")
-        NAOLFD:             ser.strln(@"NAOLFD")
-        EXTEND_ASCII:       ser.strln(@"EXTEND_ASCII")
-        TERMINAL_TYPE:      ser.strln(@"terminal type")
-        NAWS:               ser.strln(@"NAWS")
-        TERMINAL_SPEED:     ser.strln(@"terminal speed")
-        TOGGLE_FLOW_CTRL:   ser.strln(@"toggle flow control")
-        LINEMODE:           ser.strln(@"line-mode")
-        X_DISPLAY_LOC:      ser.strln(@"X display location")
-        ENV_OPT:            ser.strln(@"environment option")
-        AUTHENTICATION:     ser.strln(@"authentication")
-        ENCRYPT:            ser.strln(@"encrypt")
-        NEW_ENV_OPT:        ser.strln(@"new environment option")
+        telnet.TRANSMIT_BIN:       ser.strln(@"transmit binary")
+        telnet.ECHO:               ser.strln(@"echo")
+        telnet.SUPPRESS_GO_AHEAD:  ser.strln(@"suppress go-ahead")
+        telnet.OPT_STATUS:         ser.strln(@"opt status")
+        telnet.TIMING_MARK:        ser.strln(@"timing mark")
+        telnet.NAOCRD:             ser.strln(@"NAOCRD")
+        telnet.NAOHTS:             ser.strln(@"NAOHTS")
+        telnet.NAOHTD:             ser.strln(@"NAOHTD")
+        telnet.NAOFFD:             ser.strln(@"NAOFFD")
+        telnet.NAOVTS:             ser.strln(@"NAOVTS")
+        telnet.NAOVTD:             ser.strln(@"NAOVTD")
+        telnet.NAOLFD:             ser.strln(@"NAOLFD")
+        telnet.EXTEND_ASCII:       ser.strln(@"EXTEND_ASCII")
+        telnet.TERMINAL_TYPE:      ser.strln(@"terminal type")
+        telnet.NAWS:               ser.strln(@"NAWS")
+        telnet.TERMINAL_SPEED:     ser.strln(@"terminal speed")
+        telnet.TOGGLE_FLOW_CTRL:   ser.strln(@"toggle flow control")
+        telnet.LINEMODE:           ser.strln(@"line-mode")
+        telnet.X_DISPLAY_LOC:      ser.strln(@"X display location")
+        telnet.ENV_OPT:            ser.strln(@"environment option")
+        telnet.AUTHENTICATION:     ser.strln(@"authentication")
+        telnet.ENCRYPT:            ser.strln(@"encrypt")
+        telnet.NEW_ENV_OPT:        ser.strln(@"new environment option")
         other:
         { invalid option - bail out }
             ser.strln(@"???")
             return
-
-
-con #0, UNSUPPORTED, SUPPORTED
-pub set_initial_opts()
-' Set the options this telnet client supports
-'   xxx a few of these marked SUPPORTED aren't actually supported, but it seems they need to
-'   xxx be in order to complete the options negotiation to a point where we get a remote shell
-    _local_opts[TRANSMIT_BIN] := UNSUPPORTED
-    _local_opts[ECHO] := UNSUPPORTED
-    _local_opts[SUPPRESS_GO_AHEAD] := SUPPORTED
-    _local_opts[OPT_STATUS] := SUPPORTED
-    _local_opts[TIMING_MARK] := UNSUPPORTED
-    _local_opts[NAOCRD] := UNSUPPORTED
-    _local_opts[NAOHTS] := UNSUPPORTED
-    _local_opts[NAOFFD] := UNSUPPORTED
-    _local_opts[NAOVTS] := UNSUPPORTED
-    _local_opts[NAOVTD] := UNSUPPORTED
-    _local_opts[NAOLFD] := UNSUPPORTED
-    _local_opts[EXTEND_ASCII] := UNSUPPORTED
-    _local_opts[TERMINAL_TYPE] := UNSUPPORTED
-    _local_opts[NAWS] := SUPPORTED
-    _local_opts[TERMINAL_SPEED] := UNSUPPORTED
-    _local_opts[TOGGLE_FLOW_CTRL] := UNSUPPORTED
-    _local_opts[LINEMODE] := UNSUPPORTED
-    _local_opts[X_DISPLAY_LOC] := UNSUPPORTED
-    _local_opts[ENV_OPT] := UNSUPPORTED
-    _local_opts[AUTHENTICATION] := SUPPORTED
-    _local_opts[ENCRYPT] := SUPPORTED
-    _local_opts[NEW_ENV_OPT] := UNSUPPORTED
-
-
-con
-
-    { Telnet option negotiation }
-    IAC                 = $ff
-
-    IS                  = $00
-    SUBNEG_END          = $f0
-    NOOP                = $f1
-    DATA_MARK           = $f2
-    BREAK               = $f3
-    INT_PROCS           = $f4
-    ABORT_OUT           = $f5
-    R_U_THERE           = $f6
-    ERASE_CHAR          = $f7
-    ERASE_LINE          = $f8
-    GO_AHEAD            = $f9
-    SUBNEG              = $fa
-    WILL                = $fb
-    WONT                = $fc
-    DOO                 = $fd
-    DONT                = $fe
-
-    { Options }
-    TRANSMIT_BIN        = $00
-    ECHO                = $01
-    SUPPRESS_GO_AHEAD   = $03
-    OPT_STATUS          = $05
-    TIMING_MARK         = $06
-    NAOCRD              = $0a
-    NAOHTS              = $0b
-    NAOHTD              = $0c
-    NAOFFD              = $0d
-    NAOVTS              = $0e
-    NAOVTD              = $0f
-    NAOLFD              = $10
-    EXTEND_ASCII        = $11
-    TERMINAL_TYPE       = $18
-    NAWS                = $1f
-    TERMINAL_SPEED      = $20
-    TOGGLE_FLOW_CTRL    = $21
-    LINEMODE            = $22
-    X_DISPLAY_LOC       = $23
-    ENV_OPT             = $24
-    AUTHENTICATION      = $25
-    ENCRYPT             = $26
-    NEW_ENV_OPT         = $27
-
-
-pub i_will(opt)
-' Indicate desire to begin performing, or confirmation that this client is now performing
-'   the indicated option
-    _local_opts[opt] := WILL
-
-
-pub i_wont(opt)
-' Indicate refusal to perform or to continue performing the indicated option
-    _local_opts[opt] := WONT
-
-
-pub please_do(opt)
-' Request that the remote host perform or confirm the remote host is expected to perform
-'   the indicated option
-    _local_opts[opt] := DOO
-
-
-pub please_dont(opt)
-' Demand the remote host stop performing, or indicate the remote host is no longer expected to
-'   perform the indicated option
-    _local_opts[opt] := DONT
 
 
 pub conn()
@@ -374,7 +213,9 @@ pub disc()
 
 pub setup()
 
-    set_initial_opts()
+    telnet.set_initial_opts()
+    telnet.set_socket_getchar(@sockmgr.getchar)
+    telnet.set_socket_putchar(@sockmgr.putchar)
 
     ser.start()
     time.msleep(30)
