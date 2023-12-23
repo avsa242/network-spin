@@ -317,7 +317,7 @@ pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE, 
     _remote_ip := rem_ip                        ' optional for passive connections
     _remote_port := rem_port                    '   (usually these won't be known yet in that case)
 
-    _rcv_wnd := RECVQ_SZ
+    _rcv_wnd := RECV_BUFFSZ
 
     if ( mode.word[0] == PASSIVE )
         'strln(@"PASSIVE mode")
@@ -853,7 +853,7 @@ pub read(ptr_buff, len=UNSPEC): l
 '   len (optional): length of data to copy - copy all available, if unspecified
 '   Returns: number of bytes actually copied
     ifnot ( len )
-        len := RECVQ_SZ                         ' read whatever's available, if unspecified
+        len := RECV_BUFFSZ                      ' read whatever's available, if unspecified
 
     l := rxq.get(ptr_buff, len)
     if ( l => 0 )
