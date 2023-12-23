@@ -58,7 +58,7 @@ var
     byte _my_mac[MACADDR_LEN]
 
     { event callbacks/function pointers }
-    long on_disconnect, on_connect
+    long on_disconnect, on_connect, on_push_received
 
 
     { Transmission Control Block }
@@ -109,6 +109,7 @@ pub init(net_ptr): c
 '   Returns: cog ID+1 of network I/O loop
     on_disconnect := @null                      ' set func pointers to safe defaults
     on_connect := @null
+    on_push_received := @null
 
     netif := net_ptr
 
@@ -784,6 +785,8 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                 'printf1(@"        state: %s\n\r", state_str(_state))
                 _rcv_nxt += rxq.xput(seg_len)
                 _rcv_wnd := rxq.bytes_free()
+                if ( tcp.flags() & tcp.PSH )
+                    on_push_received()
                 'printf1(@"RCV.WND=%d\n\r", _rcv_wnd)
                 'print_ptrs()
                 tcp_send_socket(tcp.ACK)
@@ -877,6 +880,11 @@ pub set_connect_event_func(ptr)
 pub set_disconnect_event_func(ptr)
 ' Set function to call when the socket is disconnected
     on_disconnect := ptr
+
+
+pub set_push_received_event_func(ptr)
+' Set function to call when a TCP segment is received with the PSH bit set
+    on_push_received := ptr
 
 
 pub set_state(new_state)
