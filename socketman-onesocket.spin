@@ -5,7 +5,7 @@
     Description: Socket manager
         * one TCP socket
     Started Nov 8, 2023
-    Updated Dec 22, 2023
+    Updated Dec 23, 2023
     Copyright 2023
     See end of file for terms of use.
     --------------------------------------------
@@ -15,13 +15,21 @@
 #define TERM_DRIVER "com.serial.terminal.ansi"
 #pragma exportdef(TERM_DRIVER)
 
+{ set the ring buffer sizes to a default of 128 bytes if they aren't defined by the user
+    note that these values _must_ be a power of 2 }
+#ifndef RECV_BUFFSZ
+#define RECV_BUFFSZ 128
+#endif
+
+#ifndef SEND_BUFFSZ
+#define SEND_BUFFSZ 128
+#endif
+
 dat objname byte "[SOCKMGR] ", 0                ' identify this object in debug output
 
 con
 
     { limits }
-    SENDQ_SZ            = 128
-    RECVQ_SZ            = 128
     MAX_ARP_ATTEMPTS    = 5
 
 
@@ -82,8 +90,8 @@ obj
     time:   "time"
 
     { ring buffer objects }
-    rxq:    "memory.ring-buffer" | RBUFF_SZ=RECVQ_SZ
-    txq:    "memory.ring-buffer" | RBUFF_SZ=SENDQ_SZ
+    rxq:    "memory.ring-buffer" | RBUFF_SZ=RECV_BUFFSZ
+    txq:    "memory.ring-buffer" | RBUFF_SZ=SEND_BUFFSZ
 
     { debugging output }
 #ifdef DEBUG

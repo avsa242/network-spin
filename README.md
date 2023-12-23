@@ -14,6 +14,8 @@ This is a P8X32A/Propeller, P2X8C4M64P/Propeller 2 networking stack
 * TCP
 * ICMP
 * BOOTP/DHCP
+* Socket manager (TCP, single socket)
+
 
 ## Requirements
 
@@ -42,7 +44,7 @@ P2/SPIN2:
 
 * Very early in development - may malfunction, or outright fail to build
 * Some things are currently hardcoded
-* API unstable
+* API unstable (only one network device driver currently exists)
 * IP only really supports 20-byte headers
-* TCP and ICMP are currently _very_ primitive - only enough is implemented to store/retrieve metadata. No state machine exists for TCP and ICMP is written with enough to form reply messages to echo requests in mind.
+* ICMP is currently _very_ primitive - only enough is implemented to store/retrieve metadata and is written with enough to form reply messages to echo requests.
 
