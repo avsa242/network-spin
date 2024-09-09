@@ -107,7 +107,7 @@ pub main() | st, ser_ch, rx_ch, o, opts_q, my_ip, server_ip
                                 if ( telnet.option_is_negotiated(o) )
                                     show_opt_verb(o, telnet.negotiated_option_verb(o))
                         "s":
-                            if ( sockmgr._state == sockmgr.ESTABLISHED )
+                            if ( sockmgr.socket.state == sockmgr.ESTABLISHED )
                                 ser.newline()
                                 ser.strln(@"state: connected")
                             else

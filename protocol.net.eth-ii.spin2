@@ -24,6 +24,9 @@ OBJ
     net=    NETIF_DRIVER                        ' network driver "virtual" instance
 
 
+   { ethernet-II structure }
+    ethii_t ( byte dest_mac[6] )
+
 VAR
 
     long p_ndev                                 ' network driver object pointer
