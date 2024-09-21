@@ -1,14 +1,14 @@
 {
-    --------------------------------------------
-    Filename: protocol.net.tcp.spin
-    Author: Jesse Burt
-    Description: Transmission Control Protocol
-    Started Apr 5, 2022
-    Updated Nov 28, 2023
-    Copyright 2023
-    See end of file for terms of use.
-    --------------------------------------------
+----------------------------------------------------------------------------------------------------
+    Filename:       protocol.net.tcp.spin
+    Description:    Transmission Control Protocol
+    Author:         Jesse Burt
+    Started:        Apr 5, 2022
+    Updated:        Sep 21, 2024
+    Copyright (c) 2024 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
 }
+
 #ifndef NET_COMMON
 #include "net-common.spinh"
 #endif
@@ -47,26 +47,26 @@ CON
     PSRC            = 0                         ' _tcp_port.word[n]
     PDEST           = 1
 
+
 OBJ
 
-    { virtual instance of network device object }
-    net=    NETIF_DRIVER
+    net=    NETIF_DRIVER                        ' network driver "virtual" instance
     crc:    "math.crc"
 
 
 VAR
 
-    { obj pointer }
-    long dev
+    long p_ndev                                 ' network driver object pointer
 
     word _tcp_start, _tcp_msglen
 
-    byte _tcp_data[TCP_HDR_SZ]
+    byte _tcp_data[TCP_HDR_SZ]                  ' TCP header data
 
 
 pub init(optr)
 ' Set pointer to network device object
-    dev := optr
+    p_ndev := optr
+
 
 PUB pseudo_header_cksum(ip_src, ip_dest, len=0): ck | phdr[12/4]
 ' Calculate TCP pseudo-header checksum
@@ -82,6 +82,7 @@ PUB pseudo_header_cksum(ip_src, ip_dest, len=0): ck | phdr[12/4]
 
     return crc.inet_chksum(@phdr, 12, $00)
 
+
 PUB reply(ack_inc)
 ' Set up the TCP segment to "reply" to the last received segment
 '   ack_inc: value to increase the outgoing acknowledgement number by
@@ -89,6 +90,7 @@ PUB reply(ack_inc)
     swap_seq_nrs()
     inc_ack_nr(ack_inc)
     set_checksum(0)
+
 
 PUB reset()
 ' Reset/initialize all stored data to 0
@@ -101,6 +103,7 @@ PUB set_ack_nr(ack_nr)
     _tcp_data[TCPH_ACKNR+1] := ack_nr.byte[2]
     _tcp_data[TCPH_ACKNR+2] := ack_nr.byte[1]
     _tcp_data[TCPH_ACKNR+3] := ack_nr.byte[0]
+
 
 PUB set_checksum(ck)
 ' Set checksum
@@ -148,6 +151,7 @@ PUB set_source_port(p)
     _tcp_data[TCPH_SRCP] := p.byte[1]
     _tcp_data[TCPH_SRCP+1] := p.byte[0]
 
+
 PUB set_timest(tm)
 ' Set timestamp (TCP option)
     '_tmstamps[0] := tm
@@ -192,6 +196,7 @@ PUB chksum(): ck
 ' Get TCP header checksum
     ck.byte[1] := _tcp_data[TCPH_CKSUM]
     ck.byte[0] := _tcp_data[TCPH_CKSUM+1]
+
 
 PUB dest_port(): p
 ' Get destination port field
@@ -280,13 +285,13 @@ PUB window(): win
 PUB rd_tcp_header(): rl
 ' Read/disassemble TCP header
 '   Returns: length of read header, in bytes
-    net[dev].rdblk_lsbf(@_tcp_data, TCP_HDR_SZ)
+    net[p_ndev].rdblk_lsbf(@_tcp_data, TCP_HDR_SZ)
     return TCP_HDR_SZ
 
 
 PUB rd_tcp_opts(): ptr | kind, st, opts_len
 ' Read TCP options
-    st := net[dev].fifo_wr_ptr()
+    st := net[p_ndev].fifo_wr_ptr()
 
     { TCP header length is the header itself plus the options; }
     {   subtract out the header to get the length of the options }
@@ -294,31 +299,33 @@ PUB rd_tcp_opts(): ptr | kind, st, opts_len
 
     { read through all KLVs }
     repeat
-        kind := net[dev].rd_byte()
+        kind := net[p_ndev].rd_byte()
         case kind
             MSS:
-                net[dev].rd_byte()                       ' skip over the length byte
-                _tcp_mss := net[dev].rdword_msbf()
+                net[p_ndev].rd_byte()                       ' skip over the length byte
+                _tcp_mss := net[p_ndev].rdword_msbf()
             SACK_PRMIT:
-                _tcp_sack_perm := net[dev].rd_byte()     ' actually the length byte
+                _tcp_sack_perm := net[p_ndev].rd_byte()     ' actually the length byte
             TMSTAMPS:
-                net[dev].rd_byte()
-                _tmstamps[0] := net[dev].rdlong_msbf()
-                _tmstamps[1] := net[dev].rdlong_msbf()
+                net[p_ndev].rd_byte()
+                _tmstamps[0] := net[p_ndev].rdlong_msbf()
+                _tmstamps[1] := net[p_ndev].rdlong_msbf()
             NOOP:
                 ' only one byte - do nothing
             WIN_SCALE:
-                _tcp_winscale := net[dev].rd_byte()
-    until ( net[dev].fifo_wr_ptr()-st ) > opts_len
-    return net[dev].fifo_wr_ptr()
+                _tcp_winscale := net[p_ndev].rd_byte()
+    until ( net[p_ndev].fifo_wr_ptr()-st ) > opts_len
+    return net[p_ndev].fifo_wr_ptr()
+
 
 PUB wr_tcp_header(): ptr | st
 ' Write/assemble TCP header
 '   Returns: length of assembled header, in bytes
-    _tcp_start := net[dev].fifo_wr_ptr()
-    net[dev].wrblk_lsbf(@_tcp_data, TCP_HDR_SZ)
-    _tcp_msglen := net[dev].fifo_wr_ptr()-_tcp_start
+    _tcp_start := net[p_ndev].fifo_wr_ptr()
+    net[p_ndev].wrblk_lsbf(@_tcp_data, TCP_HDR_SZ)
+    _tcp_msglen := net[p_ndev].fifo_wr_ptr()-_tcp_start
     return _tcp_msglen
+
 
 CON #0, LSBF, MSBF
 PUB write_klv(kind, len, wr_val, val, byte_ord): tlvlen
@@ -342,33 +349,34 @@ PUB write_klv(kind, len, wr_val, val, byte_ord): tlvlen
 
     { track length of options; it'll be needed later for padding
         the end of the message }
-    _options_len += net[dev].wr_byte(kind)
+    _options_len += net[p_ndev].wr_byte(kind)
     case len
         { immediate value }
         1..4:
-            _options_len += net[dev].wr_byte(len)        ' write length byte
+            _options_len += net[p_ndev].wr_byte(len)        ' write length byte
             { only write the value data if explicitly called to; }
             {   some options only consist of the TYPE and LENGTH fields }
             if ( wr_val )                         ' write value
                 if ( byte_ord == LSBF )
-                    _options_len += net[dev].wrblk_lsbf(@val, len-2)
+                    _options_len += net[p_ndev].wrblk_lsbf(@val, len-2)
                 else
-                    _options_len += net[dev].wrblk_msbf(@val, len-2)
+                    _options_len += net[p_ndev].wrblk_msbf(@val, len-2)
         { values pointed to }
         5..255:
-            _options_len += net[dev].wr_byte(len)
+            _options_len += net[p_ndev].wr_byte(len)
             if ( wr_val )
                 if ( byte_ord == LSBF )
-                    _options_len += net[dev].wrblk_lsbf(val, len-2)
+                    _options_len += net[p_ndev].wrblk_lsbf(val, len-2)
                 else
-                    _options_len += net[dev].wrblk_msbf(val, len-2)
+                    _options_len += net[p_ndev].wrblk_msbf(val, len-2)
         { write type only }
         other:
     return _options_len
 
+
 DAT
 {
-Copyright 2023 Jesse Burt
+Copyright 2024 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

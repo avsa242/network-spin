@@ -1,9 +1,9 @@
 {
 ----------------------------------------------------------------------------------------------------
-    Filename:       net-util.spin
+    Filename:       net-util.spin2
     Description:    Miscellaneous networking-related convenience functions
     Author:         Jesse Burt
-    Started:        Nov 27, 2023
+    Started:        Sep 21, 2024
     Updated:        Sep 21, 2024
     Copyright (c) 2024 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
@@ -77,7 +77,7 @@ PUB show_tcp_flags(flags) | i
 ' Display the TCP header's flag bits as symbols
     term[p_tdrv].str(@"Flags: [")
     repeat i from 7 to 0
-        if ( flags & |<(i) )
+        if ( flags & decod(i) )
             if ( flags & (1 << 2) )             ' RST: color red if set
                 term[p_tdrv].fgcolor(term[p_tdrv].RED)
             else                                ' other flags green if set

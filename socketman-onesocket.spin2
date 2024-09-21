@@ -1,6 +1,6 @@
 {
 ----------------------------------------------------------------------------------------------------
-    Filename:       socketman-onesocket.spin
+    Filename:       socketman-onesocket.spin2
     Description:    Socket manager
         * one TCP socket
     Author:         Jesse Burt
@@ -10,7 +10,7 @@
 ----------------------------------------------------------------------------------------------------
 }
 
-#include "net-common.spinh"
+#include "net-common.spin2h"
 #define TERM_DRIVER "com.serial.terminal.ansi"
 #pragma exportdef(TERM_DRIVER)
 
@@ -54,7 +54,7 @@ var
     long _cog                                   ' cog ID + 1 of main network I/O loop
 
     long _timestamp_last_arp_req                ' timestamp of last outgoing ARP request
-    byte _last_arp_answer                       ' ARP cache entry # of answer to last request
+    byte _last_arp_answer                       ' ARP cache entry . of answer to last request
 
     { socket }
     long _ptr_my_mac
@@ -118,8 +118,6 @@ pub init(net_ptr): c
 
     p_ndrv := net_ptr
 
-    math.rndseed(cnt)                           ' seed the RNG
-
     ethii.init(net_ptr)                         ' attach the OSI protocols to the network device
     arp.init(net_ptr)                           ' .
     ip.init(net_ptr)                            ' .
@@ -129,11 +127,11 @@ pub init(net_ptr): c
     rxq.set_func_rdblk_lsbf(@net[p_ndrv].rdblk_lsbf)
     txq.set_func_wrblk_lsbf(@net[p_ndrv].wrblk_lsbf)
 
-    _cog := c := cognew(loop(), @_loop_stk)
+    _cog := c := cogspin(NEWCOG, loop(), @_loop_stk)
 
 #ifdef DEBUG
     if ( _cog )
-        printf1(@"network I/O loop started on cog #%d\n\r", _cog-1)
+        printf(@"network I/O loop started on cog .%d\n\r", _cog-1)
     else
         strln(@"error: no free cogs available")
 #endif
@@ -152,8 +150,8 @@ pub loop() | l, arp_ent, arp_attempt  ' XXX rename
                 process_arp()
             elseif ( ethii.ethertype() == ETYP_IPV4 )
                 process_ipv4()
-                'printf1(@"flags: %09.9b\n\r", tcp.flags())
-                'printf2(@"ack_nr=%d  _snd_nxt=%d\n\r", tcp.ack_nr(), _snd_nxt)
+                'printf(@"flags: %09.9b\n\r", tcp.flags())
+                'printf(@"ack_nr=%d  _snd_nxt=%d\n\r", tcp.ack_nr(), _snd_nxt)
         if ( _conn )    ' XXX temp, for testing
             'util.show_ip_addr(@"connecting to ", _remote_ip, string("...", 10, 13))
             arp_ent := arp.read_entry_by_proto_addr(_remote_ip)
@@ -171,14 +169,14 @@ pub loop() | l, arp_ent, arp_attempt  ' XXX rename
                 set_state(SYN_SENT)
                 _conn := false
         if ( _pending_arp_request )
-            if ( ||(cnt-_timestamp_last_arp_req) => clkfreq )
+            if ( abs(cnt-_timestamp_last_arp_req) >= clkfreq )
                 'strln(@"new pending ARP request")
-                time.msleep(10) 'xxx temp workaround
+                waitms(10) 'xxx temp workaround
                 { don't send out another request unless at least 1 second has elapsed }
                 if ( arp_attempt < MAX_ARP_ATTEMPTS )
                     arp_request()
                     arp_attempt++
-                    'printf1(@"attempt %d\n\r", arp_attempt)
+                    'printf(@"attempt %d\n\r", arp_attempt)
                     if (    (_last_arp_answer > 0) and ...
                             (arp.read_entry_ip(_last_arp_answer) == _pending_arp_request) )
                         'strln(@"last ARP reply was an answer to the pending ARP request; clearing")
@@ -209,7 +207,7 @@ pub arp_request(): ent_nr
         { see if the IP is already in the ARP cache }
         ent_nr := arp.read_entry_by_proto_addr(_pending_arp_request)
         if ( ent_nr > 0 )
-            'printf1(@"arp_request(): found IP in ARP cache: entry #%d\n\r", ent_nr)
+            'printf(@"arp_request(): found IP in ARP cache: entry .%d\n\r", ent_nr)
             'xxx review: why were we setting these ARP params after the lookup? should we still?
             arp.set_target_hw_addr( arp.hw_ent(ent_nr) )
             arp.set_target_proto_addr( _pending_arp_request )
@@ -371,10 +369,10 @@ pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE, 
 
 {
     util.show_ip_addr(@"Local IP: ", _local_ip, @":")
-    printf1(@"%d\n\r", _local_port)
+    printf(@"%d\n\r", _local_port)
     util.show_mac_addr(@"Local MAC: ", net[p_ndrv].my_mac(), string(10, 13))
     util.show_ip_addr(@"Remote IP: ", _remote_ip, @":")
-    printf1(@"%d\n\r", _remote_port)
+    printf(@"%d\n\r", _remote_port)
     if ( arp.find_mac_by_ip(_remote_ip) > 0 )
         util.show_mac_addr(@"Remote MAC: ", arp.find_mac_by_ip(_remote_ip), string(10, 13))
     else
@@ -383,7 +381,7 @@ pub open(lcl_ip, lcl_port=UNSPEC, rem_ip=UNSPEC, rem_port=UNSPEC, mode=PASSIVE, 
     if ( mode & O_BLOCK )
         tm := cnt
         repeat until _state == ESTABLISHED
-            if ( (||(cnt-tm) / 80_000) > tmout )
+            if ( (abs(cnt-tm) / 80_000) > tmout )
                 return -1'xxx                   ' error: timeout waiting for connection
 
 
@@ -453,8 +451,8 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
 
     'str(@"process_tcp() ")
     'util.show_tcp_flags(tcp.flags())
-    'printf1(@"    SEG.LEN = %d\n\r", seg_len)
-    'printf2(@"    socket port: %d, segment dest port: %d\n\r", _local_port, tcp.dest_port())
+    'printf(@"    SEG.LEN = %d\n\r", seg_len)
+    'printf(@"    socket port: %d, segment dest port: %d\n\r", _local_port, tcp.dest_port())
 
     case _state
         CLOSED:
@@ -509,7 +507,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                 arp.cache_entry(ethii.src_addr(), _remote_ip)
                 _ptr_remote_mac := ethii.src_addr()'xxx should we really blindly do this? maybe validate with an ARP probe sometimes?
                 'util.show_ip_addr(@"    remote socket: ", _remote_ip, @":")
-                'printf1(@"%d\n\r", _remote_port)
+                'printf(@"%d\n\r", _remote_port)
                 tcp_send(   _local_port, _remote_port, ...
                             _iss, _rcv_nxt, ...
                             tcp.SYN | tcp.ACK, ...
@@ -523,7 +521,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
             { first, check the ACK bit }
             'strln(@"    state: SYN_SENT")
             if ( tcp.flags() & tcp.ACK )        ' if the ACK bit is set, check the ACK number
-                if (    (tcp.ack_nr() =< _iss) or (tcp.ack_nr() > _snd_nxt) or ...
+                if (    (tcp.ack_nr() <= _iss) or (tcp.ack_nr() > _snd_nxt) or ...
                         (tcp.ack_nr() < _snd_una) )
                     { bad ACK number }
                     'strln(@"    ACK number bad")'xxx behavior unverified
@@ -598,8 +596,8 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
         { data received in segment, but the receive window is closed: not acceptable }
         'strln(@"    error: SEG.LEN > 0, but RCV.WND == 0")
         seg_accept := false
-    ifnot ( (tcp.seq_nr() => _rcv_nxt) and (tcp.seq_nr() < (_rcv_nxt+_rcv_wnd)) or ...
-            ( (tcp.seq_nr()+seg_len-1) => _rcv_nxt) and ...
+    ifnot ( (tcp.seq_nr() >= _rcv_nxt) and (tcp.seq_nr() < (_rcv_nxt+_rcv_wnd)) or ...
+            ( (tcp.seq_nr()+seg_len-1) >= _rcv_nxt) and ...
             (tcp.seq_nr()+seg_len-1) < (_rcv_nxt+_rcv_wnd) )
         'strln(@"    error: SEG.SEQ or SEG.SEQ+SEG.LEN-1 outside receive window")
         seg_accept := false
@@ -678,12 +676,12 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
     'xxx decide if we should implement MAY-12 (check ACK value is in range)
     loop_nr := 1
     repeat
-        'printf1(@"        loop_nr=%d\n\r", loop_nr)
+        'printf(@"        loop_nr=%d\n\r", loop_nr)
         case _state
             SYN_RECEIVED:               'xxx behavior unverified
                 'strln(@"        state: SYN_RECEIVED")
-                if ( (tcp.ack_nr() > _snd_una) and (tcp.ack_nr() =< _snd_nxt) )
-                    'xxx level-ip does first comparison with > (actually, 'snd_una =< ack')
+                if ( (tcp.ack_nr() > _snd_una) and (tcp.ack_nr() <= _snd_nxt) )
+                    'xxx level-ip does first comparison with > (actually, 'snd_una <= ack')
                     'xxx    and second comparison with '<'
                     'strln(@"        good ACK")
                     set_state(ESTABLISHED)
@@ -704,13 +702,13 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                     'xxx should we send the user a signal?
                     return 0'xxx
             ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, CLOSING, LAST_ACK:
-                if ( (tcp.ack_nr() > _snd_una) and (tcp.ack_nr() =< _snd_nxt) )
+                if ( (tcp.ack_nr() > _snd_una) and (tcp.ack_nr() <= _snd_nxt) )
                     'strln(@"        updating unacknowledged ptr")
                     _snd_una := tcp.ack_nr()
                     'xxx any segments on the retransmission queue that this acknowledges
                     '   are removed
                     'xxx signal user buffers that've been sent and fully ACKed
-                if ( tcp.ack_nr() < _snd_una )'xxx RFC9293 says use =<, but that doesn't seem to work?
+                if ( tcp.ack_nr() < _snd_una )'xxx RFC9293 says use <=, but that doesn't seem to work?
                     { duplicate ACK: ACK num is older than the oldest unacknowledged data }
                     'strln(@"        duplicate ACK")
                     return 0                ' ignore
@@ -722,7 +720,7 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
                     tcp_send_socket(tcp.ACK)
                     return 0
                 if (    (_snd_wl1 < tcp.seq_nr()) or ...
-                        ((_snd_wl1 == tcp.seq_nr()) and (_snd_wl2 =< tcp.ack_nr())) )
+                        ((_snd_wl1 == tcp.seq_nr()) and (_snd_wl2 <= tcp.ack_nr())) )
                     { update the send window }
                     'strln(@"        updating send window")
                     _snd_wnd := tcp.window()
@@ -782,19 +780,19 @@ pub process_tcp(): tf | ack, seq, flags, seg_len, seg_accept, loop_nr, reset
     { Seventh, process the segment text }
     'strln(@"    7. Process the segment text")
     if ( seg_len )                      ' process only if there's actually a payload
-        'printf1(@"        SEG.LEN = %d\n\r", seg_len)
+        'printf(@"        SEG.LEN = %d\n\r", seg_len)
         case _state
             ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2:
                 { Once the TCP endpoint takes responsibility for the data,
                     it advances RCV.NXT over the data accepted, and adjusts RCV.WND
                     as appropriate to the current buffer availability. The total of
                     RCV.NXT and RCV.WND should not be reduced. }
-                'printf1(@"        state: %s\n\r", state_str(_state))
+                'printf(@"        state: %s\n\r", state_str(_state))
                 _rcv_nxt += rxq.xput(seg_len)
                 _rcv_wnd := rxq.bytes_free()
                 if ( tcp.flags() & tcp.PSH )
                     on_push_received()
-                'printf1(@"RCV.WND=%d\n\r", _rcv_wnd)
+                'printf(@"RCV.WND=%d\n\r", _rcv_wnd)
                 'print_ptrs()
                 tcp_send_socket(tcp.ACK)
             CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT:
@@ -851,7 +849,7 @@ pub push_now()
 
 pub putchar(ch): s
 ' Send a single character to the remote host (queue only)
-    s := send(@ch, 1)
+    s := send_data(@ch, 1)
 
 
 pub read(ptr_buff, len=UNSPEC): l
@@ -863,11 +861,11 @@ pub read(ptr_buff, len=UNSPEC): l
         len := RECV_BUFFSZ                      ' read whatever's available, if unspecified
 
     l := rxq.get(ptr_buff, len)
-    if ( l => 0 )
+    if ( l >= 0 )
         _rcv_wnd += l                           ' open the receive window by how much was read
 
 
-pub send(ptr_buff, len, push=false): l
+pub send_data(ptr_buff, len, push=false): l
 ' Send data to socket
 '   ptr_buff: buffer to copy data from
 '   len: length of data to copy
@@ -898,7 +896,7 @@ pub set_state(new_state)
 ' Change the connection state of the socket
     _prev_state := _state                       ' record the previous state
     _state := new_state
-    'printf2(@"state change %s -> %s\n\r", state_str(_prev_state), state_str(_state))
+    'printf(@"state change %s ror %s\n\r", state_str(_prev_state), state_str(_state))
 
 
 pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
@@ -925,7 +923,7 @@ pub tcp_send(sp, dp, seq, ack, flags, win, seg_len=0) | tcplen, frm_end
                 tcp.set_checksum(0)
                 tcp.wr_tcp_header()
                 if ( seg_len > 0 )                  ' attach payload (XXX untested)
-                    'printf1(@"    length is %d, attaching payload\n\r", seg_len)
+                    'printf(@"    length is %d, attaching payload\n\r", seg_len)
                     txq.xget(seg_len)               ' get data from ring buffer into p_ndrv's FIFO
                     'strln(@"    attached")
                     _snd_nxt += seg_len
@@ -951,13 +949,13 @@ pub tcp_send_socket(flags, seg_len=0)
 #ifdef DEBUG
 pub print_ptrs()
 
-    printf1(@"    SND.UNA: %d\n\r", _snd_una)
-    printf1(@"    SND.NXT: %d\n\r", _snd_nxt)
-    printf1(@"    SND.WND: %d\n\r", _snd_wnd)
-    printf1(@"    SND.WL1: %d\n\r", _snd_wl1)
-    printf1(@"    SND.WL2: %d\n\r", _snd_wl2)
-    printf1(@"    RCV.NXT: %d\n\r", _rcv_nxt)
-    printf1(@"    RCV.WND: %d\n\r", _rcv_wnd)
+    printf(@"    SND.UNA: %d\n\r", _snd_una)
+    printf(@"    SND.NXT: %d\n\r", _snd_nxt)
+    printf(@"    SND.WND: %d\n\r", _snd_wnd)
+    printf(@"    SND.WL1: %d\n\r", _snd_wl1)
+    printf(@"    SND.WL2: %d\n\r", _snd_wl2)
+    printf(@"    RCV.NXT: %d\n\r", _rcv_nxt)
+    printf(@"    RCV.WND: %d\n\r", _rcv_wnd)
 
 
 pub set_debug_obj(p)
@@ -978,16 +976,16 @@ pub strln(pstr)
     dbg[dptr].strln(pstr)
 
 
-pub printf1(pfmt, p1)
+pub printf(pfmt, p1)
 
     'dbg[dptr].str(@objname)
-    dbg[dptr].printf1(pfmt, p1)
+    dbg[dptr].printf(pfmt, p1)
 
 
-pub printf2(pfmt, p1, p2)
+pub printf(pfmt, p1, p2)
 
     'dbg[dptr].str(@objname)
-    dbg[dptr].printf2(pfmt, p1, p2)
+    dbg[dptr].printf(pfmt, p1, p2)
 
 
 pub state_str(st): pstr
@@ -1008,7 +1006,7 @@ pub state_str(st): pstr
 
 #endif
 
-#include "terminal.common.spinh"
+#include "terminal.common.spin2h"
 
 
 DAT

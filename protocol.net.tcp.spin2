@@ -1,16 +1,16 @@
 {
-    --------------------------------------------
-    Filename: protocol.net.tcp.spin2
-    Author: Jesse Burt
-    Description: Transmission Control Protocol
-    Started Apr 10, 2022
-    Updated Feb 12, 2023
-    Copyright 2023
-    See end of file for terms of use.
-    --------------------------------------------
+----------------------------------------------------------------------------------------------------
+    Filename:       protocol.net.tcp.spin2
+    Description:    Transmission Control Protocol
+    Author:         Jesse Burt
+    Started:        Apr 5, 2022
+    Updated:        Sep 21, 2024
+    Copyright (c) 2024 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
 }
+
 #ifndef NET_COMMON
-#include "net-common.spin2h"
+#include "net-common.spinh"
 #endif
 
 CON
@@ -18,38 +18,24 @@ CON
     { limits }
     TCP_HDR_SZ      = 20
 
-    { offsets within header }
-    TCPH_SRCP       = 0
-    TCPH_DESTP      = TCPH_SRCP+2
-    TCPH_SEQNR      = TCPH_DESTP+2
-    TCPH_ACKNR      = TCPH_SEQNR+4
-    TCPH_HDRLEN     = TCPH_ACKNR+4
-    TCPH_FLAGS      = TCPH_ACKNR+4
-    TCPH_WIN        = TCPH_FLAGS+2
-    TCPH_CKSUM      = TCPH_WIN+2
-    TCPH_URGPTR     = TCPH_CKSUM+2
-    TCPH_OPTS       = TCPH_URGPTR+2
-
     { TCP flags/control bits }
-    NONCE           = 8
-    CWR             = 7
-    ECN_ECHO        = 6
-    URG             = 5
-    ACK             = 4
-    PSH             = 3
-    RST             = 2
-    SYN             = 1
-    FIN             = 0
+    CWR_BIT         = 7
+    ECN_ECHO_BIT    = 6
+    URG_BIT         = 5
+    ACK_BIT         = 4
+    PSH_BIT         = 3
+    RST_BIT         = 2
+    SYN_BIT         = 1
+    FIN_BIT         = 0
 
-    NONCE_BIT       = 1 << NONCE
-    CWR_BIT         = 1 << CWR
-    ECN_ECHO_BIT    = 1 << ECN_ECHO
-    URG_BIT         = 1 << URG
-    ACK_BIT         = 1 << ACK
-    PSH_BIT         = 1 << PSH
-    RST_BIT         = 1 << RST
-    SYN_BIT         = 1 << SYN
-    FIN_BIT         = 1 << FIN
+    CWR             = 1 << CWR_BIT
+    ECN_ECHO        = 1 << ECN_ECHO_BIT
+    URG             = 1 << URG_BIT
+    ACK             = 1 << ACK_BIT
+    PSH             = 1 << PSH_BIT
+    RST             = 1 << RST_BIT
+    SYN             = 1 << SYN_BIT
+    FIN             = 1 << FIN_BIT
 
     { TCP options }
     NOOP            = $01
@@ -61,259 +47,287 @@ CON
     PSRC            = 0                         ' _tcp_port.word[n]
     PDEST           = 1
 
-VAR
-
-    long _seq_nr, _ack_nr
-    long _tmstamps[2]
-    long _tcp_port
-    word _tcp_cksum
-    word _tcp_win
-    word _urg_ptr
-    word _tcp_flags
-    word _tcp_msglen
-    word _tcp_mss
-    byte _tcp_hdrlen
-    byte _options_len
-    byte _tcp_winscale
-    byte _tcp_sack_perm
 
 OBJ
 
+    net=    NETIF_DRIVER                        ' network driver "virtual" instance
     crc:    "math.crc"
 
-PUB tcp_calc_pseudo_header_cksum(ip_src, ip_dest, l4_proto, len): ck | phdr[12/4]
+
+VAR
+
+    long p_ndev                                 ' network driver object pointer
+
+    word _tcp_start, _tcp_msglen
+
+    byte _tcp_data[TCP_HDR_SZ]                  ' TCP header data
+
+
+pub init(optr)
+' Set pointer to network device object
+    p_ndev := optr
+
+
+PUB pseudo_header_cksum(ip_src, ip_dest, len=0): ck | phdr[12/4]
 ' Calculate TCP pseudo-header checksum
 '   ip_src: IPv4 source address
 '   ip_dest: IPv4 destination address
-'   l4_proto: layer-4 protocol (set to TCP unless you have a need to otherwise)
-'   len: TCP segment length (header + data)
+'   len: TCP payload length (the TCP header length is already included)
     bytefill(@phdr, 0, 12)
     phdr[0] := ip_src                           ' 0..3
     phdr[1] := ip_dest                          ' 4..7
-    phdr.byte[9] := l4_proto                    ' 9 (8 = reserved)
-    phdr.byte[10] := len.byte[1]                ' 10..11
-    phdr.byte[11] := len.byte[0]
-    ck := crc.inet_chksum(@phdr, 12, $00)
+                                                ' 8 = reserved
+    phdr.word[4] := (L4_TCP << 8) | 0
+    phdr.word[5] := (header_len() + len) << 8   ' length of TCP header plus the payload length
 
-PUB tcp_reply()
+    return crc.inet_chksum(@phdr, 12, $00)
+
+
+PUB reply(ack_inc)
 ' Set up the TCP segment to "reply" to the last received segment
-    tcp_swap_ports()
-    tcp_swap_seq_nrs()
-    tcp_inc_ack_nr(1)
-    tcp_set_chksum(0)
+'   ack_inc: value to increase the outgoing acknowledgement number by
+    swap_ports()
+    swap_seq_nrs()
+    inc_ack_nr(ack_inc)
+    set_checksum(0)
 
-PUB tcp_reset()
+
+PUB reset()
 ' Reset/initialize all stored data to 0
-    longfill(@_seq_nr, 0, 5)
-    wordfill(@_tcp_cksum, 0, 6)
-    bytefill(@_tcp_hdrlen, 0, 4)
+    bytefill(@_tcp_data, 0, TCP_HDR_SZ)
 
-PUB tcp_set_ack_nr(ack_nr)
+
+PUB set_ack_nr(ack_nr)
 ' Set TCP acknowledgement number
-    _ack_nr := ack_nr
+    _tcp_data[TCPH_ACKNR] := ack_nr.byte[3]
+    _tcp_data[TCPH_ACKNR+1] := ack_nr.byte[2]
+    _tcp_data[TCPH_ACKNR+2] := ack_nr.byte[1]
+    _tcp_data[TCPH_ACKNR+3] := ack_nr.byte[0]
 
-PUB tcp_set_chksum(ck)
+
+PUB set_checksum(ck)
 ' Set checksum
-    _tcp_cksum := ck
+    _tcp_data[TCPH_CKSUM] := ck.byte[1]
+    _tcp_data[TCPH_CKSUM+1] := ck.byte[0]
 
-PUB tcp_set_dest_port(p)
+
+PUB set_dest_port(p)
 ' Set destination port field
-    _tcp_port.word[PDEST] := p
+    _tcp_data[TCPH_DESTP] := p.byte[1]
+    _tcp_data[TCPH_DESTP+1] := p.byte[0]
 
-PUB tcp_set_flags(flags)
+
+PUB set_flags(flags)
 ' Set TCP header flags
-    _tcp_flags := flags
+    _tcp_data[TCPH_FLAGS] := (flags & $ff)
 
-PUB tcp_set_hdr_len(length)
-' Set TCP header length, in longs
-    _tcp_hdrlen := length << 4
 
-PUB tcp_set_hdr_len_bytes(length)
+PUB set_header_len(length)
 ' Set TCP header length, in bytes
-'   NOTE: length must be a multiple of 4
-    _tcp_hdrlen := (length / 4) << 4
+    _tcp_data[TCPH_HDRLEN] := ((length / 4) << 4)
 
-PUB tcp_set_mss(sz)
+
+PUB set_mss(sz)
 ' Set TCP maximum segment size
-    _tcp_mss := sz
+    '_tcp_mss := sz
 
-PUB tcp_set_sack_perm(sp)
+
+PUB set_sack_perm(sp)
 ' Set selective-acknowledge permitted flag
     { equal to the length in a SACK_PERMIT KLV option? }
-    _tcp_sack_perm := (sp <> 0)
+    '_tcp_sack_perm := (sp <> 0)
 
-PUB tcp_set_seq_nr(seq_nr)
+
+PUB set_seq_nr(seq_nr)
 ' Set TCP sequence number
-    _seq_nr := seq_nr
+    _tcp_data[TCPH_SEQNR] := seq_nr.byte[3]
+    _tcp_data[TCPH_SEQNR+1] := seq_nr.byte[2]
+    _tcp_data[TCPH_SEQNR+2] := seq_nr.byte[1]
+    _tcp_data[TCPH_SEQNR+3] := seq_nr.byte[0]
 
-PUB tcp_set_src_port(p)
+
+PUB set_source_port(p)
 ' Set source port field
-    _tcp_port.word[PSRC] := p
+    _tcp_data[TCPH_SRCP] := p.byte[1]
+    _tcp_data[TCPH_SRCP+1] := p.byte[0]
 
-PUB tcp_set_timest(tm)
+
+PUB set_timest(tm)
 ' Set timestamp (TCP option)
-    _tmstamps[0] := tm
+    '_tmstamps[0] := tm
 
-PUB tcp_set_timest_echo(tm)
+
+PUB set_timest_echo(tm)
 ' Set timestamp echo (TCP option)
-    _tmstamps[1] := tm
+    '_tmstamps[1] := tm
 
-PUB tcp_set_urgent_ptr(uptr)
+
+PUB set_urgent_ptr(uptr)
 ' Set TCP urgent pointer
-    _urg_ptr := uptr
+    _tcp_data[TCPH_URGPTR] := uptr.byte[1]
+    _tcp_data[TCPH_URGPTR+1] := uptr.byte[0]
 
-PUB tcp_set_window(win)
+
+PUB set_window(win)
 ' Set TCP window
-    _tcp_win := win
+    _tcp_data[TCPH_WIN] := win.byte[1]
+    _tcp_data[TCPH_WIN+1] := win.byte[0]
 
-PUB tcp_inc_ack_nr(amt)
+
+PUB inc_ack_nr(amt)
 ' Increment acknowledgement number by amt
-    _ack_nr += amt
+    '_ack_nr += amt
 
-PUB tcp_inc_seq_nr(amt)
+
+PUB inc_seq_nr(amt)
 ' Increment sequence number by amt
-    _seq_nr += amt
+    '_seq_nr += amt
 
-PUB tcp_ack_nr(): ack_nr
+
+PUB ack_nr(): ack_nr
 ' Get TCP acknowledgement number
-    return _ack_nr
+    ack_nr.byte[3] := _tcp_data[TCPH_ACKNR]
+    ack_nr.byte[2] := _tcp_data[TCPH_ACKNR+1]
+    ack_nr.byte[1] := _tcp_data[TCPH_ACKNR+2]
+    ack_nr.byte[0] := _tcp_data[TCPH_ACKNR+3]
 
-PUB tcp_chksum(): ck
+
+PUB chksum(): ck
 ' Get TCP header checksum
-    return _tcp_cksum
+    ck.byte[1] := _tcp_data[TCPH_CKSUM]
+    ck.byte[0] := _tcp_data[TCPH_CKSUM+1]
 
-PUB tcp_dest_port(): p
+
+PUB dest_port(): p
 ' Get destination port field
-    return _tcp_port.word[PDEST]
+    p.byte[1] := _tcp_data[TCPH_DESTP]
+    p.byte[0] := _tcp_data[TCPH_DESTP+1]
 
-PUB tcp_flags(): flags
+
+PUB flags(): flags
 ' Get TCP header flags
-    return _tcp_flags
+    flags := _tcp_data[TCPH_FLAGS]
 
-PUB tcp_hdr_len(): len
-' Get current header length, in longs
-'   NOTE: Length is stored in as-received position (upper nibble)
-    return _tcp_hdrlen
 
-PUB tcp_hdr_len_bytes(): len
+PUB header_len(): len
 ' Get current header length, in bytes
-    return (_tcp_hdrlen >> 4) * 4
+    return (_tcp_data[TCPH_HDRLEN] >> 4) * 4
 
-PUB tcp_msg_len(): len
+
+PUB msg_len(): len
 ' Get current message length
-    return _tcp_msglen
+    'return _tcp_msglen
 
-PUB tcp_mss(): mss
+
+PUB max_seg_sz(): sz
 ' Get current maximum segment size (TCP option)
-    return _tcp_mss
+    'return _tcp_mss
 
-PUB tcp_sack_perm(): sp
+
+PUB sack_perm(): sp
 ' Get selective-acknowledge permitted flag (TCP option)
     { equal to the length in a SACK_PERMIT KLV option? }
-    return (_tcp_sack_perm == 2)
+    'return (_tcp_sack_perm == 2)
 
-PUB tcp_seq_nr(): seq_nr
+
+PUB seq_nr(): seq_nr
 ' Get TCP sequence number
-    return _seq_nr
+    seq_nr.byte[3] := _tcp_data[TCPH_SEQNR]
+    seq_nr.byte[2] := _tcp_data[TCPH_SEQNR+1]
+    seq_nr.byte[1] := _tcp_data[TCPH_SEQNR+2]
+    seq_nr.byte[0] := _tcp_data[TCPH_SEQNR+3]
 
-PUB tcp_src_port(): p
+
+PUB source_port(): p
 ' Get source port field
-    return _tcp_port.word[PSRC]
+    p.byte[1] := _tcp_data[TCPH_SRCP]
+    p.byte[0] := _tcp_data[TCPH_SRCP+1]
 
-PUB tcp_swap_ports()
+
+PUB swap_ports()
 ' swap_ source and destination ports, for use when sending a response
-    _tcp_port ror= 16
+    '_tcp_port ror= 16
 
-PUB tcp_swap_seq_nrs() | tmp
+
+PUB swap_seq_nrs() | tmp
 ' swap_ sequence and acknowledgement numbers, for use when sending a response
-    tmp := _seq_nr
-    _seq_nr := _ack_nr
-    _ack_nr := tmp
+    'tmp := _seq_nr
+    '_seq_nr := _ack_nr
+    '_ack_nr := tmp
 
-PUB tcp_timest(): tm
+
+PUB timest(): tm
 ' Get timestamp (TCP option)
-    return _tmstamps[0]
+    'return _tmstamps[0]
 
-PUB tcp_timest_echo(): tm
+
+PUB timest_echo(): tm
 ' Get timestamp echo (TCP option)
-    return _tmstamps[1]
+    'return _tmstamps[1]
 
-PUB tcp_timest_ptr(): ptr
+
+PUB timest_ptr(): ptr
 ' Get pointer to timestamp data
-    return @_tmstamps
+    'return @_tmstamps
 
-PUB tcp_urgent_ptr(): uptr
+
+PUB urgent_ptr(): uptr
 ' Get TCP urgent pointer
-    return _urg_ptr
+    uptr.byte[1] := _tcp_data[TCPH_URGPTR]
+    uptr.byte[0] := _tcp_data[TCPH_URGPTR+1]
 
-PUB tcp_window(): win
+PUB window(): win
 ' Get TCP header window
-    return _tcp_win
+    win.byte[1] := _tcp_data[TCPH_WIN]
+    win.byte[0] := _tcp_data[TCPH_WIN+1]
 
-PUB rd_tcp_header() | tmp
+
+PUB rd_tcp_header(): rl
 ' Read/disassemble TCP header
 '   Returns: length of read header, in bytes
-    _tcp_port.word[PSRC] := rdword_msbf()
-    _tcp_port.word[PDEST] := rdword_msbf()
-    _seq_nr := rdlong_msbf()
-    _ack_nr := rdlong_msbf()
-    tmp := rd_byte()
-        _tcp_hdrlen := tmp & $f0                ' [7..4]: hdr len (longs)
-                                                ' [3..1]: reserved
-        _tcp_flags := (tmp & 1) << NONCE        ' [0]   : TCP flags[8]
-    tmp := rd_byte()
-        _tcp_flags |= tmp                       ' [7..0]: TCP flags[7..0]
-    _tcp_win := rdword_msbf()
-    _tcp_cksum := rdword_msbf()
-    _urg_ptr := rdword_msbf()
+    net[p_ndev].rdblk_lsbf(@_tcp_data, TCP_HDR_SZ)
+    return TCP_HDR_SZ
 
-    return fifo_wr_ptr()
 
 PUB rd_tcp_opts(): ptr | kind, st, opts_len
 ' Read TCP options
-    st := fifo_wr_ptr()
+    st := net[p_ndev].fifo_wr_ptr()
 
     { TCP header length is the header itself plus the options; }
     {   subtract out the header to get the length of the options }
-    opts_len := tcp_hdr_len_bytes() - 20
+    opts_len := header_len() - 20
 
     { read through all KLVs }
     repeat
-        kind := rd_byte()
+        kind := net[p_ndev].rd_byte()
         case kind
             MSS:
-                rd_byte()                       ' skip over the length byte
-                _tcp_mss := rdword_msbf()
+                net[p_ndev].rd_byte()                       ' skip over the length byte
+                _tcp_mss := net[p_ndev].rdword_msbf()
             SACK_PRMIT:
-                _tcp_sack_perm := rd_byte()     ' actually the length byte
+                _tcp_sack_perm := net[p_ndev].rd_byte()     ' actually the length byte
             TMSTAMPS:
-                rd_byte()
-                _tmstamps[0] := rdlong_msbf()
-                _tmstamps[1] := rdlong_msbf()
+                net[p_ndev].rd_byte()
+                _tmstamps[0] := net[p_ndev].rdlong_msbf()
+                _tmstamps[1] := net[p_ndev].rdlong_msbf()
             NOOP:
                 ' only one byte - do nothing
             WIN_SCALE:
-                _tcp_winscale := rd_byte()
-    until (fifo_wr_ptr()-st) > opts_len
-    return fifo_wr_ptr()
+                _tcp_winscale := net[p_ndev].rd_byte()
+    until ( net[p_ndev].fifo_wr_ptr()-st ) > opts_len
+    return net[p_ndev].fifo_wr_ptr()
+
 
 PUB wr_tcp_header(): ptr | st
 ' Write/assemble TCP header
 '   Returns: length of assembled header, in bytes
-    st := fifo_wr_ptr()
-    wrword_msbf(_tcp_port.word[PSRC])
-    wrword_msbf(_tcp_port.word[PDEST])
-    wrlong_msbf(_seq_nr)
-    wrlong_msbf(_ack_nr)
-    wr_byte(_tcp_hdrlen | ((_tcp_flags >> NONCE) & 1))   ' XXX | _tcp_flags.byte[1] ?
-    wr_byte(_tcp_flags & $ff) ' XXX _tcp_flags.byte[0] ?
-    wrword_msbf(_tcp_win)
-    wrword_msbf(_tcp_cksum)
-    wrword_msbf(_urg_ptr)
-
-    _tcp_msglen := fifo_wr_ptr()-st
+    _tcp_start := net[p_ndev].fifo_wr_ptr()
+    net[p_ndev].wrblk_lsbf(@_tcp_data, TCP_HDR_SZ)
+    _tcp_msglen := net[p_ndev].fifo_wr_ptr()-_tcp_start
     return _tcp_msglen
 
+
+CON #0, LSBF, MSBF
 PUB write_klv(kind, len, wr_val, val, byte_ord): tlvlen
 ' Write KLV to ptr_buff
 '   kind:
@@ -335,51 +349,48 @@ PUB write_klv(kind, len, wr_val, val, byte_ord): tlvlen
 
     { track length of options; it'll be needed later for padding
         the end of the message }
-    _options_len += wr_byte(kind)
+    _options_len += net[p_ndev].wr_byte(kind)
     case len
         { immediate value }
         1..4:
-            _options_len += wr_byte(len)        ' write length byte
+            _options_len += net[p_ndev].wr_byte(len)        ' write length byte
             { only write the value data if explicitly called to; }
             {   some options only consist of the TYPE and LENGTH fields }
-            if (wr_val)                         ' write value
-                if (byte_ord == LSBF)
-                    _options_len += wrblk_lsbf(@val, len-2)
+            if ( wr_val )                         ' write value
+                if ( byte_ord == LSBF )
+                    _options_len += net[p_ndev].wrblk_lsbf(@val, len-2)
                 else
-                    _options_len += wrblk_msbf(@val, len-2)
+                    _options_len += net[p_ndev].wrblk_msbf(@val, len-2)
         { values pointed to }
         5..255:
-            _options_len += wr_byte(len)
-            if (wr_val)
-                if (byte_ord == LSBF)
-                    _options_len += wrblk_lsbf(val, len-2)
+            _options_len += net[p_ndev].wr_byte(len)
+            if ( wr_val )
+                if ( byte_ord == LSBF )
+                    _options_len += net[p_ndev].wrblk_lsbf(val, len-2)
                 else
-                    _options_len += wrblk_msbf(val, len-2)
+                    _options_len += net[p_ndev].wrblk_msbf(val, len-2)
         { write type only }
         other:
     return _options_len
 
+
 DAT
-
 {
-TERMS OF USE: MIT License
+Copyright 2024 Jesse Burt
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 }
 

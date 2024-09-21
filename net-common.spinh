@@ -1,99 +1,99 @@
 {
-    --------------------------------------------
-    Filename: net-common.spinh
-    Author: Jesse Burt
-    Description: Constants common to multiple networking objects
-    Started Mar 12, 2022
-    Updated Nov 12, 2023
-    Copyright 2023
-    See end of file for terms of use.
-    --------------------------------------------
+----------------------------------------------------------------------------------------------------
+    Filename:       net-common.spinh
+    Description:    Constants common to multiple networking objects
+    Author:         Jesse Burt
+    Started:        Mar 12, 2022
+    Updated:        Sep 21, 2024
+    Copyright (c) 2024 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
 }
+
 #ifndef NET_COMMON
 #define NET_COMMON
 
 CON
 
     { limits }
-    MACADDR_LEN             = 6                 ' xx:xx:xx:xx:xx:xx
-    IPV4ADDR_LEN            = 4                 ' ddd.ddd.ddd.ddd
+    MACADDR_LEN         = 6                     ' xx:xx:xx:xx:xx:xx
+    IPV4ADDR_LEN        = 4                     ' ddd.ddd.ddd.ddd
 
     { ethertypes }
-    ETYP_IPV4               = $0800
-    ETYP_ARP                = $0806
+    ETYP_IPV4           = $0800
+    ETYP_ARP            = $0806
 
-    BCAST_IP                = $FF_FF_FF_FF      ' broadcast IP
+    BCAST_IP            = $FF_FF_FF_FF          ' broadcast IP
 
 
     { eth-ii }
-    ETH_DEST        = 0
-    ETH_SRC         = 6
-    ETH_TYPE_M      = 12
-    ETH_TYPE_L      = 13
-    ETH_TYPE        = ETH_TYPE_M
+    ETH_DEST            = 0
+    ETH_SRC             = 6
+    ETH_TYPE_M          = 12
+    ETH_TYPE_L          = 13
+    ETH_TYPE            = ETH_TYPE_M
 
     { ip }
-    IP_ABS_ST       = ETH_TYPE+2                ' add to the below for abs. position within frame
+    IP_ABS_ST           = ETH_TYPE+2            ' add to the below for abs. position within frame
 
-    IP_VERS         = 0
-    IP_HDRLEN       = 0
-    IP_DSCP_ECN     = 1
-    IP_TLEN         = 2
-    IP_TLEN_M       = 2
-    IP_TLEN_L       = 3
-    IP_IDENT_M      = 4
-    IP_IDENT_L      = 5
-    IP_FLAGS_FRGH   = 6
-    IP_FRGL         = 7
-    IP_T2L          = 8
-    IP_PRTCL        = 9
-    IP_CKSUM        = 10
-    IP_CKSUM_M      = 10
-    IP_CKSUM_L      = 11
-    IP_SRCIP        = 12'..15
-    IP_DSTIP        = 16'..19
+    IP_VERS             = 0
+    IP_HDRLEN           = 0
+    IP_DSCP_ECN         = 1
+    IP_TLEN             = 2
+    IP_TLEN_M           = 2
+    IP_TLEN_L           = 3
+    IP_IDENT_M          = 4
+    IP_IDENT_L          = 5
+    IP_FLAGS_FRGH       = 6
+    IP_FRGL             = 7
+    IP_T2L              = 8
+    IP_PRTCL            = 9
+    IP_CKSUM            = 10
+    IP_CKSUM_M          = 10
+    IP_CKSUM_L          = 11
+    IP_SRCIP            = 12'..15
+    IP_DSTIP            = 16'..19
 
     { layer 4 protocols }
-    L4_RSVD            = $00
-    L4_ICMP            = $01
-    L4_IGMP            = $02
-    L4_GGP             = $03
-    L4_IP_IN_IP        = $04
-    L4_TCP             = $06
-    L4_EGP             = $08
-    L4_UDP             = $11
-    L4_ESP             = $32
-    L4_AH              = $33
+    L4_RSVD             = $00
+    L4_ICMP             = $01
+    L4_IGMP             = $02
+    L4_GGP              = $03
+    L4_IP_IN_IP         = $04
+    L4_TCP              = $06
+    L4_EGP              = $08
+    L4_UDP              = $11
+    L4_ESP              = $32
+    L4_AH               = $33
 
 
     { arp }
-    ARP_ABS_ST      = ETH_TYPE+2                ' add to the below for abs. position within frame
+    ARP_ABS_ST          = ETH_TYPE+2            ' add to the below for abs. position within frame
 
-    ARP_HW_T_M      = 0                         ' 16b/2B
-    ARP_HW_T_L      = 1
-    ARP_PROTO_T_M   = 2                         ' 16b/2B
-    ARP_PROTO_T_L   = 3
-    ARP_HWADDR_LEN  = 4                         ' 8b/1B
-    ARP_PRADDR_LEN  = 5                         ' 8b/1B
-    ARP_OP_CODE_M   = 6                         ' 16b/2B
-    ARP_OP_CODE_L   = 7
-    ARP_SNDR_HWADDR = 8'..13                    ' 48b/6B
-    ARP_SNDR_PRADDR = 14'..17                   ' 32b/4B
-    ARP_TGT_HWADDR  = 18'..23                   ' 48b/6B
-    ARP_TGT_PRADDR  = 24'..27                   ' 32b/4B
+    ARP_HW_T_M          = 0                     ' 16b/2B
+    ARP_HW_T_L          = 1
+    ARP_PROTO_T_M       = 2                     ' 16b/2B
+    ARP_PROTO_T_L       = 3
+    ARP_HWADDR_LEN      = 4                     ' 8b/1B
+    ARP_PRADDR_LEN      = 5                     ' 8b/1B
+    ARP_OP_CODE_M       = 6                     ' 16b/2B
+    ARP_OP_CODE_L       = 7
+    ARP_SNDR_HWADDR     = 8'..13                ' 48b/6B
+    ARP_SNDR_PRADDR     = 14'..17               ' 32b/4B
+    ARP_TGT_HWADDR      = 18'..23               ' 48b/6B
+    ARP_TGT_PRADDR      = 24'..27               ' 32b/4B
 
 
     { udp }
-    UDP_ABS_ST      = IP_DSTIP + 4              ' add to the below for abs. position within frame
+    UDP_ABS_ST          = IP_DSTIP + 4          ' add to the below for abs. position within frame
 
-    UDP_SRCPORT     = 0
-     UDP_SRCPORT_L  = 1
-    UDP_DESTPORT    = 2
-     UDP_DESTPORT_L = 3
-    UDP_DGRAMLEN    = 4
-     UDP_DGRAMLEN_L = 5
-    UDP_CKSUM       = 6
-     UDP_CKSUM_L    = 7
+    UDP_SRCPORT         = 0
+     UDP_SRCPORT_L      = 1
+    UDP_DESTPORT        = 2
+     UDP_DESTPORT_L     = 3
+    UDP_DGRAMLEN        = 4
+     UDP_DGRAMLEN_L     = 5
+    UDP_CKSUM           = 6
+     UDP_CKSUM_L        = 7
 
 
     { bootp }
@@ -120,25 +120,25 @@ CON
     BOOTPM_FILENM       = BOOTPM_HOSTNM + SRV_HOSTN_LEN
 
     { icmp }
-    ICMP_ABS_ST     = IP_DSTIP + 4              ' add to the below for abs. position within frame
-    ICMP_T          = 0
-    ICMP_CD         = 1
-    ICMP_CKSUM      = 2
-     ICMP_CKSUM_L   = 3
-    ICMP_DATA       = 50                        ' data for ECHO messages
+    ICMP_ABS_ST         = IP_DSTIP + 4          ' add to the below for abs. position within frame
+    ICMP_T              = 0
+    ICMP_CD             = 1
+    ICMP_CKSUM          = 2
+     ICMP_CKSUM_L       = 3
+    ICMP_DATA           = 50                    ' data for ECHO messages
 
     { tcp }
-    TCPH_ST         = IP_ABS_ST+20
-    TCPH_SRCP       = 0'..1
-    TCPH_DESTP      = 2'..3
-    TCPH_SEQNR      = 4'..7
-    TCPH_ACKNR      = 8'..11
-    TCPH_HDRLEN     = 12                        ' upper four bits only; LSB is MSB of FLAGS
-    TCPH_FLAGS      = 13                        ' bottom 8 bits of FLAGS
-    TCPH_WIN        = 14'..15
-    TCPH_CKSUM      = 16'..17
-    TCPH_URGPTR     = 18'..19
-    TCPH_OPTS       = 20'..n                    ' start of TCP options, if used
+    TCPH_ST             = IP_ABS_ST+20
+    TCPH_SRCP           = 0'..1
+    TCPH_DESTP          = 2'..3
+    TCPH_SEQNR          = 4'..7
+    TCPH_ACKNR          = 8'..11
+    TCPH_HDRLEN         = 12                    ' upper four bits only; LSB is MSB of FLAGS
+    TCPH_FLAGS          = 13                    ' bottom 8 bits of FLAGS
+    TCPH_WIN            = 14'..15
+    TCPH_CKSUM          = 16'..17
+    TCPH_URGPTR         = 18'..19
+    TCPH_OPTS           = 20'..n                ' start of TCP options, if used
 
 
 DAT
@@ -147,27 +147,25 @@ DAT
     _mac_zero   byte 0, 0, 0, 0, 0, 0
 
 #endif
+
+
 DAT
-
 {
-TERMS OF USE: MIT License
+Copyright 2024 Jesse Burt
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 }
 
