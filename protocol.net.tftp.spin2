@@ -1,0 +1,255 @@
+{
+----------------------------------------------------------------------------------------------------
+    Filename:       protocol.net.tftp.spin2
+    Description:    TFTP protocol
+    Author:         Jesse Burt
+    Started:        Feb 1, 2025
+    Updated:        Feb 1, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
+}
+{Spin2_v46}
+
+#ifndef NET_COMMON
+#include "net-common.spinh"
+#endif
+
+#include "tftp-common.spin2"
+
+#ifndef NETIF_DRIVER
+# define NETIF_DRIVER "net.eth.enc28j60"
+#endif
+
+con
+
+    ' limits
+    FN_LEN_MAX          = 8+3
+    MODE_LEN_MAX        = 1
+    TFTP_BLOCK_LEN_MAX  = 512
+    ERRMSG_LEN_MAX      = 32
+
+
+    ' opcodes
+    RRQ                 = 1                     ' read request
+    WRQ                 = 2                     ' write request
+    DATA                = 3                     ' data packet
+    ACK                 = 4                     ' acknowledge packet
+    ERROR               = 5                     ' error packet
+
+    ' error codes
+    ERR_UNDEF           = 0                     ' undefined error
+    ERR_NOTFOUND        = 1                     ' file not found
+    ERR_ACCESS_VIO      = 2                     ' access violation
+    ERR_DISK_FULL       = 3                     ' disk is full
+    ERR_ILLEGAL_OP      = 4                     ' illegal opcode
+    ERR_UNK_XFER_ID     = 5                     ' unknown transfer ID
+    ERR_FILE_EXISTS     = 6                     ' file already exists
+    ERR_NO_SUCH_USER    = 7                     ' no such user
+
+
+obj
+
+    net=    NETIF_DRIVER                        ' network driver "virtual" instance
+
+
+var
+
+    long    p_ndev                              ' pointer to network device object
+
+
+pub send_ack(blk_n) | tftp_ack_pkt_s pkt
+''  @brief          Send acknowledge packet
+''  @param  blk_n   block number to acknowledge
+    pkt.opcode := ACK
+    pkt.block_nr := blk_n
+
+    net[p_ndev].wrblk_lsbf(@pkt, sizeof(tftp_ack_pkt_s) )
+
+
+pub send_data(blk_n, p_data, len=512) | tftp_data_pkt_s pkt
+''  @brief          Send a block of data
+''  @param  blk_n   block number
+''  @param  p_data  pointer to data
+''  @param  len     length of data to send in bytes (optional; default is 512)
+    pkt.opcode := DATA
+    pkt.block_nr := blk_n
+    bytemove(@pkt.data, p_data, len)
+
+    net[p_ndev].wrblk_lsbf(@pkt, sizeof(tftp_data_pkt_s) )
+
+
+pub send_error(err_nr, p_emsg): s | tftp_error_pkt_s pkt
+''  @brief          Send an error message
+''  @param  err_nr  error number
+''  @param  p_emsg  pointer to error message string
+''  @return         0 on success
+''  @return         negative numbers on failure
+    s := 0
+    if ( strsize(p_emsg) > ERRMSG_LEN_MAX )
+        return -1                               ' error: error message string exceeds maximum allowed length
+    pkt.opcode := ERROR
+    pkt.error_code := err_nr
+    bytemove(@pkt.error_msg, p_errmsg, strsize(p_errmsg) )
+
+    net[p_ndev].wrblk_lsbf(@pkt, sizeof(tftp_error_pkt_s) )  'xxx this probably won't work as-is; need packed structures, and also not sure what sizeof() will return here
+
+
+pub send_read_request(fn, md=0): s | tftp_req_pkt_s pkt
+''  @brief          Send a read request
+''  @param  fn      pointer to filename string
+''  @param  md      encoding mode (0='netascii' (default), 1='octet', 2='mail')
+    if ( strsize(fn) > FN_LEN_MAX )
+        return -1                               ' error: filename exceeds maximum allowed length
+    if ( (md < 0) or (md > 2) )
+        return -1                               ' error: invalid mode
+
+    pkt.opcode := RRQ
+    bytemove(@pkt.filename, fn, strsize(fn))
+    case md
+        0: bytemove(@pkt.mode, @mode_str_netascii, strsize(@mode_str_netascii))
+        1: bytemove(@pkt.mode, @mode_str_octet, strsize(@mode_str_octet))
+        ' RFC1350 says not to use 'mail' type (obsolete)
+        2: bytemove(@pkt.mode, @mode_str_mail, strsize(@mode_str_mail))
+    net[p_ndev].wrblk_lsbf(@pkt, sizeof(tftp_req_pkt_s) )
+
+
+pub send_write_request(fn, md=0): s | tftp_req_pkt_s pkt
+''  @brief          Send a write request
+''  @param  fn      pointer to filename string
+''  @param  md      encoding mode (0='netascii' (default), 1='octet', 2='mail')
+    if ( strsize(fn) > FN_LEN_MAX )
+        return -1                               ' error: filename exceeds maximum allowed length
+
+    pkt.opcode := WRQ
+    bytemove(@pkt.filename, fn, strsize(fn))
+    case md
+        0: bytemove(@pkt.mode, @mode_str_netascii, strsize(@mode_str_netascii))
+        1: bytemove(@pkt.mode, @mode_str_octet, strsize(@mode_str_octet))
+        2: bytemove(@pkt.mode, @mode_str_mail, strsize(@mode_str_mail))
+
+    'xxx code to write this to the ethernet driver here
+
+var
+
+    tftp_req_pkt_s      request
+    tftp_data_pkt_s     data_pkt
+    tftp_ack_pkt_s      ack_pkt
+    tftp_error_pkt_s    error_pkt
+
+
+pub read_packet(): o
+''   @brief          Check the TFTP packet type and hand off to the relevant parser
+''   @return         TFTP opcode
+
+    ' check the opcode of the incoming TFTP packet
+    o := net[p_ndev].rd_byte()
+    case o
+        RRQ:
+            parse_read_request()
+        WRQ:
+            parse_write_request()
+        DATA:
+            parse_data_packet()
+        ACK:
+            parse_ack_packet()
+        ERROR:
+            parse_error_packet()
+
+
+pub parse_ack_packet(): n
+''   @brief          Parse a TFTP ACK packet
+''   @return         block ID that was acknowledged    
+    ack_pkt.block_nr := net[p_ndev].rdword_lsbf()
+
+    return ack_pkt.block_nr
+
+
+pub parse_data_packet(len=TFTP_BLOCK_LEN_MAX): n
+''   @brief          Parse a TFTP data packet
+''   @param  len     length of data to read in bytes (default: 512)
+''   @return         block number received
+    data_pkt.block_nr := net[p_ndev].rd_byte()
+    net[p_ndev].rdblk_lsbf(@data_pkt.data, len)   'xxx how should we determine how much to actually read? only IP would really know
+    return data_pkt.block_nr
+
+
+pub parse_error_packet(): e
+''   @brief          Parse a TFTP error packet
+''   @return         Error number
+    e := error_pkt.error_code := net[p_ndev].rdword_lsbf()
+    net[p_ndev].rdblk_lsbf(@error_pkt.error_msg, ERRMSG_LEN_MAX) 'xxx same issue as parse_data_packet()
+
+
+pub last_error_message(): s
+''   @brief          Get the error message string reported in the last received error packet
+''   @return         pointer to string
+    return @error_pkt.error_msg
+
+
+pub parse_read_request() | ch, i
+''   @brief          Parse a received read request packet
+''   @return         none
+    request.opcode := RRQ
+    
+    ' read filename data, up until (and including) the null-terminator
+    i := 0
+    repeat
+        ch := net[p_ndev].rd_byte()
+        request.filename[i++] := ch
+    until (ch == 0)
+
+    ' read mode data, up until (and including) the null-terminator
+    i := 0
+    repeat
+        ch := net[p_ndev].rd_byte()
+        request.mode[i++] := ch
+    until (ch == 0)
+
+
+pub parse_write_request() | ch, i
+''   @brief          Parse a received write request packet
+''   @return         none
+    request.opcode := WRQ
+    
+    ' read filename data, up until (and including) the null-terminator
+    i := 0
+    repeat
+        ch := net[p_ndev].rd_byte()
+        request.filename[i++] := ch
+    until (ch == 0)
+
+    ' read mode data, up until (and including) the null-terminator
+    i := 0
+    repeat
+        ch := net[p_ndev].rd_byte()
+        request.mode[i++] := ch
+    until (ch == 0)
+
+
+dat
+
+    ' mode strings
+    mode_str_netascii   byte    "netascii", 0
+    mode_str_octet      byte    "octet", 0
+    mode_str_mail       byte    "mail", 0
+
+
+DAT
+{
+Copyright 2025 Jesse Burt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+}
