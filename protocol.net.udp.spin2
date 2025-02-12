@@ -4,8 +4,8 @@
     Description:    Universal Datagram Protocol
     Author:         Jesse Burt
     Started:        Feb 28, 2022
-    Updated:        Sep 21, 2024
-    Copyright (c) 2024 - See end of file for terms of use.
+    Updated:        Feb 12, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
 
@@ -36,7 +36,7 @@ VAR
 
 pub init(optr)
 ' Set pointer to network device object
-    dev := optr
+    p_ndev := optr
 
 
 PUB new(src_port, dest_port)
@@ -132,7 +132,7 @@ PUB wr_udp_header(): ptr
 
 DAT
 {
-Copyright 2024 Jesse Burt
+Copyright 2025 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,
