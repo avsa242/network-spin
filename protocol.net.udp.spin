@@ -4,8 +4,8 @@
     Description:    Universal Datagram Protocol
     Author:         Jesse Burt
     Started:        Feb 28, 2022
-    Updated:        Sep 21, 2024
-    Copyright (c) 2024 - See end of file for terms of use.
+    Updated:        Feb 16, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
 
@@ -36,7 +36,7 @@ VAR
 
 pub init(optr)
 ' Set pointer to network device object
-    dev := optr
+    p_ndev := optr
 
 
 PUB new(src_port, dest_port)
@@ -45,6 +45,8 @@ PUB new(src_port, dest_port)
     _udp_data[UDP_SRCPORT_L] := src_port.byte[0]
     _udp_data[UDP_DESTPORT] := dest_port.byte[1]
     _udp_data[UDP_DESTPORT_L] := dest_port.byte[0]
+    _udp_data[UDP_CKSUM] := 0
+    _udp_data[UDP_CKSUM_L] := 0
 
     wr_udp_header()
 
@@ -110,7 +112,7 @@ PUB reset_udp()
     bytefill(@_udp_data, 0, UDP_MSG_SZ)
 
 
-PUB rd_udp_header()
+PUB rd_udp_header(): l
 ' Read/disassemble UDP header
 '   Returns: length of read header, in bytes
     net[p_ndev].rdblk_lsbf(@_udp_data, UDP_MSG_SZ)
@@ -132,7 +134,7 @@ PUB wr_udp_header(): ptr
 
 DAT
 {
-Copyright 2024 Jesse Burt
+Copyright 2025 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

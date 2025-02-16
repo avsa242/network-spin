@@ -1,11 +1,11 @@
 {
 ----------------------------------------------------------------------------------------------------
-    Filename:       protocol.net.eth-ii.spin
+    Filename:       protocol.net.ip.spin
     Description:    Internet Protocol
     Author:         Jesse Burt
     Started:        Feb 7, 2022
-    Updated:        Sep 21, 2024
-    Copyright (c) 2024 - See end of file for terms of use.
+    Updated:        Feb 16, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
 
@@ -306,7 +306,7 @@ PUB wr_ip_header(): ptr
 
 DAT
 {
-Copyright 2024 Jesse Burt
+Copyright 2025 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

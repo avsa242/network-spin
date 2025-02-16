@@ -4,7 +4,7 @@
     Description:    Universal Datagram Protocol
     Author:         Jesse Burt
     Started:        Feb 28, 2022
-    Updated:        Feb 12, 2025
+    Updated:        Feb 16, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -45,6 +45,8 @@ PUB new(src_port, dest_port)
     _udp_data[UDP_SRCPORT_L] := src_port.byte[0]
     _udp_data[UDP_DESTPORT] := dest_port.byte[1]
     _udp_data[UDP_DESTPORT_L] := dest_port.byte[0]
+    _udp_data[UDP_CKSUM] := 0
+    _udp_data[UDP_CKSUM_L] := 0
 
     wr_udp_header()
 
