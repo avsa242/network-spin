@@ -4,19 +4,22 @@
     Description:    Constants common to multiple networking objects
     Author:         Jesse Burt
     Started:        Mar 12, 2022
-    Updated:        Sep 21, 2024
-    Copyright (c) 2024 - See end of file for terms of use.
+    Updated:        Feb 17, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
 
 #ifndef NET_COMMON
-#define NET_COMMON
+# define NET_COMMON
 
 CON
 
     { limits }
     MACADDR_LEN         = 6                     ' xx:xx:xx:xx:xx:xx
     IPV4ADDR_LEN        = 4                     ' ddd.ddd.ddd.ddd
+
+    struct macaddr_s(...
+        byte b5, b4, b3, b2, b1, b0)            ' OUI_MSB, ..., LSB
 
     { ethertypes }
     ETYP_IPV4           = $0800
@@ -151,7 +154,7 @@ DAT
 
 DAT
 {
-Copyright 2024 Jesse Burt
+Copyright 2025 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

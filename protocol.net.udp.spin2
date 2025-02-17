@@ -4,20 +4,26 @@
     Description:    Universal Datagram Protocol
     Author:         Jesse Burt
     Started:        Feb 28, 2022
-    Updated:        Feb 16, 2025
+    Updated:        Feb 17, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
+{Spin2_v46}
 
 #ifndef NET_COMMON
-#include "net-common.spinh"
+#include "net-common.spin2h"
 #endif
-
 
 CON
 
     { limits }
     UDP_MSG_SZ      = 8                         ' message length
+
+    struct udp_msg_s(...
+        word    src_port, ...
+        word    dest_port, ...
+        word    length, ...
+        word    checksum)
 
 
 OBJ

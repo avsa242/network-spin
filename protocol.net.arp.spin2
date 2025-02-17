@@ -4,21 +4,35 @@
     Description:    Address Resolution Protocol
     Author:         Jesse Burt
     Started:        Feb 27, 2022
-    Updated:        Sep 21, 2024
-    Copyright (c) 2024 - See end of file for terms of use.
+    Updated:        Feb 17, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
+{Spin2_v46}
 
 #ifndef NET_COMMON
-#include "net-common.spinh"
+#include "net-common.spin2h"
 #endif
-
 
 CON
 
     { limits }
     ARP_MSG_SZ      = 28                        ' message length
     ENTRIES         = 10                        ' ARP cache entries (RAM usage: n * 11 bytes)
+
+    struct arp_entry_s(...
+        byte        in_use, ...
+        macaddr_s   haddr, ...
+        long        paddr)
+
+    struct arp_msg_s(...
+        word        hw_t, ...
+        word        proto_t, ...
+        byte        hw_len, ...
+        word        opcode, ...
+        macaddr_s   sender_addr, ...
+        macaddr_s   target_addr)
+
 
     { hardware types }
     HRD_ETH         = 1                         ' only these first two are
@@ -58,6 +72,8 @@ VAR
     byte _entry_used[ENTRIES]                   ' ARP table/cache
     byte _hw_addr[ENTRIES * MACADDR_LEN]        '
     long _proto_addr[ENTRIES]                   '
+
+    arp_entry_s entry[ENTRIES]
 
 
 PUB init(netdev_ptr)
@@ -303,7 +319,7 @@ PUB wr_arp_msg(): ptr
 
 DAT
 {
-Copyright 2024 Jesse Burt
+Copyright 2025 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

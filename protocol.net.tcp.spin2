@@ -4,19 +4,31 @@
     Description:    Transmission Control Protocol
     Author:         Jesse Burt
     Started:        Apr 5, 2022
-    Updated:        Sep 21, 2024
-    Copyright (c) 2024 - See end of file for terms of use.
+    Updated:        Feb 17, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
+{Spin2_v46}
 
 #ifndef NET_COMMON
-#include "net-common.spinh"
+#include "net-common.spin2h"
 #endif
 
 CON
 
     { limits }
     TCP_HDR_SZ      = 20
+
+    struct tcp_msg_s(...
+        word    src_port, ...
+        word    dest_port, ...
+        long    seq_nr, ...
+        long    ack_nr, ...
+        byte    header_len, ...                 ' length is b7..4; b0 is b9 of flags
+        byte    flags, ...                      ' b7..0
+        word    window, ...
+        word    checksum, ...
+        word    urg_ptr)
 
     { TCP flags/control bits }
     CWR_BIT         = 7
@@ -376,7 +388,7 @@ PUB write_klv(kind, len, wr_val, val, byte_ord): tlvlen
 
 DAT
 {
-Copyright 2024 Jesse Burt
+Copyright 2025 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

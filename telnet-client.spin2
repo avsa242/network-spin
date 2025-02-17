@@ -20,6 +20,8 @@
 ' set TCP receive buffer size (_must_ be a power of 2)
 #define RECV_BUFFSZ 1024
 
+#define DEBUG
+#pragma exportdef(DEBUG)
 
 #include "net-common.spinh"
 #pragma exportdef(NETIF_DRIVER)
@@ -31,17 +33,19 @@ con
     _clkfreq    = 250_000_000
     _xtlfreq    = 20_000_000
 
+#include "core.con.click.spin2"
+    CLICK_BASE=0
 
 dat
 
     { this host's MAC address }
-    _mac_local  byte $02, $98, $0c, $01, $02, $03
+    _mac_local  byte $02, $98, $0c, $06, $01, $c9
 
 
 obj
 
     ser:        "com.serial.terminal.ansi" | SER_BAUD=2_000_000
-    net:        NETIF_DRIVER | CS=0, SCK=1, MOSI=2, MISO=3, SPI_FREQ=20_000_000
+    net:        NETIF_DRIVER | CS=CS_PIN, SCK=SCK_PIN, MOSI=MOSI_PIN, MISO=MISO_PIN'CS=0, SCK=1, MOSI=2, MISO=3, SPI_FREQ=20_000_000
     sockmgr:    "socketman-onesocket"
     telnet:     "protocol.net.telnet"
     str:        "string"
@@ -56,10 +60,11 @@ var
 
 
 con #0, ST_CMD, ST_DATA
-pub main() | st, ser_ch, rx_ch, o, opts_q, my_ip, server_ip
+pub main() | c, st, ser_ch, rx_ch, o, opts_q, my_ip, server_ip
 
     setup()
-    sockmgr.init(@net)
+    c := sockmgr.init(@net)
+    ser.printf(@"socket manager started on cog %d\n\r", c)
     sockmgr.set_disconnect_event_func(@disc)
     sockmgr.set_connect_event_func(@conn)
     opts_q := 0
@@ -72,8 +77,8 @@ pub main() | st, ser_ch, rx_ch, o, opts_q, my_ip, server_ip
                     ser.str(@"telnet> ")
                     case ser.getchar()
                         "c":
-                            my_ip := ip(@"192.168.1.10")
-                            server_ip := ip(@"192.168.1.1")
+                            my_ip := ip(@"10.42.0.216")
+                            server_ip := ip(@"10.42.0.1")
                             ser.strln(@"connecting...")
                             st := sockmgr.open(     my_ip, 0, ...
                                                     server_ip, 23, ...
@@ -102,7 +107,7 @@ pub main() | st, ser_ch, rx_ch, o, opts_q, my_ip, server_ip
                                 if ( telnet.option_is_negotiated(o) )
                                     show_opt_verb(o, telnet.negotiated_option_verb(o))
                         "s":
-                            if ( sockmgr._state == sockmgr.ESTABLISHED )
+                            if ( sockmgr.socket.state == sockmgr.ESTABLISHED )
                                 ser.newline()
                                 ser.strln(@"state: connected")
                             else
@@ -227,7 +232,7 @@ pub setup()
 
     ser.clear()
     ser.strln(@"serial started")
-    'sockmgr.set_debug_obj(@ser)
+    sockmgr.set_debug_obj(@ser)
 
     if ( net.start() )
         net.set_pkt_filter(0)

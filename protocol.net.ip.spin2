@@ -4,19 +4,34 @@
     Description:    Internet Protocol
     Author:         Jesse Burt
     Started:        Feb 7, 2022
-    Updated:        Sep 21, 2024
-    Copyright (c) 2024 - See end of file for terms of use.
+    Updated:        Feb 17, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
+{Spin2_v46}
 
 #ifndef NET_COMMON
-#include "net-common.spinh"
+#include "net-common.spin2h"
 #endif
 
 CON
 
     { limits }
     IP_HDR_SZ       = 20                        ' header length
+
+    struct ip_header_s(...
+        byte    version, ...
+        byte    dscp_ecn, ...
+        word    tlen, ...
+        word    ident, ...
+        byte    flags_frag_h, ...
+        byte    frag_l, ...
+        byte    ttl
+        byte    l4proto, ...
+        word    checksum, ...
+        long    src_addr, ...
+        long    dest_addr )
+
 
     { layer 4 protocols }
     RSVD            = $00
@@ -51,6 +66,13 @@ VAR
 pub init(optr)
 ' Set pointer to network device object
     p_ndev := optr
+
+
+pub addr8888to32(a3, a2, a1, a0): a
+' Convert four-octet IP address into long
+'   a3..a0:     IP address octets (MSB..LSB)
+'   Returns:    32-bit IP address in network byte order
+    return (a0 << 24) | (a1 << 16) | (a2 << 8) | a3
 
 
 PUB dest_addr(): addr | i
@@ -306,7 +328,7 @@ PUB wr_ip_header(): ptr
 
 DAT
 {
-Copyright 2024 Jesse Burt
+Copyright 2025 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

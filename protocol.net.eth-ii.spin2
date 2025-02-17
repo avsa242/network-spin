@@ -4,13 +4,14 @@
     Description:    Ethernet II protocol
     Author:         Jesse Burt
     Started:        Mar 1, 2022
-    Updated:        Sep 21, 2024
-    Copyright (c) 2024 - See end of file for terms of use.
+    Updated:        Feb 17, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
+{Spin2_v46}
 
 #ifndef NET_COMMON
-#include "net-common.spinh"
+#include "net-common.spin2h"
 #endif
 
 CON
@@ -18,14 +19,18 @@ CON
     { limits }
     ETH_FRM_SZ      = 14
 
+   { ethernet-II structure }
+    struct ethii_t(...
+        macaddr_s   dest, ...
+        macaddr_s   src, ...
+        word        ethertype)
+
 
 OBJ
 
     net=    NETIF_DRIVER                        ' network driver "virtual" instance
 
 
-   { ethernet-II structure }
-    ethii_t ( byte dest_mac[6] )
 
 VAR
 
@@ -107,7 +112,7 @@ PUB wr_ethii_frame(): ptr
 
 DAT
 {
-Copyright 2024 Jesse Burt
+Copyright 2025 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

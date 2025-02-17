@@ -4,13 +4,14 @@
     Description:    Internet Control Message Protocol
     Author:         Jesse Burt
     Started:        Mar 31, 2022
-    Updated:        Feb 12, 2025
+    Updated:        Feb 17, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
+{Spin2_v46}
 
 #ifndef NET_COMMON
-#include "net-common.spinh"
+#include "net-common.spin2h"
 #endif
 
 CON
@@ -18,6 +19,12 @@ CON
     { limits }
     ICMP_MSG_SZ     = 8                         ' message length
     ICMP_ECHO_MSG_SZ= 12                        ' echo metadata (_not_ echoed data)
+
+    struct  icmp_msg_s(...
+        byte    type, ...
+        byte    code, ...
+        word    checksum)
+
 
     { ECHO: offsets within metadata }
     ICMP_IDENT_M    = 0
