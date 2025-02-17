@@ -42,6 +42,7 @@ VAR
 pub init(optr)
 ' Set pointer to network device object
     p_ndev := optr
+    bytefill(@_ethii_data, 0, ETH_FRM_SZ)
 
 
 PUB dest_addr(): addr

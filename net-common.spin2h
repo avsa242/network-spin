@@ -19,7 +19,8 @@ CON
     IPV4ADDR_LEN        = 4                     ' ddd.ddd.ddd.ddd
 
     struct macaddr_s(...
-        byte b5, b4, b3, b2, b1, b0)            ' OUI_MSB, ..., LSB
+        byte mac[6])                            ' OUI_MSB ... LSB
+
 
     { ethertypes }
     ETYP_IPV4           = $0800

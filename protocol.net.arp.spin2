@@ -21,9 +21,9 @@ CON
     ENTRIES         = 10                        ' ARP cache entries (RAM usage: n * 11 bytes)
 
     struct arp_entry_s(...
-        byte        in_use, ...
-        macaddr_s   haddr, ...
-        long        paddr)
+        word        proto_t, ...
+        long        proto_addr, ...
+        macaddr_s   hw_addr)
 
     struct arp_msg_s(...
         word        hw_t, ...
@@ -32,6 +32,9 @@ CON
         word        opcode, ...
         macaddr_s   sender_addr, ...
         macaddr_s   target_addr)
+
+    ' protocol types
+    PTYPE_IP        = $0800
 
 
     { hardware types }
@@ -81,7 +84,7 @@ PUB init(netdev_ptr)
     p_ndev := netdev_ptr
 
 
-PUB cache_entry(hw_addr, proto_addr): ent_nr
+PUB cache_entry(hw_addr, proto_addr, ptype): ent_nr | m
 ' Cache an entry in the ARP table
     { check for an existing entry with this protocol address first }
     ent_nr := read_entry_by_proto_addr(proto_addr)
@@ -91,24 +94,23 @@ PUB cache_entry(hw_addr, proto_addr): ent_nr
     else
         { not found: create a new entry }
         repeat ent_nr from 0 to (ENTRIES-1)
-            ifnot ( _entry_used[ent_nr] )
-                bytemove(hw_ent(ent_nr), hw_addr, MACADDR_LEN)
-                _proto_addr[ent_nr] := proto_addr
-                _entry_used[ent_nr] := 1
+            ifnot ( entry[ent_nr].proto_t )
+                repeat m from 0 to MACADDR_LEN-1
+                    entry[ent_nr].hw_addr.mac[m] := byte[hw_addr][m]
+                entry[ent_nr].proto_addr := proto_addr
+                entry[ent_nr].proto_t := ptype
                 return
         return -10                              ' cache full; no entries available
 
 
 PUB drop_entry(ent_nr)
 ' Drop a cached entry from the ARP table
-    bytefill(hw_ent(ent_nr), 0, 6)
-    _proto_addr[ent_nr] := 0
-    _entry_used[ent_nr] := false
+    entry[ent_nr]~
 
 
 PUB entry_is_used(ent_nr): f
 ' Flag indicating entry in the ARP table is used
-    return ( _entry_used[ent_nr] <> 0 )
+    return ( entry[ent_nr].proto_t <> 0 )
 
 
 pub find_mac_by_ip(ip): hw | tmp
@@ -118,17 +120,17 @@ pub find_mac_by_ip(ip): hw | tmp
         return hw_ent( tmp )
 
 
-PUB hw_addrLen(): len
+PUB hw_addr_len(): len
 ' Get hardware address length
 '   Returns: byte
-    return _arp_hln
+    return _arp_data[ARP_HWADDR_LEN]
 
 
 PUB hw_ent(ent_nr): p
 ' Calculate the pointer to a hardware address in the ARP table, given an entry number
 '   ent_nr: entry number (1..(ENTRIES-1) )
 '   Returns: pointer to hardware address (OUI first)
-    return @_hw_addr+(ent_nr*6)
+    return @entry[ent_nr].hw_addr
 
 
 PUB hw_type(): hrd
@@ -163,7 +165,7 @@ PUB read_entry(ent_nr): hw, proto
 '   Returns (2 return values):
 '       1) pointer to HW address
 '       2) protocol address
-    return hw_ent(ent_nr), _proto_addr[ent_nr]
+    return hw_ent(ent_nr), entry[ent_nr].proto_addr
 
 
 PUB read_entry_by_proto_addr(proto_addr): ent_nr
@@ -171,7 +173,7 @@ PUB read_entry_by_proto_addr(proto_addr): ent_nr
 '   proto_addr: protocol address (4 bytes)
 '   Returns: entry number in ARP table, or -1 if not found
     repeat ent_nr from 0 to (ENTRIES-1)
-        if ( entry_is_used(ent_nr) and (_proto_addr[ent_nr] == proto_addr) )
+        if ( entry_is_used(ent_nr) and (entry[ent_nr].proto_addr == proto_addr) )
             return ent_nr
 
     return -1
@@ -181,7 +183,7 @@ pub read_entry_ip(ent_nr): p
 ' Read an entry from the cache
 '   Returns:
 '       32-bit IP address
-    return _proto_addr[ent_nr]
+    return entry[ent_nr].proto_addr
 
 
 pub read_entry_mac(ent_nr): hw
@@ -194,7 +196,12 @@ pub read_entry_mac(ent_nr): hw
 PUB reply() | ip_tmp, mac_tmp[2]
 ' Set up next ARP message to "reply" to the previous
     set_opcode(ARP_REPL)
+    swap_sender_target()
+    wr_arp_msg()
 
+
+PUB swap_sender_target() | ip_tmp, mac_tmp[2]
+' Swap the sender and target fields
     { temporarily store the current sender addresses }
     bytemove(@ip_tmp, @_arp_data[ARP_SNDR_PRADDR], IPV4ADDR_LEN)
     bytemove(@mac_tmp, @_arp_data[ARP_SNDR_HWADDR], MACADDR_LEN)
@@ -206,8 +213,6 @@ PUB reply() | ip_tmp, mac_tmp[2]
     { update the target addresses to the temporarily stored sender addresses }
     bytemove(@_arp_data[ARP_TGT_PRADDR], @ip_tmp, IPV4ADDR_LEN)
     bytemove(@_arp_data[ARP_TGT_HWADDR], @mac_tmp, MACADDR_LEN)
-
-    wr_arp_msg()
 
 
 PUB sender_hw_addr(): ptr_addr
