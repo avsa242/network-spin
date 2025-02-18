@@ -145,6 +145,16 @@ CON
     TCPH_OPTS           = 20'..n                ' start of TCP options, if used
 
 
+PUB swap_long(l): sl
+' Swap the byte order of a word
+    sl.byte[0], sl.byte[1], sl.byte[2], sl.byte[3]  := l.byte[3], l.byte[2], l.byte[1], l.byte[0]
+
+
+PUB swap_word(w): sw
+' Swap the byte order of a word
+    sw.byte[0], sw.byte[1] := w.byte[1], w.byte[0]
+
+
 DAT
 
     _mac_bcast  byte $FF, $FF, $FF, $FF, $FF, $FF

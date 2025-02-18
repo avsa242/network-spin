@@ -71,7 +71,7 @@ pub init(optr)
 pub addr8888to32(a3, a2, a1, a0): a
 ' Convert four-octet IP address into long
 '   a3..a0:     IP address octets (MSB..LSB)
-'   Returns:    32-bit IP address in network byte order
+'   Returns:    32-bit IP address in network byte order (MSByte-first)
     return (a0 << 24) | (a1 << 16) | (a2 << 8) | a3
 
 
