@@ -4,7 +4,7 @@
     Description:    Address Resolution Protocol
     Author:         Jesse Burt
     Started:        Feb 27, 2022
-    Updated:        Feb 18, 2025
+    Updated:        Feb 22, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -88,20 +88,20 @@ PUB init(netdev_ptr)
     p_ndev := netdev_ptr
 
 
-PUB cache_entry(hw_addr, proto_addr, ptype): ent_nr | m
+PUB cache_entry(hw_addr, proto_addr, ptype): e | m
 ' Cache an entry in the ARP table
     { check for an existing entry with this protocol address first }
-    ent_nr := read_entry_by_proto_addr(proto_addr)
-    if ( ent_nr >= 0 )                          ' 0 is _always_ the entry for our own node
+    e := read_entry_by_proto_addr(proto_addr)
+    if ( e >= 0 )                               ' 0 is _always_ the entry for our own node
         { found an existing entry: update it with the new hardware address }
-        bytemove(@entry[ent_nr].hw_addr.mac, hw_addr, MACADDR_LEN)
+        bytemove(@entry[e].hw_addr, hw_addr, MACADDR_LEN)
     else
         { not found: create a new entry }
-        repeat ent_nr from 0 to (ENTRIES-1)
-            ifnot ( entry[ent_nr].proto_t )
-                bytemove(@entry[ent_nr].hw_addr.mac, hw_addr, MACADDR_LEN)
-                entry[ent_nr].proto_addr := proto_addr
-                entry[ent_nr].proto_t := ptype
+        repeat e from 0 to (ENTRIES-1)
+            ifnot ( entry[e].proto_t )
+                bytemove(@entry[e].hw_addr, hw_addr, MACADDR_LEN)
+                entry[e].proto_addr := proto_addr
+                entry[e].proto_t := ptype
                 return
         return -10                              ' cache full; no entries available
 
@@ -111,14 +111,14 @@ PUB clear()
     message~
 
 
-PUB drop_entry(ent_nr)
+PUB drop_entry(e)
 ' Drop a cached entry from the ARP table
-    entry[ent_nr]~
+    entry[e]~
 
 
-PUB entry_is_used(ent_nr): f
+PUB entry_is_used(e): f
 ' Flag indicating entry in the ARP table is used
-    return ( entry[ent_nr].proto_t <> 0 )
+    return ( entry[e].proto_t <> 0 )
 
 
 pub find_mac_by_ip(ip): hw | tmp
@@ -134,11 +134,11 @@ PUB hw_addr_len(): l
     return message.hw_addr_len
 
 
-PUB hw_ent(ent_nr): p
+PUB hw_ent(e): p
 ' Calculate the pointer to a hardware address in the ARP table, given an entry number
-'   ent_nr:     entry number (1..(ENTRIES-1) )
+'   e:     entry number (1..(ENTRIES-1) )
 '   Returns:    pointer to hardware address (OUI first)
-    return @entry[ent_nr].hw_addr.mac
+    return @entry[e].hw_addr
 
 
 PUB hw_type(): t
@@ -165,33 +165,33 @@ PUB proto_type(): p
     return swap_word(message.proto_t)
 
 
-PUB read_entry(ent_nr): h, p
+PUB read_entry(e): h, p
 ' Read an entry from the cache
 '   Returns:    pointer to HW address, protocol address
-    return hw_ent(ent_nr), entry[ent_nr].proto_addr
+    return hw_ent(e), entry[e].proto_addr
 
 
 PUB read_entry_by_proto_addr(proto_addr): e
 ' Find an entry in the ARP table by its protocol address
 '   proto_addr: protocol address (4 bytes)
 '   Returns:    entry number in ARP table, or -1 if not found
-    repeat ent_nr from 0 to (ENTRIES-1)
-        if ( entry_is_used(ent_nr) and (entry[ent_nr].proto_addr == proto_addr) )
-            return ent_nr
+    repeat e from 0 to (ENTRIES-1)
+        if ( entry_is_used(e) and (entry[e].proto_addr == proto_addr) )
+            return e
 
     return -1
 
 
-pub read_entry_ip(ent_nr): p
+pub read_entry_ip(e): p
 ' Read an entry from the cache
 '   Returns:    32-bit IP address
-    return entry[ent_nr].proto_addr
+    return entry[e].proto_addr
 
 
-pub read_entry_mac(ent_nr): h
+pub read_entry_mac(e): h
 ' Read an entry from the cache
 '   Returns:    pointer to HW address
-    return hw_ent(ent_nr)
+    return hw_ent(e)
 
 
 PUB reply()
