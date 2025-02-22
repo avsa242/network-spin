@@ -60,7 +60,6 @@ VAR
 
     long _my_ip
     word _ip_start
-    byte _ip_data[IP_HDR_SZ]                    ' IP header data
 
     ip_header_s     header
 

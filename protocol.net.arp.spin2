@@ -73,12 +73,6 @@ VAR
 
     long p_ndev                                 ' network driver object pointer
 
-    byte _arp_data[ARP_MSG_SZ]                  ' ARP message data
-
-    byte _entry_used[ENTRIES]                   ' ARP table/cache
-    byte _hw_addr[ENTRIES * MACADDR_LEN]        '
-    long _proto_addr[ENTRIES]                   '
-
     arp_entry_s entry[ENTRIES]
     arp_msg_s   message
 
