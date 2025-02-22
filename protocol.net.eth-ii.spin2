@@ -4,7 +4,7 @@
     Description:    Ethernet II protocol
     Author:         Jesse Burt
     Started:        Mar 1, 2022
-    Updated:        Feb 17, 2025
+    Updated:        Feb 22, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -16,10 +16,10 @@
 
 CON
 
-    { limits }
+    ' limits
     ETH_FRM_SZ      = 14
 
-   { ethernet-II structure }
+   ' ethernet-II structure
     struct ethii_t(...
         macaddr_s   dest, ...
         macaddr_s   src, ...
@@ -31,83 +31,97 @@ OBJ
     net=    NETIF_DRIVER                        ' network driver "virtual" instance
 
 
-
 VAR
 
     long p_ndev                                 ' network driver object pointer
 
-    byte _ethii_data[ETH_FRM_SZ]                ' ethernet-II frame data
+    ethii_t message                             ' ethernet-II data
 
 
-pub init(optr)
+PUB init(optr)
 ' Set pointer to network device object
     p_ndev := optr
-    bytefill(@_ethii_data, 0, ETH_FRM_SZ)
+    message~
 
 
-PUB dest_addr(): addr
+PUB dest_addr(): a
 ' Get destination address of ethernet frame
-'   Returns: pointer to 6-byte MAC address
-    return @_ethii_data[ETH_DEST]
+'   Returns:    pointer to 6-byte MAC address
+    return @message.dest
 
 
-PUB ethertype(): eth_t
+PUB ethertype(): t
 ' Get ethertype of ethernet frame
-'   Returns: word
-    eth_t.byte[0] := _ethii_data[ETH_TYPE_L]
-    eth_t.byte[1] := _ethii_data[ETH_TYPE_M]
+'   Returns:    word (little-endian)
+    return swap_word(message.ethertype)
 
 
-PUB new(mac_src, mac_dest, ether_t)
+PUB new(src, dest, ether_t)
 ' Start new ethernet-II frame
-    bytemove(@_ethii_data, mac_dest, MACADDR_LEN)
-    bytemove(@_ethii_data + ETH_SRC, mac_src, MACADDR_LEN)
-    _ethii_data[ETH_TYPE_M] := ether_t.byte[1]
-    _ethii_data[ETH_TYPE_L] := ether_t.byte[0]
+'   src:        source MAC address (pointer)
+'   dest:       destination MAC address (pointer)
+'   ether_t:    ethertype (little-endian)
+    bytemove(@message.dest, dest, MACADDR_LEN)
+    bytemove(@message.src, src, MACADDR_LEN)
+    message.ethertype := swap_word(ether_t)
+
     wr_ethii_frame()
 
 
-PUB reply(): pos
+PUB reply(): p | macaddr_s mac_tmp
 ' Set up/write Ethernet II frame as a reply to last received frame
-    net[p_ndev].start_frame()
-    bytemove(@_ethii_data, @_ethii_data + ETH_SRC, MACADDR_LEN)
-    bytemove(@_ethii_data + ETH_SRC, net[p_ndev].my_mac(), MACADDR_LEN)
+'   Returns:    network device FIFO write pointer after writing ethernet-II data
+    ' swap the dest & source addresses
+    bytemove(@mac_tmp, @message.dest, MACADDR_LEN)
+    bytemove(@message.dest, @message.src, MACADDR_LEN)
+    bytemove(@message.src, @mac_tmp, MACADDR_LEN)
+
+    ' write the ethernet-II data
     wr_ethii_frame()
     return net[p_ndev].fifo_wr_ptr()
 
 
 PUB src_addr(): addr
 ' Get source address of ethernet frame
-'   Returns: pointer to 6-byte MAC address
-    return @_ethii_data[ETH_SRC]
+'   Returns:    pointer to 6-byte MAC address
+    return @message.src
 
 
-PUB set_dest_addr(ptr_addr)
+PUB set_dest_addr(p_addr)
 ' Set destination address of ethernet frame
-    bytemove(@_ethii_data, ptr_addr, MACADDR_LEN)
+'   p_addr:     destination MAC address (pointer)
+    bytemove(@message.dest, p_addr, MACADDR_LEN)
 
 
-PUB set_ethertype(eth_t)
+PUB set_ethertype(t)
 ' Set ethertype of ethernet frame
-    _ethii_data[ETH_TYPE_M] := eth_t.byte[1]
-    _ethii_data[ETH_TYPE_L] := eth_t.byte[0]
+'   t:          ethertype (little-endian word)
+    message.ethertype := swap_word(t)
 
 
-PUB set_src_addr(ptr_addr)
+PUB set_src_addr(p_addr)
 ' Set source address of ethernet frame
-    bytemove(@_ethii_data + ETH_SRC, ptr_addr, MACADDR_LEN)
+'   p_addr:     source MAC address (pointer)
+    bytemove(@message.src, p_addr, MACADDR_LEN)
 
 
-PUB rd_ethii_frame(): ptr
+PUB rd_ethii_frame(): p
 ' Read ethernet-II frame
-'   Returns: number of bytes read
-    net[p_ndev].rdblk_lsbf(@_ethii_data, ETH_FRM_SZ)
+'   Returns: network device FIFO write pointer after reading
+    net[p_ndev].rdblk_lsbf(@message.dest, MACADDR_LEN)
+    net[p_ndev].rdblk_lsbf(@message.src, MACADDR_LEN)
+    net[p_ndev].rdblk_lsbf(@message.ethertype, 2)
+
     return net[p_ndev].fifo_wr_ptr()
 
 
-PUB wr_ethii_frame(): ptr
+PUB wr_ethii_frame(): p
 ' Write ethernet-II frame
-    net[p_ndev].wrblk_lsbf(@_ethii_data, ETH_FRM_SZ)
+'   Returns: network device FIFO write pointer after writing
+    net[p_ndev].wrblk_lsbf(@message.dest, MACADDR_LEN)
+    net[p_ndev].wrblk_lsbf(@message.src, MACADDR_LEN)
+    net[p_ndev].wrblk_lsbf(@message.ethertype, 2)
+
     return net[p_ndev].fifo_wr_ptr()
 
 
