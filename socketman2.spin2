@@ -1,0 +1,203 @@
+#define NETIF_DRIVER "net.eth.enc28j60"
+#pragma exportdef(NETIF_DRIVER)
+#include "core.con.click.spin2"
+
+con
+
+    _clkfreq    = 180_000_000
+    _xtlfreq    = 20_000_000
+    CLICK_BASE  = 0
+
+obj
+
+    net:    NETIF_DRIVER | CS=CS_PIN, SCK=SCK_PIN, MOSI=MOSI_PIN, MISO=MISO_PIN, SPI_FREQ=10_000_000
+    ser:    "com.serial.terminal.ansi" | SER_BAUD=2_000_000
+    ethii:  "protocol.net.eth-ii"
+    ip:     "protocol.net.ip"
+    arp:    "protocol.net.arp"
+    str:    "string"
+
+
+dat
+
+    _mac_local  byte $02, $98, $0c, $06, $01, $c9
+
+
+var
+
+    byte _state
+
+
+con
+
+    #0, SET_ADDR, RUNNING
+
+
+pub main() | etyp, p, t, wanted_ip
+
+    setup()
+    _state := SET_ADDR
+
+    wanted_ip := ip.addr8888to32(10,42,0,216)
+    p := 3
+    t := getct()
+    repeat
+        repeat while (_state == SET_ADDR)
+            if ( p )
+                if ( (getct()-t) > clkfreq )
+                    ser.printf( @"Probing for IP %s\n\r", ...
+                                str.iptostr(wanted_ip) )
+                    arp_query(wanted_ip)
+                    t := getct()
+                    p--
+            else
+                ' there was no answer, so we'll consider this IP available to use
+                ' set in the IP layer and cache it in our ARP table
+                ip.set_my_ip32(wanted_ip)
+                arp.cache_entry(net.my_mac(), ip.my_ip(), arp.PTYPE_IP)
+                _state := RUNNING
+                quit
+            if ( net.pkt_cnt() )
+                if ( get_frame() == ETYP_ARP )
+                    process_arp()
+                    if ( arp.sender_proto_addr() == wanted_ip )
+                        ser.printf( @"\033[1;31merror\033[m: IP %s already in use\n\r", ...
+                                    str.iptostr(arp.sender_proto_addr() ) )
+                        p := 0
+                        repeat
+
+        ser.strln(@"state change")
+        repeat while (_state == RUNNING)
+            if ( net.pkt_cnt() )
+                ser.strln(@"packet")
+                etyp := get_frame()
+                'ser.hexdump_noascii(@ethii._ethii_data, 0, 2, 14, 14)
+                ser.printf(@"ethertype: %04.4x\n\r", etyp)
+                case etyp
+                    ETYP_ARP:
+                        process_arp()
+            if ( ser.getchar_noblock() == "a" )
+                show_arp_table()
+
+
+pub get_frame(): t
+' Get a frame of data from the network device
+'   Returns: ethertype of frame
+    ser.strln(@"get_frame()")
+    t := 0
+    net.get_frame()
+    ethii.rd_ethii_frame()                      ' read in the Ethernet-II header
+'    ser.hexdump_noascii(@ethii._ethii_data, 0, 2, 14, 14)
+
+    return ethii.ethertype()
+
+
+pub process_arp() | e, mf, s
+' Process received ARP messages
+    ser.strln(@"process_arp()")
+    arp.clear()
+    arp.rd_arp_msg()                            ' read message
+
+    ' reference RFC 826, 'Packet Reception'
+    ' compare protocol type and sender protocol address (IP) to entries we've cached
+    mf := false
+    repeat e from 0 to arp.ENTRIES-1
+        if (    (arp.proto_type() == arp.entry[e].proto_t) and ...
+                (arp.sender_proto_addr() == arp.entry[e].proto_addr) )
+            ' the message matches an existing entry; update it with the sender MAC address
+            '   in case it's different
+            bytefill(@arp.entry[e].hw_addr, 0, MACADDR_LEN)
+            bytemove(@arp.entry[e].hw_addr, arp.sender_hw_addr(), MACADDR_LEN)
+'            arp.cache_entry(arp.sender_hw_addr(), arp.sender_proto_addr(), arp.proto_type() )
+            mf := true
+        if ( arp.entry[e].proto_t )
+            ser.strln(@"updating ARP entry")
+            show_arp_entry(e)
+
+    if ( arp.target_proto_addr() == ip.my_ip() )
+        ' are we the target of the message?
+        ser.strln(@"    sent to us")
+        ifnot ( mf )
+            ' this sender hasn't been seen before; store it in the ARP table
+            e := arp.cache_entry(arp.sender_hw_addr(), arp.sender_proto_addr(), arp.proto_type() )
+            if ( e < 0 )
+                return -1                       ' error: ARP table full
+            ser.strln(@"storing new ARP entry")
+            show_arp_entry(e)
+        if ( arp.opcode() == arp.ARP_REQ )
+            ser.strln(@"    request")
+            ' was this a request? send out a reply
+            net.start_frame()
+                ethii.reply()
+                arp.swap_sender_target()
+                arp.set_sender_hw_addr(net.my_mac() )
+                arp.set_opcode(arp.ARP_REPL)
+                arp.wr_arp_msg()
+            net.send_frame()
+
+
+pub arp_announce()
+
+    net.start_frame()
+        ethii.new(net.my_mac(), @_mac_bcast, ETYP_ARP)
+        arp.clear()
+        arp.preset_ethii_ipv4()
+        arp.set_opcode(arp.ARP_REQ)
+        arp.set_sender_hw_addr( net.my_mac() )
+        arp.set_sender_proto_addr( ip.my_ip() )
+        arp.set_target_hw_addr(@_mac_zero)
+        arp.set_target_proto_addr( ip.my_ip() )
+        arp.wr_arp_msg()
+    net.send_frame()
+
+
+pub arp_query(paddr)
+' Query the network for a protocol address
+    net.start_frame()
+        ethii.new(net.my_mac(), @_mac_bcast, ETYP_ARP)
+'        arp.who_has(ip.my_ip(), paddr)
+        arp.probe(net.my_mac(), paddr )
+    net.send_frame()
+
+
+pub setup()
+
+    ser.start()
+    ser.clear()
+    net.start()
+    ser.printf(@"rev: %02.2x\n\r", net.rev_id() )
+
+    ' set up protocols - point them to the network device object
+    ethii.init(@net)
+    ip.init(@net)
+    arp.init(@net)
+'    udp.init(@net)
+'    bootp.init(@net)
+'    icmp.init(@net)
+
+    net.set_pkt_filter(0)
+    net.preset_fdx()
+
+    net.node_address(@_mac_local)
+
+    ser.str(@"waiting for PHY link...")
+    repeat until ( net.phy_link_state() == net.UP )
+    ser.strln(@"link UP")
+
+
+
+pub show_arp_entry(e)
+
+    ser.printf(@"%d\t%04.4x\t%s\t%s\n\r", ...
+                e, ...
+                arp.entry[e].proto_t, ...
+                str.iptostr(arp.entry[e].proto_addr ), ...
+                str.mactostr(@arp.entry[e].hw_addr.mac ) )
+
+pub show_arp_table() | e
+
+    repeat e from 0 to arp.ENTRIES-1
+        show_arp_entry(e)
+
+#include "net-common.spin2h"
+
