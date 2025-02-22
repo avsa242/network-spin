@@ -240,6 +240,14 @@ PUB target_proto_addr(): p
     return message.target_proto_addr
 
 
+PUB preset_ethii_ipv4()
+' Set up the ARP message for Ethernet hardware addresses, and IPv4 protocol addresses
+    set_hw_addr_len(MACADDR_LEN)
+    set_hwtype(HRD_ETH)
+    set_proto_addr_len(IPV4ADDR_LEN)
+    set_proto_type(PTYPE_IP)
+
+
 PUB set_hw_addr_len(len)
 ' Set hardware address length
     message.hw_addr_len := len
@@ -265,9 +273,12 @@ PUB set_proto_type(pro)
     message.proto_t := swap_word(pro)
 
 
-PUB set_sender_hw_addr(p_addr)
+PUB set_sender_hw_addr(p_addr=0)
 ' Set sender hardware address
-    bytemove(@message.sender_hw_addr, p_addr, MACADDR_LEN)
+    if ( p_addr )
+        bytemove(@message.sender_hw_addr, p_addr, MACADDR_LEN)
+    else
+        bytefill(@message.sender_hw_addr, 0, MACADDR_LEN)
 
 
 PUB set_sender_proto_addr(addr)
@@ -275,9 +286,12 @@ PUB set_sender_proto_addr(addr)
     message.sender_proto_addr := addr
 
 
-PUB set_target_hw_addr(p_addr)
+PUB set_target_hw_addr(p_addr=0)
 ' Set target hardware address
-    bytemove(@message.target_hw_addr, p_addr, MACADDR_LEN)
+    if ( p_addr )
+        bytemove(@message.target_hw_addr, p_addr, MACADDR_LEN)
+    else
+        bytefill(@message.target_hw_addr, $00, MACADDR_LEN)
 
 
 PUB set_target_proto_addr(addr)
@@ -299,6 +313,19 @@ PUB rd_arp_msg(): p
     message.target_proto_addr :=    net[p_ndev].rdlong_lsbf()
 
     return net[p_ndev].fifo_wr_ptr()
+
+
+PUB probe(my_hwa, my_paddr)
+' Send an ARP Probe
+'   my_hwa:     this node's hardware address (pointer)
+'   my_paddr:   this node's protocol address
+    preset_ethii_ipv4()
+    set_opcode(ARP_REQ)
+    set_sender_hw_addr(my_hwa)
+    set_sender_proto_addr(0)                    ' ensure no mapping between these two so remote
+    set_target_hw_addr()                        '   hosts don't update their ARP cache
+    set_target_proto_addr(my_paddr)
+    wr_arp_msg()
 
 
 PUB who_has(my_proto_addr, proto_addr)
