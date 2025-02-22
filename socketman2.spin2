@@ -76,6 +76,8 @@ pub main() | etyp, p, t, wanted_ip
                 case etyp
                     ETYP_ARP:
                         process_arp()
+                    ETYP_IPV4:
+                        process_ipv4()
             if ( ser.getchar_noblock() == "a" )
                 show_arp_table()
 
@@ -134,6 +136,27 @@ pub process_arp() | e, mf, s
                 arp.set_opcode(arp.ARP_REPL)
                 arp.wr_arp_msg()
             net.send_frame()
+
+
+pub process_ipv4()
+
+    ser.strln(@"process_ipv4()")
+    ip.rd_ip_header()
+    ser.printf(@"IPv%d\n\r", ip.version() )
+    ser.printf(@"Header length: %d\n\r", ip.hdr_len() )
+    ser.printf(@"DSCP: %02.2x\n\r", ip.dscp() )
+    ser.printf(@"ECN: %02.2b\n\r", ip.ecn() )
+    ser.printf(@"Total length: %d\n\r", ip.dgram_len() )
+    ser.printf(@"Ident: %04.4x\n\r", ip.msg_ident() )
+    ser.printf(@"Flags: %03.3b\n\r", ip.flags() )
+    ser.printf(@"Frag offset: %d\n\r", ip.frag_offset() )
+    ser.printf(@"TTL: %d\n\r", ip.ttl() )
+    ser.printf(@"Layer 4 proto: %02.2x\n\r", ip.layer4_proto() )
+    ser.printf(@"Checksum: %04.4x\n\r", ip.hdr_chk() )
+    ser.printf(@"Src addr: %s\n\r", str.iptostr(ip.src_addr() ) )
+    ser.printf(@"Dest addr: %s\n\r", str.iptostr(ip.dest_addr() ) )
+    ser.newline()
+
 
 
 pub arp_announce()
