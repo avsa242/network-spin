@@ -264,7 +264,7 @@ PUB new(l4_proto, src_ip, dest_ip)
 '   l4_proto: OSI Layer-4 protocol (L4_TCP, L4_UDP, L4_ICMP)
     _ip_start := net[p_ndev].fifo_wr_ptr()
     reset_ipv4()
-    header.l4proto := l4proto
+    header.l4proto := l4_proto
     header.src_addr := src_ip
     header.dest_addr := dest_ip
     wr_ip_header()

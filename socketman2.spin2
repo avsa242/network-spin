@@ -15,6 +15,7 @@ obj
     ethii:  "protocol.net.eth-ii"
     ip:     "protocol.net.ip"
     arp:    "protocol.net.arp"
+    icmp:   "protocol.net.icmp"
     str:    "string"
 
 
@@ -72,7 +73,7 @@ pub main() | etyp, p, t, wanted_ip
                 ser.strln(@"packet")
                 etyp := get_frame()
                 'ser.hexdump_noascii(@ethii._ethii_data, 0, 2, 14, 14)
-                ser.printf(@"ethertype: %04.4x\n\r", etyp)
+                ser.printf(@"ethertype: %04.4x\n\r", ethii.swap_word(etyp) )
                 case etyp
                     ETYP_ARP:
                         process_arp()
@@ -141,26 +142,27 @@ pub process_ipv4()
 
     ser.strln(@"process_ipv4()")
     ip.rd_ip_header()
-{
-    ser.printf(@"IPv%d\n\r", ip.version() )
-    ser.printf(@"Header length: %d\n\r", ip.hdr_len() )
-    ser.printf(@"DSCP: %02.2x\n\r", ip.dscp() )
-    ser.printf(@"ECN: %02.2b\n\r", ip.ecn() )
-    ser.printf(@"Total length: %d\n\r", ip.dgram_len() )
-    ser.printf(@"Ident: %04.4x\n\r", ip.msg_ident() )
-    ser.printf(@"Flags: %03.3b\n\r", ip.flags() )
-    ser.printf(@"Frag offset: %d\n\r", ip.frag_offset() )
-    ser.printf(@"TTL: %d\n\r", ip.ttl() )
-    ser.printf(@"Layer 4 proto: %02.2x\n\r", ip.layer4_proto() )
-    ser.printf(@"Checksum: %04.4x\n\r", ip.hdr_chk() )
-    ser.printf(@"Src addr: %s\n\r", str.iptostr(ip.src_addr() ) )
-    ser.printf(@"Dest addr: %s\n\r", str.iptostr(ip.dest_addr() ) )
-    ser.newline()
-}
-    ifnot ( ip.dest_addr() == ip.swap_long(ip.my_ip()) )
-        if ( ip.is_multicast_addr( ip.dest_addr() ) )
-            ser.strln(@"MULTICAST")
-        else
+
+    if ( ip.dest_addr() == ip.my_ip() )
+        ser.printf(@"IPv%d\n\r", ip.version() )
+        ser.printf(@"Header length: %d\n\r", ip.hdr_len() )
+        ser.printf(@"DSCP: %02.2x\n\r", ip.dscp() )
+        ser.printf(@"ECN: %02.2b\n\r", ip.ecn() )
+        ser.printf(@"Total length: %d\n\r", ip.dgram_len() )
+        ser.printf(@"Ident: %04.4x\n\r", ip.msg_ident() )
+        ser.printf(@"Flags: %03.3b\n\r", ip.flags() )
+        ser.printf(@"Frag offset: %d\n\r", ip.frag_offset() )
+        ser.printf(@"TTL: %d\n\r", ip.ttl() )
+        ser.printf(@"Layer 4 proto: %02.2x\n\r", ip.layer4_proto() )
+        ser.printf(@"Checksum: %04.4x\n\r", ip.hdr_chk() )
+        ser.printf(@"Src addr: %s\n\r", str.iptostr(ip.swap_long(ip.src_addr() ) ) )
+        ser.printf(@"Dest addr: %s\n\r", str.iptostr(ip.swap_long(ip.dest_addr() ) ) )
+        ser.newline()
+
+    ifnot ( ip.dest_addr() == ip.my_ip() )
+'        if ( ip.is_multicast_addr( ip.dest_addr() ) )
+'            ser.strln(@"MULTICAST")
+'        else
             return
 
     case ip.layer4_proto()
@@ -176,6 +178,17 @@ pub process_ipv4()
 pub process_icmp()
 
     ser.strln(@"process_icmp()")
+    icmp.rd_icmp_msg()
+    ser.printf(@"Type: %02.2x\n\r", icmp.msg_type() )
+    ser.printf(@"Code: %02.2x\n\r", icmp.code() )
+    ser.printf(@"Checksum: %04.4x\n\r", icmp.swap_word(icmp.chksum() ) )
+    case icmp.msg_type()
+        icmp.ECHO_REQ:
+            net.start_frame()
+                ethii.reply()
+                ethii.set_src_addr( net.my_mac() )
+                ip.reply()
+                icmp.echo_reply()
 
 
 pub process_tcp()
@@ -207,9 +220,10 @@ pub setup()
     ethii.init(@net)
     ip.init(@net)
     arp.init(@net)
+    icmp.init(@net)
+
 '    udp.init(@net)
 '    bootp.init(@net)
-'    icmp.init(@net)
 
     net.set_pkt_filter(0)
     net.preset_fdx()

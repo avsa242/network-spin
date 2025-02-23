@@ -63,7 +63,7 @@ PUB new(src, dest, ether_t)
 '   ether_t:    ethertype (little-endian)
     bytemove(@message.dest, dest, MACADDR_LEN)
     bytemove(@message.src, src, MACADDR_LEN)
-    message.ethertype := swap_word(ether_t)
+    message.ethertype := ether_t
 
     wr_ethii_frame()
 
@@ -96,7 +96,7 @@ PUB set_dest_addr(p_addr)
 PUB set_ethertype(t)
 ' Set ethertype of ethernet frame
 '   t:          ethertype (little-endian word)
-    message.ethertype := swap_word(t)
+    message.ethertype := t
 
 
 PUB set_src_addr(p_addr)
