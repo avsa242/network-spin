@@ -48,6 +48,12 @@ CON
     { Differentiated Services Codepoints }
     CS6             = $30
 
+    ' flags
+    IP_DONT_FRAGMENT= 1 << 1
+    DF              = IP_DONT_FRAGMENT
+    IP_MORE_FRAGS   = 1 << 0
+    MF              = IP_MORE_FRAGS
+
 
 OBJ
 
@@ -303,11 +309,11 @@ PUB my_ip(): a
 PUB reset_ipv4()
 ' Reset all values to defaults for an IPV4 header
     header~
-    header.version |= $40
-    header.version |= $05
-    header.flags_frag_h |= (%010 << 5)
-    header.ttl := 128
-    header.ident := $0001
+    set_version(4)
+    set_hdr_len(20)
+    set_flags(DF)
+    set_ttl(128)
+    set_msg_ident($0001)
 
 
 PUB rd_ip_header(): ptr
