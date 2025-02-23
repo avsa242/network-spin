@@ -79,7 +79,7 @@ pub addr8888to32(a3, a2, a1, a0): a
 PUB dest_addr(): a
 ' Get destination address of IP datagram
 '   Returns: 4 IPv4 address bytes packed into long
-    return header.dest_addr
+    return swap_long(header.dest_addr)
 
 
 PUB dgram_len(): l
@@ -124,6 +124,15 @@ PUB hdr_len(): l
     return ( (header.version & $0f) * 4)
 
 
+PUB is_multicast_addr(ip): f
+' Flag indicating the given address is a multicast address
+    if ( (ip >= $e0_00_00_00) and (ip <= $ef_ff_ff_ff) )
+    ' ip is between 224.0.0.0 and 239.255.255.255 (inclusive)
+        return true
+    else
+        return false
+
+
 PUB layer4_proto(): p
 ' Get layer 4/transport protocol carried in datagram
 '   Returns: byte
@@ -139,7 +148,7 @@ PUB msg_ident(): i
 PUB src_addr(): a
 ' Get source/originator of IP datagram
 '   Returns: 4 IPv4 address bytes packed into long
-    return header.src_addr
+    return swap_long(header.src_addr)
 
 
 PUB ttl(): t
@@ -281,7 +290,7 @@ PUB update_chksum(len) | ptr_tmp
 
 PUB my_ip(): a
 ' Get this node's IP address
-    return _my_ip
+    return swap_long(_my_ip)
 
 
 PUB reset_ipv4()

@@ -142,6 +142,7 @@ pub process_ipv4()
 
     ser.strln(@"process_ipv4()")
     ip.rd_ip_header()
+{
     ser.printf(@"IPv%d\n\r", ip.version() )
     ser.printf(@"Header length: %d\n\r", ip.hdr_len() )
     ser.printf(@"DSCP: %02.2x\n\r", ip.dscp() )
@@ -156,7 +157,36 @@ pub process_ipv4()
     ser.printf(@"Src addr: %s\n\r", str.iptostr(ip.src_addr() ) )
     ser.printf(@"Dest addr: %s\n\r", str.iptostr(ip.dest_addr() ) )
     ser.newline()
+}
+    ifnot ( ip.dest_addr() == ip.my_ip() )
+        if ( ip.is_multicast_addr( ip.dest_addr() ) )
+            ser.strln(@"MULTICAST")
+        else
+            return
 
+    case ip.layer4_proto()
+        ip.L4_ICMP:
+            process_icmp()
+        ip.L4_TCP:
+            process_tcp()
+        ip.L4_UDP:
+            process_udp()
+        other:
+
+
+pub process_icmp()
+
+    ser.strln(@"process_icmp()")
+
+
+pub process_tcp()
+
+    ser.strln(@"process_tcp()")
+
+
+pub process_udp()
+
+    ser.strln(@"process_udp()")
 
 
 pub arp_announce()
