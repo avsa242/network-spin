@@ -182,13 +182,6 @@ pub process_icmp()
     ser.printf(@"Type: %02.2x\n\r", icmp.msg_type() )
     ser.printf(@"Code: %02.2x\n\r", icmp.code() )
     ser.printf(@"Checksum: %04.4x\n\r", icmp.swap_word(icmp.chksum() ) )
-    case icmp.msg_type()
-        icmp.ECHO_REQ:
-            net.start_frame()
-                ethii.reply()
-                ethii.set_src_addr( net.my_mac() )
-                ip.reply()
-                icmp.echo_reply()
 
 
 pub process_tcp()
