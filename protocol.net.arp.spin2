@@ -100,6 +100,32 @@ PUB cache_entry(hw_addr, proto_addr, ptype): e | m
         return -10                              ' cache full; no entries available
 
 
+PUB cache_update_hw_addr(e, p_hwaddr)
+' Update the hardware address for a cache entry
+'   e:          entry number
+'   p_hwaddr:   hardware address (pointer)
+    bytefill(@entry[e].hw_addr, 0, MACADDR_LEN)
+    bytemove(@entry[e].hw_addr, p_hwaddr, MACADDR_LEN)
+
+
+PUB cached_proto_addr(e): a
+' Get a cached entry's protocol address
+'   Returns:    protocol address (little-endian)
+    return swap_long(entry[e].proto_addr)
+
+
+PUB cached_proto_type(e): t
+' Get a cached entry's protocol address type
+'   Returns:    protocol address type (big-endian)
+    return entry[e].proto_t
+
+
+PUB cached_hw_addr(e): a
+' Get a cached entry's hardware address
+'   Returns:    hardware address (pointer)
+    return @entry[e].hw_addr
+
+
 PUB clear()
 ' Clear the currently buffered ARP message
     message~
@@ -219,7 +245,7 @@ PUB sender_hw_addr(): h
 PUB sender_proto_addr(): p
 ' Get sender protocol address
 '   Returns:    4-byte IPv4 address, packed into long
-    return message.sender_proto_addr
+    return swap_long(message.sender_proto_addr)
 
 
 PUB target_hw_addr(): h
@@ -231,7 +257,7 @@ PUB target_hw_addr(): h
 PUB target_proto_addr(): p
 ' Get target protocol address
 '   Returns:    4-byte IPv4 address, packed into long
-    return message.target_proto_addr
+    return swap_long(message.target_proto_addr)
 
 
 PUB preset_ethii_ipv4()
@@ -277,7 +303,7 @@ PUB set_sender_hw_addr(p_addr=0)
 
 PUB set_sender_proto_addr(addr)
 ' Set sender protocol address
-    message.sender_proto_addr := addr
+    message.sender_proto_addr := swap_long(addr)
 
 
 PUB set_target_hw_addr(p_addr=0)
@@ -290,21 +316,21 @@ PUB set_target_hw_addr(p_addr=0)
 
 PUB set_target_proto_addr(addr)
 ' Set target protocol address
-    message.target_proto_addr := addr
+    message.target_proto_addr := swap_long(addr)
 
 
 PUB rd_arp_msg(): p
 ' Read ARP message
 '   Returns:    network driver current FIFO write pointer
-    message.hw_t :=                 net[p_ndev].rdword_lsbf()
-    message.proto_t :=              net[p_ndev].rdword_lsbf()
+    message.hw_t :=                 net[p_ndev].rd_word()
+    message.proto_t :=              net[p_ndev].rd_word()
     message.hw_addr_len :=          net[p_ndev].rd_byte()
     message.proto_addr_len :=       net[p_ndev].rd_byte()
-    message.opcode :=               net[p_ndev].rdword_lsbf()
-    net[p_ndev].rdblk_lsbf          (@message.sender_hw_addr, MACADDR_LEN)
-    message.sender_proto_addr :=    net[p_ndev].rdlong_lsbf()
-    net[p_ndev].rdblk_lsbf          (@message.target_hw_addr, MACADDR_LEN)
-    message.target_proto_addr :=    net[p_ndev].rdlong_lsbf()
+    message.opcode :=               net[p_ndev].rd_word()
+    net[p_ndev].rd_block            (@message.sender_hw_addr, MACADDR_LEN)
+    message.sender_proto_addr :=    net[p_ndev].rd_long()
+    net[p_ndev].rd_block            (@message.target_hw_addr, MACADDR_LEN)
+    message.target_proto_addr :=    net[p_ndev].rd_long()
 
     return net[p_ndev].fifo_wr_ptr()
 
@@ -341,17 +367,17 @@ PUB who_has(my_proto_addr, proto_addr)
     wr_arp_msg()
 
 
-PUB wr_arp_msg(): ptr
+PUB wr_arp_msg(): p
 ' Write ARP message
-    net[p_ndev].wrword_lsbf(message.hw_t)
-    net[p_ndev].wrword_lsbf(message.proto_t)
+    net[p_ndev].wr_word(message.hw_t)
+    net[p_ndev].wr_word(message.proto_t)
     net[p_ndev].wr_byte(message.hw_addr_len)
     net[p_ndev].wr_byte(message.proto_addr_len)
-    net[p_ndev].wrword_lsbf(message.opcode)
-    net[p_ndev].wrblk_lsbf(@message.sender_hw_addr, MACADDR_LEN)
-    net[p_ndev].wrlong_lsbf(message.sender_proto_addr)
-    net[p_ndev].wrblk_lsbf(@message.target_hw_addr, MACADDR_LEN)
-    net[p_ndev].wrlong_lsbf(message.target_proto_addr)
+    net[p_ndev].wr_word(message.opcode)
+    net[p_ndev].wr_block(@message.sender_hw_addr, MACADDR_LEN)
+    net[p_ndev].wr_long(message.sender_proto_addr)
+    net[p_ndev].wr_block(@message.target_hw_addr, MACADDR_LEN)
+    net[p_ndev].wr_long(message.target_proto_addr)
 
     return net[p_ndev].fifo_wr_ptr()
 

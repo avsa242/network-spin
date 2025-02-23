@@ -38,7 +38,7 @@ pub main() | etyp, p, t, wanted_ip
     setup()
     _state := SET_ADDR
 
-    wanted_ip := ip.addr8888to32(10,42,0,216)
+    wanted_ip := ip.addr8888to32l(10,42,0,216)
     p := 3
     t := getct()
     repeat
@@ -46,7 +46,7 @@ pub main() | etyp, p, t, wanted_ip
             if ( p )
                 if ( (getct()-t) > clkfreq )
                     ser.printf( @"Probing for IP %s\n\r", ...
-                                str.iptostr(wanted_ip) )
+                                str.iptostr(ip.swap_long(wanted_ip) ) )
                     arp_query(wanted_ip)
                     t := getct()
                     p--
@@ -62,7 +62,7 @@ pub main() | etyp, p, t, wanted_ip
                     process_arp()
                     if ( arp.sender_proto_addr() == wanted_ip )
                         ser.printf( @"\033[1;31merror\033[m: IP %s already in use\n\r", ...
-                                    str.iptostr(arp.sender_proto_addr() ) )
+                                    str.iptostr(arp.swap_long(arp.sender_proto_addr() ) ) )
                         p := 0
                         repeat
 
@@ -104,15 +104,13 @@ pub process_arp() | e, mf, s
     ' compare protocol type and sender protocol address (IP) to entries we've cached
     mf := false
     repeat e from 0 to arp.ENTRIES-1
-        if (    (arp.proto_type() == arp.entry[e].proto_t) and ...
-                (arp.sender_proto_addr() == arp.entry[e].proto_addr) )
+        if (    (arp.proto_type() == arp.cached_proto_type(e)) and ...
+                (arp.sender_proto_addr() == arp.cached_proto_addr(e)) )
             ' the message matches an existing entry; update it with the sender MAC address
             '   in case it's different
-            bytefill(@arp.entry[e].hw_addr, 0, MACADDR_LEN)
-            bytemove(@arp.entry[e].hw_addr, arp.sender_hw_addr(), MACADDR_LEN)
-'            arp.cache_entry(arp.sender_hw_addr(), arp.sender_proto_addr(), arp.proto_type() )
+            arp.cache_update_hw_addr( e, arp.sender_hw_addr() )
             mf := true
-        if ( arp.entry[e].proto_t )
+        if ( arp.entry_is_used(e) )
             ser.strln(@"updating ARP entry")
             show_arp_entry(e)
 
@@ -131,8 +129,9 @@ pub process_arp() | e, mf, s
             ' was this a request? send out a reply
             net.start_frame()
                 ethii.reply()
+                ethii.set_src_addr( net.my_mac() )
                 arp.swap_sender_target()
-                arp.set_sender_hw_addr(net.my_mac() )
+                arp.set_sender_hw_addr( net.my_mac() )
                 arp.set_opcode(arp.ARP_REPL)
                 arp.wr_arp_msg()
             net.send_frame()
@@ -158,7 +157,7 @@ pub process_ipv4()
     ser.printf(@"Dest addr: %s\n\r", str.iptostr(ip.dest_addr() ) )
     ser.newline()
 }
-    ifnot ( ip.dest_addr() == ip.my_ip() )
+    ifnot ( ip.dest_addr() == ip.swap_long(ip.my_ip()) )
         if ( ip.is_multicast_addr( ip.dest_addr() ) )
             ser.strln(@"MULTICAST")
         else
@@ -189,26 +188,10 @@ pub process_udp()
     ser.strln(@"process_udp()")
 
 
-pub arp_announce()
-
-    net.start_frame()
-        ethii.new(net.my_mac(), @_mac_bcast, ETYP_ARP)
-        arp.clear()
-        arp.preset_ethii_ipv4()
-        arp.set_opcode(arp.ARP_REQ)
-        arp.set_sender_hw_addr( net.my_mac() )
-        arp.set_sender_proto_addr( ip.my_ip() )
-        arp.set_target_hw_addr(@_mac_zero)
-        arp.set_target_proto_addr( ip.my_ip() )
-        arp.wr_arp_msg()
-    net.send_frame()
-
-
 pub arp_query(paddr)
 ' Query the network for a protocol address
     net.start_frame()
         ethii.new(net.my_mac(), @_mac_bcast, ETYP_ARP)
-'        arp.who_has(ip.my_ip(), paddr)
         arp.probe(net.my_mac(), paddr )
     net.send_frame()
 
@@ -243,9 +226,10 @@ pub show_arp_entry(e)
 
     ser.printf(@"%d\t%04.4x\t%s\t%s\n\r", ...
                 e, ...
-                arp.entry[e].proto_t, ...
-                str.iptostr(arp.entry[e].proto_addr ), ...
-                str.mactostr(@arp.entry[e].hw_addr.mac ) )
+                arp.cached_proto_type(e), ...
+                str.iptostr( arp.cached_proto_addr(e) ), ...
+                str.mactostr( arp.cached_hw_addr(e) ) )
+
 
 pub show_arp_table() | e
 

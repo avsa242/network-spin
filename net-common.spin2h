@@ -23,8 +23,8 @@ CON
 
 
     { ethertypes }
-    ETYP_IPV4           = $0800
-    ETYP_ARP            = $0806
+    ETYP_IPV4           = $0008 ' $0800
+    ETYP_ARP            = $0608 ' $0806
 
     BCAST_IP            = $FF_FF_FF_FF          ' broadcast IP
 

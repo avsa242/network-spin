@@ -4,7 +4,7 @@
     Description:    Internet Protocol
     Author:         Jesse Burt
     Started:        Feb 7, 2022
-    Updated:        Feb 22, 2025
+    Updated:        Feb 23, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -69,11 +69,18 @@ pub init(optr)
     p_ndev := optr
 
 
-pub addr8888to32(a3, a2, a1, a0): a
+pub addr8888to32b(a3, a2, a1, a0): a
 ' Convert four-octet IP address into long
 '   a3..a0:     IP address octets (MSB..LSB)
-'   Returns:    32-bit IP address in network byte order (MSByte-first)
+'   Returns:    32-bit IP address (big-endian/network-byte-order)
     return (a0 << 24) | (a1 << 16) | (a2 << 8) | a3
+
+
+pub addr8888to32l(a3, a2, a1, a0): a
+' Convert four-octet IP address into long
+'   a3..a0:     IP address octets (MSB..LSB)
+'   Returns:    32-bit IP address (little-endian)
+    return (a3 << 24) | (a2 << 16) | (a1 << 8) | a0
 
 
 PUB dest_addr(): a
@@ -227,9 +234,9 @@ PUB set_my_ip(o3, o2, o1, o0)
 
 
 PUB set_my_ip32(a)
-' Set this node's IP address, as a 32-bit number
+' Set this node's IP address, as a 32-bit number (little-endian/host/Propeller-native byte order)
 '   addr: IP address in 32bit form, MSB to LSB (e.g. for 192.168.1.10, $c0_a8_01_0a)
-    _my_ip := a
+    _my_ip := swap_long(a)                      ' convert IP address to network byte order
 
 
 PUB set_src_addr(a)

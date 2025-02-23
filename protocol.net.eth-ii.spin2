@@ -53,7 +53,7 @@ PUB dest_addr(): a
 PUB ethertype(): t
 ' Get ethertype of ethernet frame
 '   Returns:    word (little-endian)
-    return swap_word(message.ethertype)
+    return message.ethertype
 
 
 PUB new(src, dest, ether_t)
@@ -108,9 +108,9 @@ PUB set_src_addr(p_addr)
 PUB rd_ethii_frame(): p
 ' Read ethernet-II frame
 '   Returns: network device FIFO write pointer after reading
-    net[p_ndev].rdblk_lsbf(@message.dest, MACADDR_LEN)
-    net[p_ndev].rdblk_lsbf(@message.src, MACADDR_LEN)
-    net[p_ndev].rdblk_lsbf(@message.ethertype, 2)
+    net[p_ndev].rd_block(@message.dest, MACADDR_LEN)
+    net[p_ndev].rd_block(@message.src, MACADDR_LEN)
+    net[p_ndev].rd_block(@message.ethertype, 2)
 
     return net[p_ndev].fifo_wr_ptr()
 
@@ -118,9 +118,9 @@ PUB rd_ethii_frame(): p
 PUB wr_ethii_frame(): p
 ' Write ethernet-II frame
 '   Returns: network device FIFO write pointer after writing
-    net[p_ndev].wrblk_lsbf(@message.dest, MACADDR_LEN)
-    net[p_ndev].wrblk_lsbf(@message.src, MACADDR_LEN)
-    net[p_ndev].wrblk_lsbf(@message.ethertype, 2)
+    net[p_ndev].wr_block(@message.dest, MACADDR_LEN)
+    net[p_ndev].wr_block(@message.src, MACADDR_LEN)
+    net[p_ndev].wr_block(@message.ethertype, 2)
 
     return net[p_ndev].fifo_wr_ptr()
 
