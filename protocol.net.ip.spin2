@@ -58,6 +58,7 @@ CON
 OBJ
 
     net=    NETIF_DRIVER                        ' network driver "virtual" instance
+    crc:    "math.crc"
 
 
 VAR
@@ -283,22 +284,23 @@ PUB reply(): p
     return net[p_ndev].fifo_wr_ptr()
 
 
-PUB update_chksum(len) | ptr_tmp
+PUB update_chksum(len): ck | p_tmp
 ' Update IP header with checksum
 '   len: length of datagram (layer-4 and datagram only; don't include the 20-byte IP header)
-    ptr_tmp := net[p_ndev].fifo_wr_ptr()          ' save the current pointer
+    p_tmp := net[p_ndev].fifo_wr_ptr()          ' save the current pointer
 
-    { update IP header with specified length and calculate checksum;
-        NOTE: the checksum should encompass the IP header _only_, _not_ the layer-4 protocol
-        and the payload, if they exist }
+    ' update IP header with specified length and calculate checksum;
+    '   NOTE: the checksum should encompass the IP header _only_, _not_ the layer-4 protocol
+    '   and the payload, if they exist
     set_dgram_len(len)
-    net[p_ndev].fifo_set_wr_ptr(start_pos() + IP_TLEN)
-    net[p_ndev].wrblk_lsbf(@header.dgram_len, 2)
-    net[p_ndev].inet_checksum_wr(   net[p_ndev].TXSTART+1+IP_ABS_ST, ...
-                                    IP_HDR_SZ, ...
-                                    net[p_ndev].TXSTART+1+IP_ABS_ST+IP_CKSUM )
+    net[p_ndev].fifo_set_wr_ptr(_p_dlen)        ' set pointer to datagram length field
+    net[p_ndev].wr_word(header.dgram_len)
 
-    net[p_ndev].fifo_set_wr_ptr(ptr_tmp)          ' restore pointer pos
+    ck := crc.inet_chksum(@header, hdr_len() )  ' update the IP header checksum
+    net[p_ndev].fifo_set_wr_ptr(_p_chk)         ' set pointer to checksum field
+    net[p_ndev].wr_word( swap_word(ck) )        '   and write it
+
+    net[p_ndev].fifo_set_wr_ptr(p_tmp)          ' restore pointer pos
 
 
 PUB my_ip(): a
@@ -316,10 +318,10 @@ PUB reset_ipv4()
     set_msg_ident($0001)
 
 
-PUB rd_ip_header(): ptr
+PUB rd_ip_header(): p
 ' Read IP header from buffer
     _ip_start := net[p_ndev].fifo_rd_ptr()
-    net[p_ndev].rdblk_lsbf(@header.version, 1)
+{    net[p_ndev].rdblk_lsbf(@header.version, 1)
     net[p_ndev].rdblk_lsbf(@header.dscp_ecn, 1)
     net[p_ndev].rdblk_lsbf(@header.dgram_len, 2)
     net[p_ndev].rdblk_lsbf(@header.ident, 2)
@@ -330,24 +332,28 @@ PUB rd_ip_header(): ptr
     net[p_ndev].rdblk_lsbf(@header.checksum, 2)
     net[p_ndev].rdblk_lsbf(@header.src_addr, 4)
     net[p_ndev].rdblk_lsbf(@header.dest_addr, 4)
-
+}
+    net[p_ndev].rd_block(@header, IP_HDR_SZ)
     return net[p_ndev].fifo_wr_ptr()
 
 
-PUB wr_ip_header(): ptr
+VAR long _p_chk, _p_dlen
+PUB wr_ip_header(): p
 ' Write IP header to buffer
 '   Returns: length of assembled header, in bytes
-    net[p_ndev].wrblk_lsbf(@header.version, 1)
-    net[p_ndev].wrblk_lsbf(@header.dscp_ecn, 1)
-    net[p_ndev].wrblk_lsbf(@header.dgram_len, 2)
-    net[p_ndev].wrblk_lsbf(@header.ident, 2)
-    net[p_ndev].wrblk_lsbf(@header.flags_frag_h, 1)
-    net[p_ndev].wrblk_lsbf(@header.frag_l, 1)
-    net[p_ndev].wrblk_lsbf(@header.ttl, 1)
-    net[p_ndev].wrblk_lsbf(@header.l4proto, 1)
-    net[p_ndev].wrblk_lsbf(@header.checksum, 2)
-    net[p_ndev].wrblk_lsbf(@header.src_addr, 4)
-    net[p_ndev].wrblk_lsbf(@header.dest_addr, 4)
+    net[p_ndev].wr_block(@header.version, 1)
+    net[p_ndev].wr_block(@header.dscp_ecn, 1)
+    _p_dlen := net[p_ndev].fifo_wr_ptr()
+    net[p_ndev].wr_block(@header.dgram_len, 2)
+    net[p_ndev].wr_block(@header.ident, 2)
+    net[p_ndev].wr_block(@header.flags_frag_h, 1)
+    net[p_ndev].wr_block(@header.frag_l, 1)
+    net[p_ndev].wr_block(@header.ttl, 1)
+    net[p_ndev].wr_block(@header.l4proto, 1)
+    _p_chk := net[p_ndev].fifo_wr_ptr()
+    net[p_ndev].wr_block(@header.checksum, 2)
+    net[p_ndev].wr_block(@header.src_addr, 4)
+    net[p_ndev].wr_block(@header.dest_addr, 4)
 
     return net[p_ndev].fifo_wr_ptr()
 
