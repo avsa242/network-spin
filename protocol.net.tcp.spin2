@@ -4,7 +4,7 @@
     Description:    Transmission Control Protocol
     Author:         Jesse Burt
     Started:        Apr 5, 2022
-    Updated:        Feb 17, 2025
+    Updated:        Feb 25, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -29,6 +29,13 @@ CON
         word    window, ...
         word    checksum, ...
         word    urg_ptr)
+
+    pseudo_hdr_s(...
+        long    src_ip, ...
+        long    dest_ip, ...
+        word    l4_proto, ...                   ' actually just a byte, but the LSB is 'reserved' and should be 0
+        word    len)
+
 
     { TCP flags/control bits }
     CWR_BIT         = 7
@@ -73,6 +80,7 @@ VAR
     word _tcp_start, _tcp_msglen
 
     byte _tcp_data[TCP_HDR_SZ]                  ' TCP header data
+    tcp_msg_s   header
 
 
 pub init(optr)
@@ -80,19 +88,25 @@ pub init(optr)
     p_ndev := optr
 
 
-PUB pseudo_header_cksum(ip_src, ip_dest, len=0): ck | phdr[12/4]
+PUB pseudo_header_cksum(src, dest, len=0): ck | pseudo_hdr_s phdr
 ' Calculate TCP pseudo-header checksum
 '   ip_src: IPv4 source address
 '   ip_dest: IPv4 destination address
 '   len: TCP payload length (the TCP header length is already included)
-    bytefill(@phdr, 0, 12)
-    phdr[0] := ip_src                           ' 0..3
-    phdr[1] := ip_dest                          ' 4..7
+'    bytefill(@phdr, 0, 12)
+'    phdr[0] := ip_src                           ' 0..3
+    'phdr[1] := ip_dest                          ' 4..7
                                                 ' 8 = reserved
-    phdr.word[4] := (L4_TCP << 8) | 0
-    phdr.word[5] := (header_len() + len) << 8   ' length of TCP header plus the payload length
+    'phdr.word[4] := (L4_TCP << 8) | 0
+    'phdr.word[5] := (header_len() + len) << 8   ' length of TCP header plus the payload length
 
-    return crc.inet_chksum(@phdr, 12, $00)
+    phdr~
+    phdr.src_ip :=      src
+    phdr.dest_ip :=     dest
+    phdr.l4_proto :=    (L4_TCP << 8) | 0
+    phdr.len :=         len
+
+    return crc.inet_chksum(@phdr, 12)
 
 
 PUB reply(ack_inc)
@@ -106,40 +120,45 @@ PUB reply(ack_inc)
 
 PUB reset()
 ' Reset/initialize all stored data to 0
-    bytefill(@_tcp_data, 0, TCP_HDR_SZ)
+    'bytefill(@_tcp_data, 0, TCP_HDR_SZ)
+    header~
 
 
-PUB set_ack_nr(ack_nr)
+PUB set_ack_nr(n)
 ' Set TCP acknowledgement number
-    _tcp_data[TCPH_ACKNR] := ack_nr.byte[3]
-    _tcp_data[TCPH_ACKNR+1] := ack_nr.byte[2]
-    _tcp_data[TCPH_ACKNR+2] := ack_nr.byte[1]
-    _tcp_data[TCPH_ACKNR+3] := ack_nr.byte[0]
+'    _tcp_data[TCPH_ACKNR] := ack_nr.byte[3]
+    '_tcp_data[TCPH_ACKNR+1] := ack_nr.byte[2]
+    '_tcp_data[TCPH_ACKNR+2] := ack_nr.byte[1]
+    '_tcp_data[TCPH_ACKNR+3] := ack_nr.byte[0]
+    header.ack_nr := swap_long(n)
 
 
 PUB set_checksum(ck)
 ' Set checksum
-    _tcp_data[TCPH_CKSUM] := ck.byte[1]
-    _tcp_data[TCPH_CKSUM+1] := ck.byte[0]
+'    _tcp_data[TCPH_CKSUM] := ck.byte[1]
+    '_tcp_data[TCPH_CKSUM+1] := ck.byte[0]
+    header.checksum := swap_word(ck)
 
 
 PUB set_dest_port(p)
 ' Set destination port field
-    _tcp_data[TCPH_DESTP] := p.byte[1]
-    _tcp_data[TCPH_DESTP+1] := p.byte[0]
+    '_tcp_data[TCPH_DESTP] := p.byte[1]
+    '_tcp_data[TCPH_DESTP+1] := p.byte[0]
+    header.dest_port := swap_word(p)
 
 
-PUB set_flags(flags)
+PUB set_flags(f)
 ' Set TCP header flags
-    _tcp_data[TCPH_FLAGS] := (flags & $ff)
+    '_tcp_data[TCPH_FLAGS] := (f & $ff)
+    header.flags := (f & $ff)
 
-
-PUB set_header_len(length)
+PUB set_header_len(l)
 ' Set TCP header length, in bytes
-    _tcp_data[TCPH_HDRLEN] := ((length / 4) << 4)
+    '_tcp_data[TCPH_HDRLEN] := ((length / 4) << 4)
+    header.header_len := ( (l / 4) << 4)
 
 
-PUB set_mss(sz)
+PUB set_mss(sz) 'xxx review
 ' Set TCP maximum segment size
     '_tcp_mss := sz
 
@@ -150,18 +169,20 @@ PUB set_sack_perm(sp)
     '_tcp_sack_perm := (sp <> 0)
 
 
-PUB set_seq_nr(seq_nr)
+PUB set_seq_nr(n)
 ' Set TCP sequence number
-    _tcp_data[TCPH_SEQNR] := seq_nr.byte[3]
-    _tcp_data[TCPH_SEQNR+1] := seq_nr.byte[2]
-    _tcp_data[TCPH_SEQNR+2] := seq_nr.byte[1]
-    _tcp_data[TCPH_SEQNR+3] := seq_nr.byte[0]
+'    _tcp_data[TCPH_SEQNR] := seq_nr.byte[3]
+'    _tcp_data[TCPH_SEQNR+1] := seq_nr.byte[2]
+'    _tcp_data[TCPH_SEQNR+2] := seq_nr.byte[1]
+'    _tcp_data[TCPH_SEQNR+3] := seq_nr.byte[0]
+    header.seq_nr := swap_long(n)
 
 
 PUB set_source_port(p)
 ' Set source port field
-    _tcp_data[TCPH_SRCP] := p.byte[1]
-    _tcp_data[TCPH_SRCP+1] := p.byte[0]
+'    _tcp_data[TCPH_SRCP] := p.byte[1]
+'    _tcp_data[TCPH_SRCP+1] := p.byte[0]
+    header.src_port := swap_word(p)
 
 
 PUB set_timest(tm)
@@ -176,132 +197,143 @@ PUB set_timest_echo(tm)
 
 PUB set_urgent_ptr(uptr)
 ' Set TCP urgent pointer
-    _tcp_data[TCPH_URGPTR] := uptr.byte[1]
-    _tcp_data[TCPH_URGPTR+1] := uptr.byte[0]
+'    _tcp_data[TCPH_URGPTR] := uptr.byte[1]
+'    _tcp_data[TCPH_URGPTR+1] := uptr.byte[0]
+    header.urg_ptr := swap_word(uptr)
 
 
-PUB set_window(win)
+PUB set_window(w)
 ' Set TCP window
-    _tcp_data[TCPH_WIN] := win.byte[1]
-    _tcp_data[TCPH_WIN+1] := win.byte[0]
+    '_tcp_data[TCPH_WIN] := win.byte[1]
+    '_tcp_data[TCPH_WIN+1] := win.byte[0]
+    header.window := swap_word(w)
 
 
-PUB inc_ack_nr(amt)
+PUB inc_ack_nr(amt) 'xxx review
 ' Increment acknowledgement number by amt
     '_ack_nr += amt
 
 
-PUB inc_seq_nr(amt)
+PUB inc_seq_nr(amt) 'xxx review
 ' Increment sequence number by amt
     '_seq_nr += amt
 
 
-PUB ack_nr(): ack_nr
+PUB ack_nr(): n
 ' Get TCP acknowledgement number
-    ack_nr.byte[3] := _tcp_data[TCPH_ACKNR]
-    ack_nr.byte[2] := _tcp_data[TCPH_ACKNR+1]
-    ack_nr.byte[1] := _tcp_data[TCPH_ACKNR+2]
-    ack_nr.byte[0] := _tcp_data[TCPH_ACKNR+3]
+'    ack_nr.byte[3] := _tcp_data[TCPH_ACKNR]
+    'ack_nr.byte[2] := _tcp_data[TCPH_ACKNR+1]
+    'ack_nr.byte[1] := _tcp_data[TCPH_ACKNR+2]
+    'ack_nr.byte[0] := _tcp_data[TCPH_ACKNR+3]
+    return header.ack_nr
 
 
 PUB chksum(): ck
 ' Get TCP header checksum
-    ck.byte[1] := _tcp_data[TCPH_CKSUM]
-    ck.byte[0] := _tcp_data[TCPH_CKSUM+1]
+'    ck.byte[1] := _tcp_data[TCPH_CKSUM]
+'    ck.byte[0] := _tcp_data[TCPH_CKSUM+1]
+    return header.checksum
 
 
 PUB dest_port(): p
 ' Get destination port field
-    p.byte[1] := _tcp_data[TCPH_DESTP]
-    p.byte[0] := _tcp_data[TCPH_DESTP+1]
+'    p.byte[1] := _tcp_data[TCPH_DESTP]
+'    p.byte[0] := _tcp_data[TCPH_DESTP+1]
+    return header.dest_port
 
 
-PUB flags(): flags
+PUB flags(): f
 ' Get TCP header flags
-    flags := _tcp_data[TCPH_FLAGS]
+    'flags := _tcp_data[TCPH_FLAGS]
+    return header.flags
 
 
 PUB header_len(): len
 ' Get current header length, in bytes
-    return (_tcp_data[TCPH_HDRLEN] >> 4) * 4
+'    return (_tcp_data[TCPH_HDRLEN] >> 4) * 4
+    return (header.header_len >> 4) * 4
 
 
-PUB msg_len(): len
+PUB msg_len(): len  'xxx review
 ' Get current message length
     'return _tcp_msglen
 
 
-PUB max_seg_sz(): sz
+PUB max_seg_sz(): sz    'xxx review
 ' Get current maximum segment size (TCP option)
     'return _tcp_mss
 
 
-PUB sack_perm(): sp
+PUB sack_perm(): sp 'xxx review
 ' Get selective-acknowledge permitted flag (TCP option)
     { equal to the length in a SACK_PERMIT KLV option? }
     'return (_tcp_sack_perm == 2)
 
 
-PUB seq_nr(): seq_nr
+PUB seq_nr(): n
 ' Get TCP sequence number
-    seq_nr.byte[3] := _tcp_data[TCPH_SEQNR]
-    seq_nr.byte[2] := _tcp_data[TCPH_SEQNR+1]
-    seq_nr.byte[1] := _tcp_data[TCPH_SEQNR+2]
-    seq_nr.byte[0] := _tcp_data[TCPH_SEQNR+3]
+'    seq_nr.byte[3] := _tcp_data[TCPH_SEQNR]
+    'seq_nr.byte[2] := _tcp_data[TCPH_SEQNR+1]
+    'seq_nr.byte[1] := _tcp_data[TCPH_SEQNR+2]
+    'seq_nr.byte[0] := _tcp_data[TCPH_SEQNR+3]
+    return swap_long(header.seq_nr)
 
 
 PUB source_port(): p
 ' Get source port field
-    p.byte[1] := _tcp_data[TCPH_SRCP]
-    p.byte[0] := _tcp_data[TCPH_SRCP+1]
+    'p.byte[1] := _tcp_data[TCPH_SRCP]
+    'p.byte[0] := _tcp_data[TCPH_SRCP+1]
+    return swap_word(header.src_port)
 
-
-PUB swap_ports()
+PUB swap_ports()    'xxx review
 ' swap_ source and destination ports, for use when sending a response
     '_tcp_port ror= 16
 
 
-PUB swap_seq_nrs() | tmp
+PUB swap_seq_nrs() | tmp    'xxx review
 ' swap_ sequence and acknowledgement numbers, for use when sending a response
     'tmp := _seq_nr
     '_seq_nr := _ack_nr
     '_ack_nr := tmp
 
 
-PUB timest(): tm
+PUB timest(): tm    'xxx review
 ' Get timestamp (TCP option)
     'return _tmstamps[0]
 
 
-PUB timest_echo(): tm
+PUB timest_echo(): tm   'xxx review
 ' Get timestamp echo (TCP option)
     'return _tmstamps[1]
 
 
-PUB timest_ptr(): ptr
+PUB timest_ptr(): ptr   'xxx review
 ' Get pointer to timestamp data
     'return @_tmstamps
 
 
-PUB urgent_ptr(): uptr
+PUB urgent_ptr(): p
 ' Get TCP urgent pointer
-    uptr.byte[1] := _tcp_data[TCPH_URGPTR]
-    uptr.byte[0] := _tcp_data[TCPH_URGPTR+1]
+    'uptr.byte[1] := _tcp_data[TCPH_URGPTR]
+    'uptr.byte[0] := _tcp_data[TCPH_URGPTR+1]
+    return header.urg_ptr
 
 PUB window(): win
 ' Get TCP header window
-    win.byte[1] := _tcp_data[TCPH_WIN]
-    win.byte[0] := _tcp_data[TCPH_WIN+1]
+    'win.byte[1] := _tcp_data[TCPH_WIN]
+    'win.byte[0] := _tcp_data[TCPH_WIN+1]
+    return header.window
 
 
-PUB rd_tcp_header(): rl
+PUB rd_tcp_header(): l  'xxx review; other protocols return the FIFO position, this returns header length
 ' Read/disassemble TCP header
 '   Returns: length of read header, in bytes
-    net[p_ndev].rdblk_lsbf(@_tcp_data, TCP_HDR_SZ)
+'    net[p_ndev].rdblk_lsbf(@_tcp_data, TCP_HDR_SZ)
+    net[p_ndev].rd_block(@header, TCP_HDR_SZ)
     return TCP_HDR_SZ
 
 
-PUB rd_tcp_opts(): ptr | kind, st, opts_len
+PUB rd_tcp_opts(): p | kind, st, opts_len   'xxx can a KLV struct be created?
 ' Read TCP options
     st := net[p_ndev].fifo_wr_ptr()
 
@@ -330,11 +362,12 @@ PUB rd_tcp_opts(): ptr | kind, st, opts_len
     return net[p_ndev].fifo_wr_ptr()
 
 
-PUB wr_tcp_header(): ptr | st
+PUB wr_tcp_header(): p | st 'xxx review; other protocols return FIFO position after writing; this returns TCP msg len
 ' Write/assemble TCP header
 '   Returns: length of assembled header, in bytes
     _tcp_start := net[p_ndev].fifo_wr_ptr()
-    net[p_ndev].wrblk_lsbf(@_tcp_data, TCP_HDR_SZ)
+    'net[p_ndev].wrblk_lsbf(@_tcp_data, TCP_HDR_SZ)
+    net[p_ndev].wr_block(@header, TCP_HDR_SZ)
     _tcp_msglen := net[p_ndev].fifo_wr_ptr()-_tcp_start
     return _tcp_msglen
 

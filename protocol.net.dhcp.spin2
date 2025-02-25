@@ -1,0 +1,316 @@
+{
+----------------------------------------------------------------------------------------------------
+    Filename:       protocol.net.dhcp.spin2
+    Description:    Dynamic Host Configuration Protocol
+    Author:         Jesse Burt
+    Started:        Feb 25, 2025
+    Updated:        Feb 25, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
+}
+{Spin2_v46}
+
+#ifndef NET_COMMON
+#include "net-common.spin2h"
+#endif
+
+CON
+
+    DHCP_MAGIC_COOKIE   = $63_53_82_63          ' BE version of $63_82_53_63
+
+    { DHCP options }
+    HOSTNAME            = $0C
+    SUBNET_MASK         = $01   ' resp
+    ROUTER              = $03   ' resp
+    DNS                 = $06   ' resp
+    DEF_IP_TTL          = $17
+    BCAST_ADDR          = $1C   ' resp
+    REQD_IPADDR         = $32
+    IP_LEASE_TM         = $33   ' resp
+    MSG_TYPE            = $35
+    DHCP_SRV_ID         = $36   ' resp
+    PARAM_REQLST        = $37
+    MAX_MSGSZ           = $39
+    RENEWAL_TM          = $3A   ' resp
+    REBIND_TM           = $3B   ' resp
+    CLIENT_ID           = $3D
+    OPT_END             = $FF
+
+    { DHCP Message types }
+    DHCPDISCOVER        = $01
+    DHCPOFFER           = $02
+    DHCPREQUEST         = $03
+    DHCPDECLINE         = $04
+    DHCPACK             = $05
+    DHCPNAK             = $06
+    DHCPRELEASE         = $07
+    DHCPINFORM          = $08
+
+
+VAR
+
+    long p_ndev
+
+    long _lease_tm
+    long _renewal_tm
+    long _rebind_tm
+
+    long _srv_ip
+    long _subnet_mask
+    long _bcast_ip
+    long _router_ip
+    long _dns_ip
+
+    word _max_msg_len
+    word _msg_len
+
+    byte _client_hw_t
+
+    byte _opts_len
+    byte _param_req[5]
+    byte _msg_t
+
+
+OBJ
+
+    net=    NETIF_DRIVER                        ' network driver "virtual" instance
+
+
+pub init(optr)
+' Set pointer to network device object
+    p_ndev := optr
+
+
+PUB bcast_ip(): a
+' Get broadcast IP address
+    return _bcast_ip
+
+
+PUB dns_ip(): a
+' Get domain name server IP address
+    return _dns_ip
+
+
+PUB new(msg_t, p_par, nr_par)
+' Write a DHCP message to the buffer
+'   msg_t: DHCP message type (DHCPDISCOVER, DHCPREQUEST)
+'   p_par: pointer to buffer containing DHCP parameters to be requested from the server
+'   nr_params: number of parameters at ptr_params
+    bytemove(@_param_req, p_par, (nr_par <# 5))
+    _max_msg_len := MTU_MAX
+    _msg_t := msg_t
+    wr_msg()
+
+
+PUB ip_lease_time(): s
+' Get lease time of IP address, in seconds
+    return _lease_tm
+
+
+PUB ip_rebind_time(): s
+' Get rebinding time of IP address, in seconds
+    return _rebind_tm
+
+
+PUB ip_renew_time(): s
+' Get renewal time of IP address, in seconds
+    return _renewal_tm
+
+
+PUB max_msg_len(): len
+' Get maximum accepted DHCP message length
+    return _max_msg_len
+
+
+PUB msg_len(): ptr
+' Get length of assembled DHCP message
+    return _msg_len
+
+
+PUB msg_type(): t
+' Get type of DHCP message
+    return _msg_t
+
+
+PUB router_ip(): addr
+' Get router IP address
+    return _router_ip
+
+
+PUB srv_ip(): addr
+' Get DHCP server IP address
+    'bytemove(@addr, @_srv_ip, IPV4ADDR_LEN)
+    return swap_long(_srv_ip)
+
+
+PUB subnet_mask(): mask
+' Get subnet mask
+    return _subnet_mask
+
+
+PUB set_bcast_ip(a)
+' Set broadcast IP address
+    'bytemove(@_bcast_ip, @addr, IPV4ADDR_LEN)
+    _bcast_ip := swap_long(a)
+
+
+PUB set_dns_ip(a)
+' Set domain name server IP address
+    'bytemove(@_dns_ip, @addr, IPV4ADDR_LEN)
+    _dns_ip := swap_long(a)
+
+
+PUB set_ip_lease_time(s)
+' Set lease time for IP address, in seconds
+    _lease_tm := s
+
+
+PUB set_ip_rebind_time(s)
+' Set rebinding time for IP address, in seconds
+    _rebind_tm := s
+
+
+PUB set_ip_renew_time(s)
+' Set renewal time for IP address, in seconds
+    _renewal_tm := s
+
+
+PUB set_max_msg_len(len)
+' Set maximum accepted DHCP message length
+    _max_msg_len := len
+
+
+PUB set_msg_type(msgtype)
+' Set DHCP message type
+    _msg_t := msgtype
+
+
+PUB set_params_reqd(p_buff, len)
+' Set list of parameters to retrieve from DHCP server
+    bytemove(@_param_req, p_buff, (len <# 5))
+
+
+PUB set_router_ip(a)
+' Set router IP address
+    'bytemove(@_router_ip, @a, IPV4ADDR_LEN)
+    _router_ip := swap_long(a)
+
+
+PUB set_srv_ip(a)
+' Set DHCP server IP address
+'    bytemove(@_srv_ip, @addr, IPV4ADDR_LEN)
+    _srv_ip := swap_long(a)
+
+
+PUB set_subnet_mask(mask)
+' Set subnet mask
+'    bytemove(@_subnet_mask, @mask, IPV4ADDR_LEN)
+    _subnet_mask := swap_long(mask)
+
+
+PUB rd_msg(): ptr | t
+' Read DHCP message
+    { read through all TLVs }
+    repeat
+        t := net[p_ndev].rd_byte()
+        case t
+            MSG_TYPE:
+                net[p_ndev].rd_byte()                       ' skip over the length byte
+                _msg_t := net[p_ndev].rd_byte()
+            DHCP_SRV_ID:
+                net[p_ndev].rd_byte()
+                net[p_ndev].rd_block(@_srv_ip, IPV4ADDR_LEN)
+            IP_LEASE_TM:
+                net[p_ndev].rd_byte()
+                net[p_ndev].rd_block(@_lease_tm, 4)
+            RENEWAL_TM:
+                net[p_ndev].rd_byte()
+                net[p_ndev].rd_block(@_renewal_tm, 4)
+            REBIND_TM:
+                net[p_ndev].rd_byte()
+                net[p_ndev].rd_block(@_rebind_tm, 4)
+            SUBNET_MASK:
+                net[p_ndev].rd_byte()
+                net[p_ndev].rd_block(@_subnet_mask, IPV4ADDR_LEN)
+            BCAST_ADDR:
+                net[p_ndev].rd_byte()
+                net[p_ndev].rd_block(@_bcast_ip, IPV4ADDR_LEN)
+            ROUTER:
+                net[p_ndev].rd_byte()
+                net[p_ndev].rd_block(@_router_ip, IPV4ADDR_LEN)
+            DNS:
+                net[p_ndev].rd_byte()
+                net[p_ndev].rd_block(@_dns_ip, IPV4ADDR_LEN)
+            OPT_END:
+                net[p_ndev].rd_byte()
+    until (t == OPT_END)    'XXX not safeguarded against bad messages missing the OPT_END ($FF) byte
+    return net[p_ndev].fifo_wr_ptr()
+
+
+CON
+
+    LSBF    = 0
+    MSBF    = 1
+
+PUB wr_msg(): ptr | st
+' Write DHCP message, preceded by BOOTP message
+'   NOTE: Ensure DHCP_set_MsgType() is set, prior to calling this method
+    st := net[p_ndev].fifo_wr_ptr()
+
+    { start with BOOTP message }
+    'wr_bootp_msg()
+
+    { then the DHCP 'magic cookie' value to identify it as a DHCP message }
+    net[p_ndev].wr_long(DHCP_MAGIC_COOKIE)
+
+    { finally, the DHCP 'options' }
+    _opts_len := 0
+    write_tlv(MSG_TYPE, 1, _msg_t, LSBF)
+    write_tlv(PARAM_REQLST, 5, @_param_req, LSBF)
+'    write_tlv(CLIENT_ID, 7, @_client_hw_t, LSBF)       ' HW type, then HW addr
+    net[p_ndev].wr_byte(CLIENT_ID)
+    net[p_ndev].wr_byte(7)
+    net[p_ndev].wr_byte(_bootp_data[BOOTPM_CLI_HW_T])
+    net[p_ndev].wrblk_lsbf(@_bootp_data[BOOTPM_CLI_MAC], MACADDR_LEN)
+    if ( _msg_t == DHCPDISCOVER )
+        write_tlv(MAX_MSGSZ, 2, _max_msg_len, MSBF)
+    elseif (_msg_t == DHCPREQUEST)
+        write_tlv(REQD_IPADDR, 4, @_bootp_data[BOOTPM_YIP], LSBF)
+        write_tlv(DHCP_SRV_ID, 4, @_srv_ip, LSBF)
+    write_tlv(IP_LEASE_TM, 4, @_lease_tm, MSBF)
+    write_tlv(OPT_END, 0, 0, LSBF)
+
+    { pad the end of the message equal to the number of bytes in the options -xxx review; shouldn't this just be enough to long-align the data? }
+    net[p_ndev].wr_byte_x($00, _opts_len)
+    _msg_len := (net[p_ndev].fifo_wr_ptr() - st)
+    return _msg_len
+
+
+PUB write_tlv(typ, len, val, byte_ord): ptr
+' Write TLV to ptr_buff
+'   typ: type
+'   len:
+'       1..2: values will be read (MSByte-first) directly from parameter
+'       3..255: values will be read by pointer passed in ptr_val
+'       other values: only the type will be written
+'   val:
+'       value(s) to write
+'   byte_ord:
+'       byte order to write multi-byte values in
+'   Returns: total length of TLV (includes: type, length, and all values)
+    { track length of DHCP options; it'll be needed later for padding
+        the end of the DHCP message }
+    _opts_len += net[p_ndev].wr_byte(typ)
+    case len
+        1..2:                                   ' immediate value
+            _opts_len += net[p_ndev].wr_byte(len)
+            _opts_len += net[p_ndev].wr_block(@val, len)
+        3..255:                                 ' value pointed to
+            _opts_len += net[p_ndev].wr_byte(len)
+            if ( byte_ord == LSBF )
+                _opts_len += net[p_ndev].wrblk_lsbf(val, len)
+            else
+                _opts_len += net[p_ndev].wrblk_msbf(val, len)
+        other:                                  ' type only
+    return _opts_len
+

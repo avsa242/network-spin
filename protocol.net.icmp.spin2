@@ -4,7 +4,7 @@
     Description:    Internet Control Message Protocol
     Author:         Jesse Burt
     Started:        Mar 31, 2022
-    Updated:        Feb 23, 2025
+    Updated:        Feb 25, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -17,7 +17,7 @@
 CON
 
     { limits }
-    ICMP_MSG_SZ     = 8                         ' message length
+    ICMP_MSG_SZ     = 4                         ' message length    xxx this was 8...4 seems right though...verify
     ICMP_ECHO_MSG_SZ= 12                        ' echo metadata (_not_ echoed data)
 
     struct  icmp_msg_s(...
@@ -186,9 +186,7 @@ PUB timestamp(): t
 PUB rd_icmp_msg(): p
 ' Read/disassemble ICMP message
 '   Returns: network device FIFO write pointer, after reading
-    net[p_ndev].rd_block(@message.type, 1)
-    net[p_ndev].rd_block(@message.code, 1)
-    net[p_ndev].rd_block(@message.checksum, 2)
+    net[p_ndev].rd_block(@message, ICMP_MSG_SZ)
 
     return net[p_ndev].fifo_wr_ptr()
 
@@ -197,9 +195,7 @@ PUB wr_icmp_msg(): p | st, nd
 ' Write/assemble ICMP message
 '   Returns: network device FIFO write pointer, after writing
     st := net[p_ndev].fifo_wr_ptr()
-    net[p_ndev].wr_block(@message.type, 1)
-    net[p_ndev].wr_block(@message.code, 1)
-    net[p_ndev].wr_block(@message.checksum, 2)
+    net[p_ndev].wr_block(@message, ICMP_MSG_SZ)
     nd := net[p_ndev].fifo_wr_ptr()
 
     _icmp_msg_len := (nd - st)
