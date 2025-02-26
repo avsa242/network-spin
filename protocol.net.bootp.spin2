@@ -309,12 +309,6 @@ PUB reset_bootp()
 PUB rd_bootp_msg(): ptr
 ' Read BOOTP message, as well as DHCP message, if it exists
     net[p_ndev].rd_block(@message, BOOTP_MSG_SZ)
-
-    { does the message contain a DHCP message? }    'xxx handle this at the next higher-level
-    if ( net[p_ndev].rdlong_msbf() == DHCP_MAGIC_COOKIE )
-        rd_dhcp_msg()
-    else
-        net[p_ndev].fifo_set_wr_ptr(net[p_ndev].fifo_wr_ptr()-4)        ' rewind if it's not DHCP
     return net[p_ndev].fifo_wr_ptr()
 
 

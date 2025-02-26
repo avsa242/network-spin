@@ -20,7 +20,7 @@ CON
 
     { DHCP options }
     HOSTNAME            = $0C
-    SUBNET_MASK         = $01   ' resp
+    OPT_SUBNET_MASK         = $01   ' resp
     ROUTER              = $03   ' resp
     DNS                 = $06   ' resp
     DEF_IP_TTL          = $17
@@ -81,7 +81,7 @@ pub init(optr)
     p_ndev := optr
 
 
-PUB bcast_ip(): a
+PUB broadcast_ip(): a
 ' Get broadcast IP address
     return _bcast_ip
 
@@ -99,7 +99,7 @@ PUB new(msg_t, p_par, nr_par)
     bytemove(@_param_req, p_par, (nr_par <# 5))
     _max_msg_len := MTU_MAX
     _msg_t := msg_t
-    wr_msg()
+    wr_dhcp_msg()
 
 
 PUB ip_lease_time(): s
@@ -127,7 +127,7 @@ PUB msg_len(): ptr
     return _msg_len
 
 
-PUB msg_type(): t
+PUB message_type(): t
 ' Get type of DHCP message
     return _msg_t
 
@@ -208,7 +208,7 @@ PUB set_subnet_mask(mask)
     _subnet_mask := swap_long(mask)
 
 
-PUB rd_msg(): ptr | t
+PUB rd_dhcp_msg(): ptr | t
 ' Read DHCP message
     { read through all TLVs }
     repeat
@@ -252,32 +252,33 @@ CON
     LSBF    = 0
     MSBF    = 1
 
-PUB wr_msg(): ptr | st
-' Write DHCP message, preceded by BOOTP message
+PUB wr_dhcp_msg(): p | st
+' Write DHCP message
 '   NOTE: Ensure DHCP_set_MsgType() is set, prior to calling this method
     st := net[p_ndev].fifo_wr_ptr()
 
-    { start with BOOTP message }
-    'wr_bootp_msg()
-
-    { then the DHCP 'magic cookie' value to identify it as a DHCP message }
+    ' write the DHCP 'magic cookie' value to identify it as a DHCP message
     net[p_ndev].wr_long(DHCP_MAGIC_COOKIE)
 
-    { finally, the DHCP 'options' }
+    ' write the DHCP options
     _opts_len := 0
     write_tlv(MSG_TYPE, 1, _msg_t, LSBF)
+
     write_tlv(PARAM_REQLST, 5, @_param_req, LSBF)
-'    write_tlv(CLIENT_ID, 7, @_client_hw_t, LSBF)       ' HW type, then HW addr
+
     net[p_ndev].wr_byte(CLIENT_ID)
     net[p_ndev].wr_byte(7)
-    net[p_ndev].wr_byte(_bootp_data[BOOTPM_CLI_HW_T])
-    net[p_ndev].wrblk_lsbf(@_bootp_data[BOOTPM_CLI_MAC], MACADDR_LEN)
+    net[p_ndev].wr_byte(_bootp_data[BOOTPM_CLI_HW_T])                   ' 1+
+    net[p_ndev].wrblk_lsbf(@_bootp_data[BOOTPM_CLI_MAC], MACADDR_LEN)   '   6
+
     if ( _msg_t == DHCPDISCOVER )
         write_tlv(MAX_MSGSZ, 2, _max_msg_len, MSBF)
     elseif (_msg_t == DHCPREQUEST)
         write_tlv(REQD_IPADDR, 4, @_bootp_data[BOOTPM_YIP], LSBF)
         write_tlv(DHCP_SRV_ID, 4, @_srv_ip, LSBF)
+
     write_tlv(IP_LEASE_TM, 4, @_lease_tm, MSBF)
+
     write_tlv(OPT_END, 0, 0, LSBF)
 
     { pad the end of the message equal to the number of bytes in the options -xxx review; shouldn't this just be enough to long-align the data? }
