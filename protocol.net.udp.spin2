@@ -4,7 +4,7 @@
     Description:    Universal Datagram Protocol
     Author:         Jesse Burt
     Started:        Feb 28, 2022
-    Updated:        Feb 17, 2025
+    Updated:        Mar 7, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -35,9 +35,9 @@ VAR
 
     long p_ndev                                 ' network driver object pointer
 
-    long _udp_fifo_pos                          ' start of the datagram in the FIFO
+    long _fifo_start                            ' start of the datagram in the FIFO
 
-    byte _udp_data[UDP_MSG_SZ]                  ' UDP header daata
+    udp_msg_s   message
 
 
 pub init(optr)
@@ -47,94 +47,84 @@ pub init(optr)
 
 PUB new(src_port, dest_port)
 ' Construct new UDP datagram
-    _udp_data[UDP_SRCPORT] := src_port.byte[1]
-    _udp_data[UDP_SRCPORT_L] := src_port.byte[0]
-    _udp_data[UDP_DESTPORT] := dest_port.byte[1]
-    _udp_data[UDP_DESTPORT_L] := dest_port.byte[0]
-    _udp_data[UDP_CKSUM] := 0
-    _udp_data[UDP_CKSUM_L] := 0
-
+    set_src_port(src_port)
+    set_dest_port(dest_port)
+    set_chksum(0)
     wr_udp_header()
 
 
 PUB set_chksum(ck)
 ' Set checksum (optional; set to 0 to ignore)
-    _udp_data[UDP_CKSUM] := ck.byte[1]
-    _udp_data[UDP_CKSUM_L] := ck.byte[0]
+    message.checksum := swap_word(ck)
 
 
 PUB set_dest_port(p)
 ' Set destination port field
-    _udp_data[UDP_DESTPORT] := p.byte[1]
-    _udp_data[UDP_DESTPORT_L] := p.byte[0]
+    message.dest_port := swap_word(p)
 
 
 PUB set_dgram_len(len)
 ' Set length of UDP datagram
 '   NOTE: Don't include the 8-bytes of the UDP header itself
     len += UDP_MSG_SZ
-    _udp_data[UDP_DGRAMLEN] := len.byte[1]
-    _udp_data[UDP_DGRAMLEN_L] := len.byte[0]
+    message.length := swap_word(len)
 
 
 PUB set_src_port(p)
 ' Set source port field
-    _udp_data[UDP_SRCPORT] := p.byte[1]
-    _udp_data[UDP_SRCPORT_L] := p.byte[0]
+    message.src_port := swap_word(p)
 
 
-PUB chksum(): ck
+PUB chksum(): c
 ' Get checksum
-    ck.byte[1] := _udp_data[UDP_CKSUM]
-    ck.byte[0] := _udp_data[UDP_CKSUM_L]
+    return swap_word(message.checksum)
 
 
 PUB dest_port(): p
 ' Get destination port field
-    p.byte[1] := _udp_data[UDP_DESTPORT]
-    p.byte[0] := _udp_data[UDP_DESTPORT_L]
+    return swap_word(message.dest_port)
 
 
-PUB dgram_len(): len
+PUB dgram_len(): l
 ' Get length of UDP datagram
 '   NOTE: This length includes the 8-bytes UDP header itself
-    len.byte[1] := _udp_data[UDP_DGRAMLEN]
-    len.byte[0] := _udp_data[UDP_DGRAMLEN_L]
+    return swap_word(message.length)
 
 
-PUB hdr_len(): len
+PUB hdr_len(): l
 ' Get current header length
     return UDP_MSG_SZ
 
 
 PUB src_port(): p
 ' Get source port field
-    p.byte[1] := _udp_data[UDP_SRCPORT]
-    p.byte[0] := _udp_data[UDP_SRCPORT_L]
+    return swap_word(message.src_port)
 
 
 PUB reset_udp()
 ' Reset all values to defaults
-    bytefill(@_udp_data, 0, UDP_MSG_SZ)
+    message~
 
 
 PUB rd_udp_header(): l
 ' Read/disassemble UDP header
-'   Returns: length of read header, in bytes
-    net[p_ndev].rdblk_lsbf(@_udp_data, UDP_MSG_SZ)
+'   Returns: network device FIFO write position
+    net[p_ndev].rdblk_lsbf(@message, sizeof(message) )
+
     return net[p_ndev].fifo_wr_ptr()
 
 
 pub start_pos(): p
 ' Get the start position of the last written UDP message in the FIFO
-    return _udp_fifo_pos
+    return _fifo_start
 
 
 PUB wr_udp_header(): ptr
 ' Write/assemble UDP header
 '   Returns: length of assembled header, in bytes
-    _udp_fifo_pos := net[p_ndev].fifo_wr_ptr()    ' save this FIFO position as the start of UDP
-    net[p_ndev].wrblk_lsbf(@_udp_data, UDP_MSG_SZ)
+    _fifo_start := net[p_ndev].fifo_wr_ptr()    ' save this FIFO position as the start of UDP
+    net[p_ndev].wrblk_lsbf(@message, sizeof(message) )
+
     return net[p_ndev].fifo_wr_ptr()
 
 
