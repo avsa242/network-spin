@@ -109,7 +109,7 @@ PUB reset_udp()
 PUB rd_udp_header(): l
 ' Read/disassemble UDP header
 '   Returns: network device FIFO write position
-    net[p_ndev].rdblk_lsbf(@message, sizeof(message) )
+    net[p_ndev].rd_block(@message, sizeof(message) )
 
     return net[p_ndev].fifo_wr_ptr()
 
@@ -119,11 +119,25 @@ pub start_pos(): p
     return _fifo_start
 
 
+PUB update_len_chksum(len, ck=0) | tmp, c
+' Update the UDP header length and checksum
+'   len:    datagram length
+'   ck:     checksum (optional; omit, or specify 0 to ignore)
+    set_dgram_len(len)
+    set_chksum(ck)
+    tmp := net[p_ndev].fifo_wr_ptr()            ' remember the current fifo pointer
+    net[p_ndev].fifo_set_wr_ptr( start_pos()+UDP_DGRAMLEN )
+    net[p_ndev].wr_word( message.length )       ' write the new length
+    net[p_ndev].fifo_set_wr_ptr( start_pos()+UDP_CKSUM )
+    net[p_ndev].wr_word( message.checksum )     ' write the new checksum
+    net[p_ndev].fifo_set_wr_ptr(tmp)            ' restore the write pointer
+
+
 PUB wr_udp_header(): ptr
 ' Write/assemble UDP header
 '   Returns: length of assembled header, in bytes
     _fifo_start := net[p_ndev].fifo_wr_ptr()    ' save this FIFO position as the start of UDP
-    net[p_ndev].wrblk_lsbf(@message, sizeof(message) )
+    net[p_ndev].wr_block(@message, sizeof(message) )
 
     return net[p_ndev].fifo_wr_ptr()
 
