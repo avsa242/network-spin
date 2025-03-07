@@ -40,18 +40,6 @@ CON
     PTYPE_IP        = $0800
 
 
-    { hardware types }
-    HRD_ETH         = 1                         ' only these first two are
-    HRD_IEEE802     = 6                         '   officially supported
-
-    HRD_ARCNET      = 7
-    HRD_FRMRLY      = 15
-    HRD_ATM         = 16
-    HRD_HDLC        = 17
-    HRD_FIBRECH     = 18
-    HRD_ATM2        = 19
-    HRD_SERIAL      = 20
-
     { opcodes }
     ARP_REQ         = 1
     ARP_REPL        = 2

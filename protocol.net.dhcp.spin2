@@ -4,7 +4,7 @@
     Description:    Dynamic Host Configuration Protocol
     Author:         Jesse Burt
     Started:        Feb 25, 2025
-    Updated:        Feb 25, 2025
+    Updated:        Mar 7, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -20,7 +20,7 @@ CON
 
     { DHCP options }
     HOSTNAME            = $0C
-    OPT_SUBNET_MASK         = $01   ' resp
+    OPT_SUBNET_MASK     = $01   ' resp
     ROUTER              = $03   ' resp
     DNS                 = $06   ' resp
     DEF_IP_TTL          = $17
@@ -60,6 +60,7 @@ VAR
     long _bcast_ip
     long _router_ip
     long _dns_ip
+    long _requested_ip
 
     word _max_msg_len
     word _msg_len
@@ -80,15 +81,14 @@ pub init(optr)
 ' Set pointer to network device object
     p_ndev := optr
 
-
 PUB broadcast_ip(): a
 ' Get broadcast IP address
-    return _bcast_ip
+    return swap_long(_bcast_ip)
 
 
 PUB dns_ip(): a
 ' Get domain name server IP address
-    return _dns_ip
+    return swap_long(_dns_ip)
 
 
 PUB new(msg_t, p_par, nr_par)
@@ -97,32 +97,32 @@ PUB new(msg_t, p_par, nr_par)
 '   p_par: pointer to buffer containing DHCP parameters to be requested from the server
 '   nr_params: number of parameters at ptr_params
     bytemove(@_param_req, p_par, (nr_par <# 5))
-    _max_msg_len := MTU_MAX
-    _msg_t := msg_t
+    set_max_msg_len(MTU_MAX)
+    set_msg_type(msg_t)
     wr_dhcp_msg()
 
 
 PUB ip_lease_time(): s
 ' Get lease time of IP address, in seconds
-    return _lease_tm
+    return swap_long(_lease_tm)
 
 
 PUB ip_rebind_time(): s
 ' Get rebinding time of IP address, in seconds
-    return _rebind_tm
+    return swap_long(_rebind_tm)
 
 
 PUB ip_renew_time(): s
 ' Get renewal time of IP address, in seconds
-    return _renewal_tm
+    return swap_long(_renewal_tm)
 
 
-PUB max_msg_len(): len
+PUB max_msg_len(): l
 ' Get maximum accepted DHCP message length
-    return _max_msg_len
+    return swap_word(_max_msg_len)
 
 
-PUB msg_len(): ptr
+PUB msg_len(): l
 ' Get length of assembled DHCP message
     return _msg_len
 
@@ -132,20 +132,20 @@ PUB message_type(): t
     return _msg_t
 
 
-PUB router_ip(): addr
+PUB router_ip(): a
 ' Get router IP address
-    return _router_ip
+    return swap_long(_router_ip)
 
 
-PUB srv_ip(): addr
+PUB srv_ip(): a
 ' Get DHCP server IP address
     'bytemove(@addr, @_srv_ip, IPV4ADDR_LEN)
     return swap_long(_srv_ip)
 
 
-PUB subnet_mask(): mask
+PUB subnet_mask(): m
 ' Get subnet mask
-    return _subnet_mask
+    return swap_long(_subnet_mask)
 
 
 PUB set_bcast_ip(a)
@@ -162,22 +162,22 @@ PUB set_dns_ip(a)
 
 PUB set_ip_lease_time(s)
 ' Set lease time for IP address, in seconds
-    _lease_tm := s
+    _lease_tm := swap_long(s)
 
 
 PUB set_ip_rebind_time(s)
 ' Set rebinding time for IP address, in seconds
-    _rebind_tm := s
+    _rebind_tm := swap_long(s)
 
 
 PUB set_ip_renew_time(s)
 ' Set renewal time for IP address, in seconds
-    _renewal_tm := s
+    _renewal_tm := swap_long(s)
 
 
 PUB set_max_msg_len(len)
 ' Set maximum accepted DHCP message length
-    _max_msg_len := len
+    _max_msg_len := swap_word(len)
 
 
 PUB set_msg_type(msgtype)
@@ -188,6 +188,11 @@ PUB set_msg_type(msgtype)
 PUB set_params_reqd(p_buff, len)
 ' Set list of parameters to retrieve from DHCP server
     bytemove(@_param_req, p_buff, (len <# 5))
+
+
+PUB set_requested_ip(a)
+' Set the IP to be requested in a DHCPREQUEST message
+    _requested_ip := swap_long(a)
 
 
 PUB set_router_ip(a)
@@ -208,7 +213,7 @@ PUB set_subnet_mask(mask)
     _subnet_mask := swap_long(mask)
 
 
-PUB rd_dhcp_msg(): ptr | t
+PUB rd_dhcp_msg(): p | t
 ' Read DHCP message
     { read through all TLVs }
     repeat
@@ -247,11 +252,6 @@ PUB rd_dhcp_msg(): ptr | t
     return net[p_ndev].fifo_wr_ptr()
 
 
-CON
-
-    LSBF    = 0
-    MSBF    = 1
-
 PUB wr_dhcp_msg(): p | st
 ' Write DHCP message
 '   NOTE: Ensure DHCP_set_MsgType() is set, prior to calling this method
@@ -262,56 +262,54 @@ PUB wr_dhcp_msg(): p | st
 
     ' write the DHCP options
     _opts_len := 0
-    write_tlv(MSG_TYPE, 1, _msg_t, LSBF)
+    write_tlv(MSG_TYPE, 1, _msg_t)
 
-    write_tlv(PARAM_REQLST, 5, @_param_req, LSBF)
+    write_tlv(PARAM_REQLST, 5, @_param_req)
 
     net[p_ndev].wr_byte(CLIENT_ID)
     net[p_ndev].wr_byte(7)
-    net[p_ndev].wr_byte(_bootp_data[BOOTPM_CLI_HW_T])                   ' 1+
-    net[p_ndev].wrblk_lsbf(@_bootp_data[BOOTPM_CLI_MAC], MACADDR_LEN)   '   6
+    net[p_ndev].wr_byte(HRD_ETH)    ' was bootp client hardware type
+    net[p_ndev].wrblk_lsbf(net[p_ndev].my_mac(), MACADDR_LEN) ' was bootp client MAC
 
     if ( _msg_t == DHCPDISCOVER )
-        write_tlv(MAX_MSGSZ, 2, _max_msg_len, MSBF)
+        write_tlv(MAX_MSGSZ, 2, _max_msg_len)
     elseif (_msg_t == DHCPREQUEST)
-        write_tlv(REQD_IPADDR, 4, @_bootp_data[BOOTPM_YIP], LSBF)
-        write_tlv(DHCP_SRV_ID, 4, @_srv_ip, LSBF)
+        write_tlv(REQD_IPADDR, 4, _requested_ip)
+        write_tlv(DHCP_SRV_ID, 4, _srv_ip)
 
-    write_tlv(IP_LEASE_TM, 4, @_lease_tm, MSBF)
+    write_tlv(IP_LEASE_TM, 4, _lease_tm)
 
-    write_tlv(OPT_END, 0, 0, LSBF)
+    write_tlv(OPT_END)
 
     { pad the end of the message equal to the number of bytes in the options -xxx review; shouldn't this just be enough to long-align the data? }
     net[p_ndev].wr_byte_x($00, _opts_len)
+
     _msg_len := (net[p_ndev].fifo_wr_ptr() - st)
+
     return _msg_len
 
 
-PUB write_tlv(typ, len, val, byte_ord): ptr
+PUB write_tlv(typ, len=0, val=0): p
 ' Write TLV to ptr_buff
-'   typ: type
+'   typ:        type
 '   len:
-'       1..2: values will be read (MSByte-first) directly from parameter
-'       3..255: values will be read by pointer passed in ptr_val
-'       other values: only the type will be written
-'   val:
-'       value(s) to write
-'   byte_ord:
-'       byte order to write multi-byte values in
-'   Returns: total length of TLV (includes: type, length, and all values)
-    { track length of DHCP options; it'll be needed later for padding
-        the end of the DHCP message }
+'       0:      only the type will be written
+'       1..4:   values will be read (MSByte-first) directly from parameter
+'       5..255: values will be read by pointer passed in val
+'   val:        value(s) to write (ignored if len=0, treated as a pointer if len > 4)
+'   Returns:    total length of TLV (includes: type, length, and all values)
+
+    ' track length of DHCP options; it'll be needed later for padding
+    '   the end of the DHCP message
     _opts_len += net[p_ndev].wr_byte(typ)
     case len
-        1..2:                                   ' immediate value
+        0:                                      ' no length or value field
+        1..4:                                   ' immediate value
             _opts_len += net[p_ndev].wr_byte(len)
             _opts_len += net[p_ndev].wr_block(@val, len)
-        3..255:                                 ' value pointed to
+        5..255:                                 ' value pointed to
             _opts_len += net[p_ndev].wr_byte(len)
-            if ( byte_ord == LSBF )
-                _opts_len += net[p_ndev].wrblk_lsbf(val, len)
-            else
-                _opts_len += net[p_ndev].wrblk_msbf(val, len)
+            _opts_len += net[p_ndev].wr_block(val, len)
         other:                                  ' type only
     return _opts_len
 

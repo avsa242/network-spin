@@ -4,7 +4,7 @@
     Description:    Boot Protocol/Dynamic Host Configuration Protocol
     Author:         Jesse Burt
     Started:        Feb 28, 2022
-    Updated:        Feb 25, 2025
+    Updated:        Mar 7, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -21,21 +21,20 @@ CON
     BOOT_FN_LEN         = 128
 
     struct bootp_msg_s(...
-        byte        opcode, ...
-        byte        client_hw_t, ...
-        byte        hw_addr_len, ...
-        byte        hop, ...
-        long        xid, ...
-        word        lease_time_elapsed, ...
-        word        flags, ...
-        long        client_ip, ...
-        long        your_ip, ...
-        long        server_ip, ...
-        long        gateway_ip, ...
-        macaddr_s   client_mac, ...
-        byte        hostname[SRV_HOSTN_LEN], ...
-        byte        filename[BOOT_FN_LEN])
-
+        byte        opcode, ...                 '1
+        byte        client_hw_t, ...            '1
+        byte        hw_addr_len, ...            '1
+        byte        hop, ...                    '1
+        long        xid, ...                    '4
+        word        lease_time_elapsed, ...     '2
+        word        flags, ...                  '2
+        long        client_ip, ...              '4
+        long        your_ip, ...                '4
+        long        server_ip, ...              '4
+        long        gateway_ip, ...             '4
+        byte        client_mac[16], ...         '16
+        byte        hostname[SRV_HOSTN_LEN], ...'64
+        byte        filename[BOOT_FN_LEN])      '128
 
     BCAST_BIT           = 15
 
@@ -66,7 +65,6 @@ VAR
 
     bootp_msg_s     message                     ' BOOTP message data
 
-
 pub init(optr)
 ' Set pointer to network device object
     p_ndev := optr
@@ -74,26 +72,21 @@ pub init(optr)
 
 PUB bcast_flag(): f
 ' Get BOOTP broadcast flag
-    'f := (((_bootp_data[BOOTPM_FLAGS] >> BCAST_BIT) & 1) == 1)
     return ( ( (message.flags >> BCAST_BIT) & 1) == 1)
 
 
 PUB boot_fn(): p
 ' Get boot filename
-    'p := @_bootp_data[BOOTPM_FILENM]
     return @message.filename
 
 
 PUB client_ip(): a
 ' Get client IP address
-    'repeat i from 0 to 3
-    '    addr.byte[i] := _bootp_data[BOOTPM_CIP+i]
     return swap_long(message.client_ip)
 
 
 PUB client_mac(): p
 ' Get client MAC address
-    'ptr_addr := @_bootp_data[BOOTPM_CLI_MAC]
     return @message.client_mac
 
 
@@ -104,87 +97,67 @@ PUB cli_hdw_addr_pad_len(): l
 
 PUB gwy_ip(): a
 ' Get relay agent IP address
-    'repeat i from 0 to 3
-    '    addr.byte[i] := _bootp_data[BOOTPM_GIP+i]
     return swap_long(message.gateway_ip)
 
 
 PUB hdw_addr_len(): l
 ' Get hardware address length
-    'len := _bootp_data[BOOTPM_HW_ADDR_LEN]
     return message.hw_addr_len
 
 
 PUB hdw_type(): t
 ' Get hardware type
-'    t := _bootp_data[BOOTPM_CLI_HW_T]
     return message.client_hw_t
 
 
 PUB hops(): h
 ' Get number of hops
-'    h := _bootp_data[BOOTPM_HOP]
     return message.hop
 
 
 PUB inc_xid()
 ' Increment xid/transaction ID by 1
-    '_bootp_data[BOOTPM_XID+3]++
     message.xid++
 
 
 PUB lease_elapsed(): s
 ' Get time elapsed since start of attempt to acquire or renew lease
-'    s.byte[0] := _bootp_data[BOOTPM_LSTM_EL_M]
-'    s.byte[1] := _bootp_data[BOOTPM_LSTM_EL_L]
     return swap_word(message.lease_time_elapsed)
 
 
 PUB new_request()
-
-    '_bootp_data[BOOTPM_OP] := BOOT_REQ
-    '_bootp_data[BOOTPM_FLAGS] := (1 << BCAST_BIT)
+' Set up a boot request message
     set_opcode(BOOT_REQ)
     set_bcast_flag(true)
-    'bytemove(@_bootp_data[BOOTPM_CLI_MAC], @_mac_local, MACADDR_LEN)
-    bytemove(@message.client_mac, @_mac_local, MACADDR_LEN)
+    set_client_mac(net[p_ndev].my_mac() )
 
 PUB opcode(): c
 ' Get BOOTP message opcode
-'    c := _bootp_data[BOOTPM_OP]
     return message.opcode
 
 
 PUB rsvd_flags(): f
 ' Get BOOTP reserved flags
-    'flags.byte[0] := _bootp_data[BOOTPM_FLAGS_L]
-    'flags.byte[1] := _bootp_data[BOOTPM_FLAGS_M]
     return message.flags
 
 
 PUB srv_hostname(): p
 ' Get server hostname
-    'ptr_str := @_bootp_data[BOOTPM_HOSTNM]
     return @message.hostname
 
 
 PUB srv_ip(): a
 ' Get next server IP address
-    'repeat i from 0 to 3
-    '    addr.byte[i] := _bootp_data[BOOTPM_SIP+i]
     return swap_long(message.server_ip)
 
 
 PUB xid(): i
 ' Get transaction ID
-    'bytemove(@id, @_bootp_data[BOOTPM_XID], 4)
     return swap_long(message.xid)
 
 
 PUB your_ip(): a
 ' Get your IP address
-'    repeat i from 0 to 3
-        'addr.byte[i] := _bootp_data[BOOTPM_YIP+i]
     return swap_long(message.your_ip)
 
 
@@ -192,13 +165,11 @@ PUB set_bcast_flag(flag)
 ' Set BOOTP broadcast flag
 '   Valid values:
 '       TRUE (any non-zero value), FALSE (0)
-    '_bootp_data[BOOTPM_FLAGS] := (abs(flag <> 0)) << BCAST_BIT
-    message.flags :=  (abs(flag <> 0) ) << BCAST_BIT
+    message.flags :=  swap_word( ( (flag <> 0) & 1 ) << BCAST_BIT )
 
 
 PUB set_boot_fn(p_str)
 ' Set boot filename
-'    bytemove(@_bootp_data[BOOTPM_FILENM], ptr_str, strsize(ptr_str) <# BOOT_FN_LEN)
     bytemove(@message.filename, p_str, strsize(p_str) <# BOOT_FN_LEN)
 
 
@@ -209,14 +180,11 @@ PUB set_client_hw_t(t)
 
 PUB set_client_ip(a)
 ' Set client IP address
-    'repeat i from 0 to 3
-        '_bootp_data[BOOTPM_CIP+i] := addr.byte[i]
     message.client_ip := swap_long(a)
 
 
 PUB set_client_mac(p_addr)
 ' Set client MAC address
-    'bytemove(@_bootp_data[BOOTPM_CLI_MAC], ptr_addr, MACADDR_LEN)
     bytemove(@message.client_mac, p_addr, MACADDR_LEN)
 
 
@@ -227,96 +195,78 @@ PUB set_cli_hdw_addr_pad_len(len) 'XXX pseudo-metadata that's calculated
 
 PUB set_gwy_ip(a)
 ' Set relay agent IP address
-'    repeat i from 0 to 3
-'        _bootp_data[BOOTPM_GIP+i] := addr.byte[i]
     message.gateway_ip := swap_long(a)
 
 PUB set_hdw_addr_len(l)
 ' Set hardware address length
-    '_bootp_data[BOOTPM_HW_ADDR_LEN] := len
     message.hw_addr_len := l
 
 
 PUB set_hdw_type(t)
 ' Set hardware type
-'    _bootp_data[BOOTPM_CLI_HW_T] := t
     message.client_hw_t := t
 
 
 PUB set_hops(h)
 ' Set number of hops
-'    _bootp_data[BOOTPM_HOP] := h
     message.hop := h
 
 
 PUB set_lease_elapsed(t)
 ' Set time elapsed since start of attempt to acquire or renew lease
-'    _bootp_data[BOOTPM_LSTM_EL_M] := s.byte[0]
-    '_bootp_data[BOOTPM_LSTM_EL_L] := s.byte[1]
     message.lease_time_elapsed := swap_word(t)
 
 
 PUB set_opcode(c)
 ' Set BOOTP message opcode
-'    _bootp_data[BOOTPM_OP] := c
     message.opcode := c
 
 
 PUB set_rsvd_flags(flags)
 ' Set BOOTP reserved flags
-'    _bootp_data[BOOTPM_FLAGS_M] |= flags.byte[1] & $7f
-    '_bootp_data[BOOTPM_FLAGS_L] := flags.byte[0]
     message.flags |= swap_word(flags & $7f00)
 
 
 PUB set_srv_hostname(p_str)
 ' Set server hostname, up to 64 bytes
-    'bytemove(@_bootp_data[BOOTPM_HOSTNM], ptr_str, strsize(ptr_str) <# SRV_HOSTN_LEN)
     bytemove(@message.hostname, p_str, strsize(p_str) <# SRV_HOSTN_LEN)
 
 
 PUB set_srv_ip(a)
 ' Set server IP address
-    'bytemove(@_bootp_data + BOOTPM_GIP, @addr, IPV4ADDR_LEN)
     message.gateway_ip := swap_long(a)
 
 
 PUB set_xid(id)
 ' Set transaction ID
-    'bytemove(@_bootp_data + BOOTPM_XID, @id, 4)
     message.xid := swap_long(id)
 
 
 PUB set_your_ip(a)
 ' Set 'your' IP address
-'    bytemove(@_bootp_data[BOOTPM_YIP], @addr, IPV4ADDR_LEN)
     message.your_ip := swap_long(a)
 
 
 PUB reset_bootp()
 ' Reset all values to defaults
-'    bytefill(@_bootp_data, 0, BOOTP_MSG_SZ)
-    '_bootp_data[BOOTPM_CLI_HW_T] := ETHERNET
-    '_bootp_data[BOOTPM_HW_ADDR_LEN] := MACADDR_LEN
-    '_bootp_data[BOOTPM_LSTM_EL_M] := $00
-    '_bootp_data[BOOTPM_LSTM_EL_L] := $01
     message~
     set_client_hw_t(ETHERNET)
     set_hdw_addr_len(MACADDR_LEN)
     set_lease_elapsed(1)
 
 
-PUB rd_bootp_msg(): ptr
+PUB rd_bootp_msg(): p
 ' Read BOOTP message, as well as DHCP message, if it exists
-    net[p_ndev].rd_block(@message, BOOTP_MSG_SZ)
+'   Returns: current FIFO write pointer
+    net[p_ndev].rd_block(@message, sizeof(message) )
     return net[p_ndev].fifo_wr_ptr()
 
 
-PUB wr_bootp_msg(): ptr | st
+PUB wr_bootp_msg(): p | st
 ' Write BOOTP message
 '   Returns: number of bytes written to buffer
     st := net[p_ndev].fifo_wr_ptr()
-    net[p_ndev].wr_block(@message, BOOTP_MSG_SZ)
+    net[p_ndev].wr_block(@message, sizeof(message) )
     return net[p_ndev].fifo_wr_ptr()-st
 
 
