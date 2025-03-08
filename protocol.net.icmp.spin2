@@ -4,7 +4,7 @@
     Description:    Internet Control Message Protocol
     Author:         Jesse Burt
     Started:        Mar 31, 2022
-    Updated:        Feb 25, 2025
+    Updated:        Mar 8, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -87,14 +87,18 @@ CON
 OBJ
 
     net=    NETIF_DRIVER                        ' network driver "virtual" instance
+    crc:    "math.crc"
 
 
 VAR
 
     long p_ndev                                 ' network driver object pointer
 
+    long _icmp_cksum_fifo_pos
+
     byte _icmp_msg_len
 
+    byte _echo_data[80], _echo_data_len
 
     icmp_msg_s      message                     ' ICMP message data
     echo_msg_s      echo_msg
@@ -121,6 +125,11 @@ PUB set_chksum(ck)
 PUB set_code(c)
 ' Set ICMP subtype
     message.code := c
+
+
+PUB set_echo_data_len(l)
+' Set the length of the payload data in an ECHO message
+    _echo_data_len := l                         ' keep LE; used internally, not written to the frame
 
 
 PUB set_ident(i)
@@ -153,6 +162,11 @@ PUB code(): c
     return message.code
 
 
+PUB echo_data_len(): l
+' Get the length of the ECHO message data (internal only; not contained in the network frame)
+    return _echo_data_len
+
+
 PUB ident(): i
 ' Get ICMP identifier
     return echo_msg.ident
@@ -183,24 +197,62 @@ PUB timestamp(): t
     return timestamp_msg.time_receive
 
 
+PUB rd_echo_data(l=0): p
+' Read ECHO message optional data
+'   l:  length to read (optional; if unspecified, the current setting of set_echo_data_len() will
+'       be used instead)
+    if ( l )
+        net[p_ndev].rd_block(@_echo_data, l)
+        _echo_data_len := l
+    else
+        net[p_ndev].rd_block(@_echo_data, _echo_data_len)
+
+
 PUB rd_icmp_msg(): p
-' Read/disassemble ICMP message
+' Read ICMP message from network device
 '   Returns: network device FIFO write pointer, after reading
-    net[p_ndev].rd_block(@message, ICMP_MSG_SZ)
+    net[p_ndev].rd_block(@message, sizeof(message) )
 
     return net[p_ndev].fifo_wr_ptr()
+
+
+PUB update_chksum() | tmp
+' Update the checksum field of the header
+    set_chksum(0)
+    set_chksum( crc.inet_chksum(@message,       sizeof(message) ) )
+    set_chksum( crc.inet_chksum(@_echo_data,    _echo_data_len, chksum() ) )
+
+    ' write the checksum to the ICMP header
+    tmp := net[p_ndev].fifo_wr_ptr()            ' remember the current write pointer
+    net[p_ndev].fifo_set_wr_ptr(_icmp_cksum_fifo_pos)
+    net[p_ndev].wr_word(message.checksum)       ' write the checksum
+    net[p_ndev].fifo_set_wr_ptr(tmp)            ' restore the original pointer
 
 
 PUB wr_icmp_msg(): p | st, nd
 ' Write/assemble ICMP message
 '   Returns: network device FIFO write pointer, after writing
     st := net[p_ndev].fifo_wr_ptr()
-    net[p_ndev].wr_block(@message, ICMP_MSG_SZ)
+    _icmp_cksum_fifo_pos := st + ICMP_CKSUM     ' record the position of the checksum field
+    net[p_ndev].wr_block(@message, sizeof(message) )
     nd := net[p_ndev].fifo_wr_ptr()
 
     _icmp_msg_len := (nd - st)
 
     return nd
+
+
+PUB wr_echo_data(l=0): p
+' Write ECHO message optional data
+'   l:  length to read (optional; if unspecified, the current setting of set_echo_data_len() will
+'       be used instead)
+    if ( l )
+        net[p_ndev].wr_block(@_echo_data, l)
+        _echo_data_len := l
+    else
+        net[p_ndev].wr_block(@_echo_data, _echo_data_len)
+
+    return net[p_ndev].fifo_wr_ptr()
 
 
 DAT

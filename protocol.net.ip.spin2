@@ -4,7 +4,7 @@
     Description:    Internet Protocol
     Author:         Jesse Burt
     Started:        Feb 7, 2022
-    Updated:        Feb 23, 2025
+    Updated:        Mar 8, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -90,6 +90,11 @@ pub addr8888to32l(a3, a2, a1, a0): a
     return (a3 << 24) | (a2 << 16) | (a1 << 8) | a0
 
 
+PUB dec_ttl()
+' Decrease time-to-live field by 1
+    header.ttl := 0 #> (header.ttl-1)
+
+
 PUB dest_addr(): a
 ' Get destination address of IP datagram
 '   Returns: 4 IPv4 address bytes packed into long
@@ -159,6 +164,11 @@ PUB msg_ident(): i
     return swap_word(header.ident)
 
 
+PUB payload_length(): l
+' Get the length of the payload (layer 4 and above) only
+    return dgram_len()-IP_HDR_SZ
+
+
 PUB src_addr(): a
 ' Get source/originator of IP datagram
 '   Returns: 4 IPv4 address bytes packed into long
@@ -179,7 +189,7 @@ PUB version(): v
 
 PUB set_dest_addr(a)
 ' Set destination address of IP datagram
-    header.dest_addr := a
+    header.dest_addr := swap_long(a)
 
 
 PUB set_dgram_len(len)
@@ -248,7 +258,7 @@ PUB set_my_ip32(a)
 
 PUB set_src_addr(a)
 ' Set source/originator of IP datagram
-    header.src_addr := a
+    header.src_addr := swap_long(a)
 
 
 PUB set_ttl(t)
@@ -271,17 +281,24 @@ PUB new(l4_proto, src_ip, dest_ip)
 '   l4_proto: OSI Layer-4 protocol (L4_TCP, L4_UDP, L4_ICMP)
     _ip_start := net[p_ndev].fifo_wr_ptr()
     reset_ipv4()
-    header.l4proto := l4_proto
-    header.src_addr := src_ip
-    header.dest_addr := dest_ip
+    set_layer4_proto(l4_proto)
+    set_src_addr(src_ip)
+    set_dest_addr(dest_ip)
     wr_ip_header()
 
 
 PUB reply(): p
 ' Set up/write IPv4 header as a reply to last received header
     set_hdr_chk(0)                              ' init header checksum to 0
-    new(layer4_proto(), my_ip(), src_addr())
-    return net[p_ndev].fifo_wr_ptr()
+    set_dest_addr( src_addr() )
+    set_src_addr( my_ip() )
+    _ip_start := net[p_ndev].fifo_wr_ptr()
+    wr_ip_header()
+
+
+PUB swap_dest_src()
+' Swap the destination and source IP address fields
+    header.src_addr, header.dest_addr := header.dest_addr, header.src_addr
 
 
 PUB update_chksum(len): ck | p_tmp
@@ -321,18 +338,6 @@ PUB reset_ipv4()
 PUB rd_ip_header(): p
 ' Read IP header from buffer
     _ip_start := net[p_ndev].fifo_rd_ptr()
-{    net[p_ndev].rdblk_lsbf(@header.version, 1)
-    net[p_ndev].rdblk_lsbf(@header.dscp_ecn, 1)
-    net[p_ndev].rdblk_lsbf(@header.dgram_len, 2)
-    net[p_ndev].rdblk_lsbf(@header.ident, 2)
-    net[p_ndev].rdblk_lsbf(@header.flags_frag_h, 1)
-    net[p_ndev].rdblk_lsbf(@header.frag_l, 1)
-    net[p_ndev].rdblk_lsbf(@header.ttl, 1)
-    net[p_ndev].rdblk_lsbf(@header.l4proto, 1)
-    net[p_ndev].rdblk_lsbf(@header.checksum, 2)
-    net[p_ndev].rdblk_lsbf(@header.src_addr, 4)
-    net[p_ndev].rdblk_lsbf(@header.dest_addr, 4)
-}
     net[p_ndev].rd_block(@header, IP_HDR_SZ)
     return net[p_ndev].fifo_wr_ptr()
 

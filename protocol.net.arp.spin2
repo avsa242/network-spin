@@ -4,7 +4,7 @@
     Description:    Address Resolution Protocol
     Author:         Jesse Burt
     Started:        Feb 27, 2022
-    Updated:        Feb 22, 2025
+    Updated:        Mar 8, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -202,27 +202,22 @@ pub read_entry_mac(e): h
     return hw_ent(e)
 
 
-PUB reply()
+PUB reply(): p
 ' Set up next ARP message to "reply" to the previous
     set_opcode(ARP_REPL)
     swap_sender_target()
-    wr_arp_msg()
+
+    return wr_arp_msg()
 
 
-PUB swap_sender_target() | ip_tmp, macaddr_s mac_tmp
+PUB swap_sender_target() | ip_tmp
 ' Swap the sender and target fields
-    { temporarily store the current sender addresses }
-    ip_tmp := message.sender_proto_addr
-    bytemove(@mac_tmp, @message.sender_hw_addr, MACADDR_LEN)
-
-    { update the sender addresses to the last received target IP, and the locally set MAC }
-    message.sender_proto_addr := message.target_proto_addr
-    bytemove(@message.sender_hw_addr, @message.target_hw_addr, MACADDR_LEN)
-
-    { update the target addresses to the temporarily stored sender addresses }
-    message.target_proto_addr := ip_tmp
-    bytemove(@message.target_hw_addr, @mac_tmp, MACADDR_LEN)
-
+    ' temporarily store the current sender address
+    ip_tmp := target_proto_addr()
+    set_target_hw_addr( sender_hw_addr() )
+    set_target_proto_addr( sender_proto_addr() )
+    set_sender_hw_addr( net[p_ndev].my_mac() )
+    set_sender_proto_addr( ip_tmp )
 
 PUB sender_hw_addr(): h
 ' Get sender hardware address

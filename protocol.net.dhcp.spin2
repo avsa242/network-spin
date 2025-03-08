@@ -264,7 +264,7 @@ PUB wr_dhcp_msg(): p | st
     _opts_len := 0
     write_tlv(MSG_TYPE, 1, _msg_t)
 
-    write_tlv(PARAM_REQLST, 5, @_param_req)
+    write_tlv(PARAM_REQLST, 5, @_param_req) 'xxx need param len var
 
     net[p_ndev].wr_byte(CLIENT_ID)
     net[p_ndev].wr_byte(7)

@@ -4,7 +4,7 @@
     Description:    Ethernet II protocol
     Author:         Jesse Burt
     Started:        Mar 1, 2022
-    Updated:        Feb 22, 2025
+    Updated:        Mar 8, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -68,17 +68,15 @@ PUB new(src, dest, ether_t)
     wr_ethii_frame()
 
 
-PUB reply(): p | macaddr_s mac_tmp
+PUB reply(): p
 ' Set up/write Ethernet II frame as a reply to last received frame
 '   Returns:    network device FIFO write pointer after writing ethernet-II data
     ' swap the dest & source addresses
-    bytemove(@mac_tmp, @message.dest, MACADDR_LEN)
     bytemove(@message.dest, @message.src, MACADDR_LEN)
-    bytemove(@message.src, @mac_tmp, MACADDR_LEN)
+    bytemove(@message.src, net[p_ndev].my_mac(), MACADDR_LEN)
 
     ' write the ethernet-II data
-    wr_ethii_frame()
-    return net[p_ndev].fifo_wr_ptr()
+    return wr_ethii_frame()
 
 
 PUB src_addr(): addr
