@@ -4,7 +4,7 @@
     Description:    Constants common to multiple networking objects
     Author:         Jesse Burt
     Started:        Mar 12, 2022
-    Updated:        Mar 7, 2025
+    Updated:        Mar 8, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -14,19 +14,20 @@
 
 CON
 
-    { limits }
+    ' limits
     MACADDR_LEN         = 6                     ' xx:xx:xx:xx:xx:xx
     IPV4ADDR_LEN        = 4                     ' ddd.ddd.ddd.ddd
 
+    ' structure definitions
     struct macaddr_s(...
         byte mac[6])                            ' OUI_MSB ... LSB
 
 
-    { ethertypes }
+    ' ethertypes
     ETYP_IPV4           = $0008 ' $0800
     ETYP_ARP            = $0608 ' $0806
 
-    { hardware types }
+    ' hardware types
     HRD_ETH         = 1                         ' only these first two are
     HRD_IEEE802     = 6                         '   officially supported
 
@@ -41,14 +42,16 @@ CON
     BCAST_IP            = $FF_FF_FF_FF          ' broadcast IP
 
 
-    { eth-ii }
+    ' eth-ii
     ETH_DEST            = 0
     ETH_SRC             = 6
     ETH_TYPE_M          = 12
     ETH_TYPE_L          = 13
     ETH_TYPE            = ETH_TYPE_M
 
-    { ip }
+    ' ip
+    NO_IP               = 0
+
     IP_ABS_ST           = ETH_TYPE+2            ' add to the below for abs. position within frame
 
     IP_VERS             = 0
@@ -69,7 +72,7 @@ CON
     IP_SRCIP            = 12'..15
     IP_DSTIP            = 16'..19
 
-    { layer 4 protocols }
+    ' layer 4 protocols
     L4_RSVD             = $00
     L4_ICMP             = $01
     L4_IGMP             = $02
@@ -82,7 +85,7 @@ CON
     L4_AH               = $33
 
 
-    { arp }
+    ' arp
     ARP_ABS_ST          = ETH_TYPE+2            ' add to the below for abs. position within frame
 
     ARP_HW_T_M          = 0                     ' 16b/2B
@@ -99,7 +102,7 @@ CON
     ARP_TGT_PRADDR      = 24'..27               ' 32b/4B
 
 
-    { udp }
+    ' udp
     UDP_ABS_ST          = IP_DSTIP + 4          ' add to the below for abs. position within frame
 
     UDP_SRCPORT         = 0
@@ -112,7 +115,7 @@ CON
      UDP_CKSUM_L        = 7
 
 
-    { bootp }
+    ' bootp
     BOOTP_ABS_ST        = UDP_CKSUM + 2         ' add to the below for abs. position within frame
 
     HDWADDRLEN_MAX      = 16
@@ -135,7 +138,7 @@ CON
     BOOTPM_HOSTNM       = BOOTPM_CLI_MAC + (HDWADDRLEN_MAX-MACADDR_LEN)
     BOOTPM_FILENM       = BOOTPM_HOSTNM + SRV_HOSTN_LEN
 
-    { icmp }
+    ' icmp
     ICMP_ABS_ST         = IP_DSTIP + 4          ' add to the below for abs. position within frame
     ICMP_T              = 0
     ICMP_CD             = 1
@@ -143,7 +146,7 @@ CON
      ICMP_CKSUM_L       = 3
     ICMP_DATA           = 50                    ' data for ECHO messages
 
-    { tcp }
+    ' tcp
     TCPH_ST             = IP_ABS_ST+20
     TCPH_SRCP           = 0'..1
     TCPH_DESTP          = 2'..3
