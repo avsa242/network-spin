@@ -112,8 +112,8 @@ pub init(optr)
 
 PUB echo_reply()
 ' Set up for an echo reply message
-    message.checksum := $0000
-    message.type := ECHO_REPL
+    set_chksum(0)
+    set_msg_type(ECHO_REPL)
     wr_icmp_msg()
 
 

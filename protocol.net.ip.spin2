@@ -16,8 +16,12 @@
 
 CON
 
-    { limits }
+    ' limits
     IP_HDR_SZ       = 20                        ' header length
+
+    ' default settings
+    TTL_DEFAULT     = 64
+
 
     struct ip_header_s(...
         byte    version, ...
@@ -33,7 +37,7 @@ CON
         long    dest_addr )
 
 
-    { layer 4 protocols }
+    ' layer 4 protocols
     RSVD            = $00
     ICMP            = $01
     IGMP            = $02
@@ -45,7 +49,7 @@ CON
     ESP             = $32
     AH              = $33
 
-    { Differentiated Services Codepoints }
+    ' Differentiated Services Codepoints
     CS6             = $30
 
     ' flags
@@ -281,6 +285,7 @@ PUB new(l4_proto, src_ip, dest_ip)
 '   l4_proto: OSI Layer-4 protocol (L4_TCP, L4_UDP, L4_ICMP)
     _ip_start := net[p_ndev].fifo_wr_ptr()
     reset_ipv4()
+    set_ttl(TTL_DEFAULT)
     set_layer4_proto(l4_proto)
     set_src_addr(src_ip)
     set_dest_addr(dest_ip)
