@@ -96,6 +96,12 @@ PUB hdr_len(): l
     return UDP_MSG_SZ
 
 
+PUB payload_len(): l
+' Get length of datagram
+'   NOTE: This length is of the payload portion of the datagram only
+    return dgram_len()-UDP_MSG_SZ
+
+
 PUB src_port(): p
 ' Get source port field
     return swap_word(message.src_port)

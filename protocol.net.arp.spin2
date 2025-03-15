@@ -18,7 +18,7 @@ CON
 
     { limits }
     ARP_MSG_SZ      = 28                        ' message length
-    ENTRIES         = 10                        ' ARP cache entries (RAM usage: n * 11 bytes)
+    ENTRIES         = 10                        ' ARP cache entries (RAM usage: n * 12 bytes)
 
     struct arp_entry_s(...
         word        proto_t, ...
@@ -37,7 +37,7 @@ CON
         long        target_proto_addr)
 
     ' protocol types
-    PTYPE_IP        = $0800
+    PROTO_TYPE_IP   = $0800
 
 
     { opcodes }

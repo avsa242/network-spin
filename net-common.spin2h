@@ -4,7 +4,7 @@
     Description:    Constants common to multiple networking objects
     Author:         Jesse Burt
     Started:        Mar 12, 2022
-    Updated:        Mar 8, 2025
+    Updated:        Mar 15, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -17,15 +17,19 @@ CON
     ' limits
     MACADDR_LEN         = 6                     ' xx:xx:xx:xx:xx:xx
     IPV4ADDR_LEN        = 4                     ' ddd.ddd.ddd.ddd
+    IPV6ADDR_LEN        = 16                    ' xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx
 
     ' structure definitions
     struct macaddr_s(...
         byte mac[6])                            ' OUI_MSB ... LSB
 
+    struct ipv6_addr_s(...
+        byte ip[16])
 
     ' ethertypes
     ETYP_IPV4           = $0008 ' $0800
     ETYP_ARP            = $0608 ' $0806
+    ETYP_IPV6           = $dd86 ' $86dd
 
     ' hardware types
     HRD_ETH         = 1                         ' only these first two are
@@ -49,7 +53,7 @@ CON
     ETH_TYPE_L          = 13
     ETH_TYPE            = ETH_TYPE_M
 
-    ' ip
+    ' ipv4
     NO_IP               = 0
 
     IP_ABS_ST           = ETH_TYPE+2            ' add to the below for abs. position within frame
@@ -71,6 +75,18 @@ CON
     IP_CKSUM_L          = 11
     IP_SRCIP            = 12'..15
     IP_DSTIP            = 16'..19
+
+    ' ipv6
+    IPV6_VERS           = 0
+    IPV6_TRAFFIC_CLASS_M= 0
+    IPV6_TRAFFIC_CLASS_L= 1
+    IPV6_FLOW_LABEL     = 1
+    IPV6_PAYLOAD_LEN    = 4
+    IPV6_NEXT_HDR       = 6
+    IPV6_HOP_LIMIT      = 7
+    IPV6_SRCIP          = 8
+    IPV6_DESTIP         = 24
+
 
     ' layer 4 protocols
     L4_RSVD             = $00

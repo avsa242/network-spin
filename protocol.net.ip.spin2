@@ -21,6 +21,7 @@ CON
 
     ' default settings
     TTL_DEFAULT     = 64
+    NONE            = 0
 
 
     struct ip_header_s(...

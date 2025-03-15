@@ -55,7 +55,7 @@ pub main() | etyp, p, t, wanted_ip
                 ' there was no answer, so we'll consider this IP available to use
                 ' set in the IP layer and cache it in our ARP table
                 ip.set_my_ip32(wanted_ip)
-                arp.cache_entry(net.my_mac(), ip.my_ip(), arp.PTYPE_IP)
+                arp.cache_entry(net.my_mac(), ip.my_ip(), arp.PROTO_TYPE_IP)
                 _state := RUNNING
                 quit
             if ( net.pkt_cnt() )
