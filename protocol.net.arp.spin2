@@ -248,7 +248,7 @@ PUB preset_ethii_ipv4()
     set_hw_addr_len(MACADDR_LEN)
     set_hwtype(HRD_ETH)
     set_proto_addr_len(IPV4ADDR_LEN)
-    set_proto_type(PTYPE_IP)
+    set_proto_type(PROTO_TYPE_IP)
 
 
 PUB set_hw_addr_len(len)
@@ -305,6 +305,7 @@ PUB set_target_proto_addr(addr)
 PUB rd_arp_msg(): p
 ' Read ARP message
 '   Returns:    network driver current FIFO write pointer
+    message~
     message.hw_t :=                 net[p_ndev].rd_word()
     message.proto_t :=              net[p_ndev].rd_word()
     message.hw_addr_len :=          net[p_ndev].rd_byte()
