@@ -216,29 +216,6 @@ CON
      UDP_CKSUM_L        = 7
 
 
-    ' bootp
-    BOOTP_ABS_ST        = UDP_CKSUM + 2         ' add to the below for abs. position within frame
-
-    HDWADDRLEN_MAX      = 16
-    SRV_HOSTN_LEN       = 64
-
-    BOOTPM_OP           = 0
-    BOOTPM_CLI_HW_T     = 1
-    BOOTPM_HW_ADDR_LEN  = 2
-    BOOTPM_HOP          = 3
-    BOOTPM_XID          = 4
-    BOOTPM_LSTM_EL_M    = 8
-     BOOTPM_LSTM_EL_L   = 9
-    BOOTPM_FLAGS        = 10
-     BOOTPM_FLAGS_L     = 11
-    BOOTPM_CIP          = 12
-    BOOTPM_YIP          = BOOTPM_CIP+IPV4ADDR_LEN
-    BOOTPM_SIP          = BOOTPM_YIP+IPV4ADDR_LEN
-    BOOTPM_GIP          = BOOTPM_SIP+IPV4ADDR_LEN
-    BOOTPM_CLI_MAC      = BOOTPM_GIP+IPV4ADDR_LEN
-    BOOTPM_HOSTNM       = BOOTPM_CLI_MAC + (HDWADDRLEN_MAX-MACADDR_LEN)
-    BOOTPM_FILENM       = BOOTPM_HOSTNM + SRV_HOSTN_LEN
-
     ' icmp
     ICMP_ABS_ST         = IP_DSTIP + 4          ' add to the below for abs. position within frame
     ICMP_T              = 0

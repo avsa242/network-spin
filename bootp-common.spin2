@@ -1,0 +1,73 @@
+{
+----------------------------------------------------------------------------------------------------
+    Filename:       bootp-common.spin2
+    Description:    Boot Protocol: common code
+    Author:         Jesse Burt
+    Started:        Mar 29, 2025
+    Updated:        Mar 29, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
+}
+#ifndef NET_COMMON
+#include "net-common.spin2h"
+#endif
+
+con
+
+    HDWADDRLEN_MAX      = 16
+    SRV_HOSTN_LEN       = 64
+
+    BOOTPM_OP           = 0
+    BOOTPM_CLI_HW_T     = 1
+    BOOTPM_HW_ADDR_LEN  = 2
+    BOOTPM_HOP          = 3
+    BOOTPM_XID          = 4
+    BOOTPM_LSTM_EL_M    = 8
+     BOOTPM_LSTM_EL_L   = 9
+    BOOTPM_FLAGS        = 10
+     BOOTPM_FLAGS_L     = 11
+    BOOTPM_CIP          = 12
+    BOOTPM_YIP          = BOOTPM_CIP+IPV4ADDR_LEN
+    BOOTPM_SIP          = BOOTPM_YIP+IPV4ADDR_LEN
+    BOOTPM_GIP          = BOOTPM_SIP+IPV4ADDR_LEN
+    BOOTPM_CLI_MAC      = BOOTPM_GIP+IPV4ADDR_LEN
+    BOOTPM_HOSTNM       = BOOTPM_CLI_MAC + (HDWADDRLEN_MAX-MACADDR_LEN)
+    BOOTPM_FILENM       = BOOTPM_HOSTNM + SRV_HOSTN_LEN
+
+    struct bootp_msg_s(...
+        byte        opcode, ...                 '1
+        byte        client_hw_t, ...            '1
+        byte        hw_addr_len, ...            '1
+        byte        hop, ...                    '1
+        long        xid, ...                    '4
+        word        lease_time_elapsed, ...     '2
+        word        flags, ...                  '2
+        long        client_ip, ...              '4
+        long        your_ip, ...                '4
+        long        server_ip, ...              '4
+        long        gateway_ip, ...             '4
+        byte        client_mac[16], ...         '16
+        byte        hostname[64], ...           '64
+        byte        filename[128])              '128
+
+
+DAT
+{
+Copyright 2025 Jesse Burt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+}
+
