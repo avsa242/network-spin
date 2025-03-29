@@ -4,7 +4,7 @@
     Description:    Constants common to multiple networking objects
     Author:         Jesse Burt
     Started:        Mar 12, 2022
-    Updated:        Mar 15, 2025
+    Updated:        Mar 29, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -30,6 +30,7 @@ CON
     ETYP_IPV4           = $0008 ' $0800
     ETYP_ARP            = $0608 ' $0806
     ETYP_IPV6           = $dd86 ' $86dd
+    ETYP_LLDP           = $cc88 ' $88cc
 
     ' hardware types
     HRD_ETH         = 1                         ' only these first two are
