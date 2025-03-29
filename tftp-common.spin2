@@ -1,11 +1,10 @@
 {
 ----------------------------------------------------------------------------------------------------
-    Filename:       MLX90614-Demo.spin
-    Description:    MLX90614 driver demo
-        * Object temp data output
+    Filename:       tftp-common.spin2
+    Description:    TFTP protocol: common code
     Author:         Jesse Burt
-    Started:        Mar 17, 2019
-    Updated:        Oct 4, 2024
+    Started:        Feb 1, 2025
+    Updated:        Mar 29, 2025
     Copyright (c) 2024 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
