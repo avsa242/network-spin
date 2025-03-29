@@ -1,0 +1,188 @@
+{
+----------------------------------------------------------------------------------------------------
+    Filename:       protocol.net.stp.spin2
+    Description:    Spanning-Tree Protocol (STP, IEEE 802.1D)
+    Author:         Jesse Burt
+    Started:        Mar 29, 2025
+    Updated:        Mar 29, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
+}
+
+{Spin2_v46}
+
+#ifndef NET_COMMON
+#include "net-common.spin2h"
+#endif
+
+con
+
+    ' limits
+    STP_HEADER_SZ   = 35
+
+
+    ' port roles
+    PORT_UNUSED     = %00
+    PORT_ALTERNATE  = %01
+    PORT_ROOT       = %10
+    PORT_DESIGNATED = %11
+
+
+#include "stp-common.spin2"
+
+
+obj
+
+    net=    NETIF_DRIVER
+
+
+var
+
+    long            p_ndev
+
+
+PUB init(optr)
+' Set pointer to network device object
+    p_ndev := optr
+
+
+pub bpdu_type(^stp_header_s hdr): t
+' Get bridge protocol data unit type
+    return hdr.bpdu_type
+
+
+pub bpdu_flags(^stp_header_s hdr): f
+' Get bridge protocol data unit flags
+    return hdr.bpdu_flags
+
+
+pub bridge_id_address(^stp_header_s hdr, p_addr)
+' Get bridge ID MAC address
+'   p_addr: pointer to 6-byte array
+    bytemove(p_addr, hdr.bridge_id.address, MACADDR_LEN)
+
+
+pub bridge_id_priority(^stp_header_s hdr): p
+' Get bridge ID priority
+    return hdr.bridge_id.priority_sysid_ext & $0f
+
+
+pub bridge_id_sysid_ext(^stp_header_s hdr): x
+' Get bridge ID system ID extension
+    return (hdr.bridge_id.priority_sysid_ext >> 4) & $fff
+
+
+pub forward_delay(^stp_header_s hdr): d
+' Get forward delay
+'   Returns:    delay in 1/256th seconds
+    return hdr.fwd_delay
+
+
+pub hello_time(^stp_header_s hdr): t
+' Get the hello time
+'   Returns:    time in 1/256th seconds
+    return hdr.hello_tm
+
+
+pub maximum_age(^stp_header_s hdr): a
+' Get the maximum age
+'   Returns:    time in 1/256th seconds
+    return hdr.max_age
+
+
+pub message_age(^stp_header_s hdr): a
+' Get the message age
+'   Returns:    time in 1/256th seconds
+    return hdr.msg_age
+
+
+pub port_id(^stp_header_s hdr): p
+' Get the port ID
+'   Returns:    word
+    return hdr.port_id
+
+
+pub protocol_id(^stp_header_s hdr): i
+' Get the protocol ID
+'   Returns:    $0000 (802.1D)
+    return hdr.protocol
+
+
+pub root_path_cost(^stp_header_s hdr): c
+' Get the CIST external path cost in MST/SPT BPDU
+'   Returns:    long
+    return swap_long(hdr.cost)
+
+
+pub rootid_address(^stp_header_s hdr, p_addr)
+' Get the root ID MAC address
+'   p_addr: pointer to 6-byte array
+    bytemove(p_addr, hdr.root_id.address, MACADDR_LEN)
+
+
+pub rootid_priority(^stp_header_s hdr): p
+' Get the root ID priority
+'   Returns:    4-bit priority
+    return hdr.root_id.priority_sysid_ext & $0f
+
+
+pub rootid_sysid_ext(^stp_header_s hdr): x
+' Get the root ID system ID extension
+'   Returns:    12-bit system ID extension
+    return (hdr.root_id.priority_sysid_ext >> 4) & $fff
+
+
+pub ver1_length(^stp_header_s hdr): v
+' Get the version 1 length
+'   Returns:
+'       $00:    no version 1 protocl info present (RST, MST, SPT BPDU only)
+    return hdr.ver1_len
+
+
+pub ver3_length(^stp_header_s hdr): v
+' Get the version 3 length
+'   Returns:    MST, SPT BPDU only (version 3 only)
+    return hdr.ver3_len
+
+
+pub version(^stp_header_s hdr): v
+' Get the version ID
+'   Returns:
+'       $00:    config and TCN BPDUs
+'       $02:    RST BPDU
+'       $03:    MST BPDU
+'       $04:    STP BPDU
+    return hdr.version
+
+
+pub rd_header(^stp_header_s hdr): l
+' Read the STP header from the network device
+    net[p_ndev].rd_block(@hdr, sizeof(hdr) )
+
+
+pub wr_header(^stp_header_s hdr): p
+' Write the currently assembled STP header to the network device
+    net[p_ndev].wr_block(@hdr, sizeof(hdr) )
+    return net[p_ndev].fifo_wr_ptr()
+
+
+DAT
+{
+Copyright 2025 Jesse Burt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+}
+

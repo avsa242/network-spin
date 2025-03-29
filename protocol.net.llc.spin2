@@ -1,0 +1,105 @@
+{
+----------------------------------------------------------------------------------------------------
+    Filename:       protocol.net.llc.spin2
+    Description:    IEEE 802.2 Logical Link Control (LLC)
+    Author:         Jesse Burt
+    Started:        Mar 29, 2025
+    Updated:        Mar 29, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
+}
+
+{Spin2_v46}
+
+#ifndef NET_COMMON
+#include "net-common.spin2h"
+#endif
+
+con
+
+    ' limits
+    LLC_HEADER_SZ   = 3
+
+
+    ' access point types
+    STP             = $42
+
+#include "llc-common.spin2"
+
+
+obj
+
+    net=    NETIF_DRIVER
+
+
+var
+
+    long            p_ndev
+
+
+PUB init(optr)
+' Set pointer to network device object
+    p_ndev := optr
+
+
+pub control(^llc_header_s hdr): t
+' Get the type of the LLC frame
+    return hdr.control
+
+
+pub dest_svc_access_point(^llc_header_s hdr): p
+' Get the destination service access point
+    return hdr.dsap
+
+
+pub set_control(^llc_header_s hdr, t)
+' Set the type of the LLC frame
+    hdr.control := t
+
+
+pub set_dest_svc_access_point(^llc_header_s hdr, p)
+' Set the destination service access point
+    hdr.dsap := p
+
+
+pub set_src_svc_access_point(^llc_header_s hdr, p)
+' Set the source service access point
+    hdr.ssap := p
+
+
+pub src_svc_access_point(^llc_header_s hdr): p
+' Get the source service acess point
+    return hdr.ssap
+
+
+pub rd_header(^llc_header_s hdr): l
+' Read the LLC header from the network device
+    net[p_ndev].rd_block(@hdr, sizeof(hdr) )
+
+
+pub wr_header(^llc_header_s hdr): p
+' Write the currently build LLC header to the network device
+    net[p_ndev].wr_block(@hdr, sizeof(hdr) )
+    return net[p_ndev].fifo_wr_ptr()
+
+
+DAT
+{
+Copyright 2025 Jesse Burt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+}
+
