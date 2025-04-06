@@ -1,0 +1,333 @@
+{
+----------------------------------------------------------------------------------------------------
+    Filename:       MDNS-Disassemble.spin2
+    Description:    Multicast DNS datagram disassembler
+        * Reads mDNS packets (all others ignored) and displays the output in a format similar
+            to Wireshark
+    Author:         Jesse Burt
+    Started:        Mar 29, 2025
+    Updated:        Apr 6, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
+}
+
+#define NETIF_DRIVER "net.eth.enc28j60"
+#pragma exportdef(NETIF_DRIVER)
+#include "core.con.click.spin2"
+
+con
+
+    _clkfreq    = 250_000_000
+    _xtlfreq    = 20_000_000
+
+    CLICK_BASE  = 0
+
+
+obj
+
+    svc:    "services.spinh"
+    str:    "string"
+    ethii:  "protocol.net.eth-ii"
+    ip:     "protocol.net.ip"
+    udp:    "protocol.net.udp"
+    mdns:   "protocol.net.mdns"
+    ser:    "com.serial.terminal.ansi" | SER_BAUD=2_000_000
+    net:    NETIF_DRIVER | CS=CS_PIN, SCK=SCK_PIN, MOSI=MOSI_PIN, MISO=MISO_PIN, SPI_FREQ=20_000_000
+
+
+dat
+
+    ' this node's MAC address - OUI first
+    _mac_local   byte $02, $98, $0c, $06, $01, $c9
+
+
+var
+
+    byte _tmp[net.MTU_MAX]
+    byte message[512]
+
+
+pub main()
+
+    setup()
+
+    repeat
+        if ( net.pkt_cnt() )                    ' pkt received?
+            net.get_frame()                     ' read from wire into ethernet device
+            process_ethii()                     ' dissect each component of the frame
+
+
+pub class_to_qtype_str(cls): s
+' Get string representation of question preferred response type (unicast or multicast)
+'   cls:        class
+'   Returns:    pointer to string
+    if ( cls & mdns.RESP_UNICAST )
+        return @mdns_qt_qu                      ' unicast response preferred
+    else
+        return @mdns_qt_qm                      ' multicast
+
+
+pub class_to_str(qa, c): s
+' Get the string representation of a DNS query class
+'   qa:         question (0) or answer (1)
+'   c:          class
+'   Returns:    pointer to string
+    if ( c == mdns.CLASS_IN )                   ' internet
+        return @mdns_class_in
+    elseif ( c == mdns.CLASS_IN | (1 << 15) )   ' bit 15 is set
+        if (qa == 0)
+            return @mdns_class_inu              ' internet, question: unicast response preferred
+        elseif (qa == 1)
+            return @mdns_class_inc              ' internet, answer: cache flush
+
+
+pub parse_answer(): t, c | l, ttl, rdl, i, pr, wt, pt
+' Parse DNS answer RR's
+'   Returns:    response type, class
+    bytefill(@_tmp, 0, net.MTU_MAX)
+    parse_label(@_tmp)                          ' read record from network device and parse it
+    t := swap_word( net.rd_word() )             ' response type
+    c := swap_word( net.rd_word() )             '   and class
+    ttl := swap_long( net.rd_long() )           ' message time-to-live
+    rdl := swap_word( net.rd_word() )           ' response data length
+
+    case t                                      ' parse the response record accordingly
+        mdns.RR_TYPE_PTR:
+        ' domain name pointer
+            str.append(@message, @"PTR, ")
+            if ( c & mdns.CACHE_FLUSH )
+                str.append(@message, @"cache flush ")
+            bytefill(@_tmp, 0, net.MTU_MAX)
+            parse_label(@_tmp)
+            str.append(@message, @_tmp)
+            str.append(@message, @" ")
+        mdns.RR_TYPE_A:
+        ' host address (IPv4)
+            str.append(@message, @"A, ")
+            if ( c & mdns.CACHE_FLUSH )
+                str.append(@message, @"cache flush ")
+            str.append(@message, str.iptostr( net.rd_long() ) )
+            str.append(@message, @" ")
+        mdns.RR_TYPE_SRV:
+        ' server selection
+            str.append(@message, @"SRV, ")
+            if ( c & mdns.CACHE_FLUSH )
+                str.append(@message, @"cache flush, ")
+            str.sprintf1(@message+strsize(@message), @"priority %d, ", swap_word( net.rd_word() ) )
+            str.sprintf1(@message+strsize(@message), @"weight %d, ", swap_word( net.rd_word() ) )
+            str.sprintf1(@message+strsize(@message), @"port %d, ", swap_word( net.rd_word() ) )
+            str.append(@message, @"target ")
+            bytefill(@_tmp, 0, net.MTU_MAX)
+            parse_label(@_tmp)
+            str.append(@message, @_tmp)
+            str.append(@message, @" ")
+        mdns.RR_TYPE_TXT:
+        ' text strings
+            str.append(@message, @"TXT, ")
+            if ( c & mdns.CACHE_FLUSH )
+                str.append(@message, @"cache flush, ")
+            repeat while (rdl > 0)              ' read each length-prefaced string
+                l := net.rd_byte()
+                bytefill(@_tmp, 0, net.MTU_MAX)
+                net.rd_block(@_tmp, l)
+                rdl -= (l+1)                    ' account for the data _and_ the length byte itself
+                str.append(@message, @_tmp)
+                str.append(@message, @" ")
+        mdns.RR_TYPE_AAAA:
+        ' host address (IPv6)
+            str.append(@message, @"AAAA, ")
+            if ( c & mdns.CACHE_FLUSH )
+                str.append(@message, @"cache flush, ")
+            repeat i from 0 to 14 step 2        ' add the IPv6 address (always long form)
+                str.append(@message, str.hexs( swap_word( net.rd_word() ), 4) )
+                if ( i < 14 )
+                    str.append(@message, @":")
+            str.append(@message, @" ")
+
+
+pub parse_label(p_buff): l, ef | len, op
+' Parse length-prefaced labels in a DNS label
+'   p_buff:     destination buffer to copy labels to
+'   Returns:    length, 'end-of-name' flag
+    l := 0                                      ' init total length and 'end flag'
+    ef := 0
+    repeat
+        len := net.rd_byte()                    ' read the length preface byte
+        case len
+            0:                                  ' end of name
+                ef := true
+                quit
+            $c0..$ff:                           ' compressed DNS name entry: follow the pointer
+                op := net.fifo_rd_ptr() + 1     ' remember the position right after the pointer
+                net.fifo_set_rd_ptr( mdns._dns_start + ( ( (len & $3f) << 8) | net.rd_byte() ) )
+                len, ef := parse_label(p_buff)  ' recursively call to read the actual text
+                net.fifo_set_rd_ptr(op)
+                p_buff += len
+                if ( ef )
+                    l += len
+                    quit
+            other:                              ' label text
+                net.rd_block(p_buff, len)
+                p_buff += len
+                byte[p_buff++] := "."
+                l++ 
+        l += len
+    byte[--p_buff] := 0
+
+
+pub parse_question(): t, c | l
+' Parse DNS questions/queries
+'   Returns:    question type, class
+    bytefill(@_tmp, 0, net.MTU_MAX)
+    l, _ := parse_label(@_tmp)
+    t := swap_word( net.rd_word() )
+    c := swap_word( net.rd_word() )
+
+
+#include "net-common.spin2h"                    ' use code common to networking apps/objects
+pub process_ethii() | ethii_t hdr, ether_t
+' Process Ethernet-II headers
+    ethii.rd_ethii_frame(hdr)                   ' read ethernet-II header from network device
+
+    ether_t := ethii.ethertype(hdr)
+
+    case ether_t                                ' pass control to ethertype-specific handler
+        ETYP_IPV4:
+            process_ipv4()
+
+
+pub process_ipv4() | ip_header_s hdr
+' Process IPv4 headers
+    ip.rd_ip_header(hdr)                        ' read IPv4 header from network device
+
+    case ip.layer4_proto(hdr)                   ' pass control to layer 4-specific handler
+        ip.UDP:
+            process_udp()
+
+
+#include "mdns-common.spin2"                    ' use code common to mDNS-related objects
+pub process_mdns() | mdns_header_s hdr, qs, an, ns, ar, i, t, c
+' Process multicast DNS datagrams
+    mdns.rd_header(hdr)                         ' read the mDNS header
+    qs := mdns.questions(hdr)                   ' get a count of the questions and
+    an := mdns.answer_records(hdr)              '   answer Resource Records
+    ns := mdns.authority_records(hdr)           '   ...
+    ar := mdns.additional_records(hdr)          '   ...
+    if ( qs )
+        bytefill(@message, 0, 512)
+        str.sprintf1(@message, @"Standard query $%04.4x ", mdns.transaction_id(hdr) )
+        repeat i from 0 to qs-1
+            t, c := parse_question()            ' read label(s), type, class, from question/query
+            str.sprintf3(@message+strsize(@message), ...
+                        @"%s %s, '%s' question ", rr_to_str(t), @_tmp, class_to_qtype_str(c) )
+        ser.strln(@message)
+        ser.newline()
+    if ( an )
+        bytefill(@message, 0, 512)
+        str.sprintf1(@message, @"Standard query response $%04.4x ", mdns.transaction_id(hdr) )
+        repeat i from 0 to an-1                 ' read label(s), type, class, etc from answer
+            t, c := parse_answer()
+        ser.strln(@message)
+        ser.newline()
+    if ( ns )
+        bytefill(@message, 0, 512)
+        str.sprintf1(@message, @"Standard query response $%04.4x ", mdns.transaction_id(hdr) )
+        repeat i from 0 to ns-1
+            t, c := parse_answer()
+        ser.strln(@message)
+        ser.newline()
+    if ( ar )
+        bytefill(@message, 0, 512)
+        str.sprintf1(@message, @"Standard query response $%04.4x ", mdns.transaction_id(hdr) )
+        repeat i from 0 to ar-1
+            t, c := parse_answer()
+        ser.strln(@message)
+        ser.newline()
+
+
+pub process_udp() | udp_msg_s hdr
+' Process UDP headers
+    udp.rd_udp_header(hdr)                      ' read UDP header from network device
+
+    case udp.dest_port(hdr)                     ' pass control to application-specific handler
+        svc.MDNS:
+            process_mdns()
+
+
+pub rr_to_str(rr): s
+' Get the string representation of a Resource Record type
+'   rr:         resource record type
+'   Returns:    pointer to string
+    case rr
+        mdns.RR_TYPE_A:     return @mdns_rr_a
+        mdns.RR_TYPE_PTR:   return @mdns_rr_ptr
+        mdns.RR_TYPE_TXT:   return @mdns_rr_txt
+        mdns.RR_TYPE_AAAA:  return @mdns_rr_aaaa
+        mdns.RR_TYPE_SRV:   return @mdns_rr_srv
+        mdns.RR_TYPE_ANY:   return @mdns_rr_any
+
+
+dat
+
+    ' text strings
+    mdns_rr_a       byte "A", 0
+    mdns_rr_ptr     byte "PTR", 0
+    mdns_rr_txt     byte "TXT", 0
+    mdns_rr_aaaa    byte "AAAA", 0
+    mdns_rr_srv     byte "SRV", 0
+    mdns_rr_any     byte "ANY", 0
+    mdns_class_in   byte "IN", 0
+    mdns_class_inu  byte "IN (unicast response preferred)", 0
+    mdns_class_inc  byte "IN (cache flush)", 0
+    mdns_qt_qu      byte "QU", 0
+    mdns_qt_qm      byte "QM", 0
+
+
+pub setup()
+
+    ser.start()
+
+    ser.clear()
+    ser.strln(@"Serial terminal started")
+
+    if ( net.start() )
+        ser.strln(@"ENC28J60 driver started")
+        net.set_pkt_filter(0)
+        net.preset_fdx()
+        net.node_address(@_mac_local)
+    else
+        repeat
+
+
+    ser.str(@"waiting for PHY link...")
+    repeat
+    until ( net.phy_link_state() == net.UP )
+    ser.strln(@"UP")
+
+    ' set up protocols - point them to the network device object
+    ethii.init(@net)
+    ip.init(@net)
+    udp.init(@net)
+    mdns.init(@net)
+
+
+dat
+{
+Copyright 2025 Jesse Burt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+}
+
