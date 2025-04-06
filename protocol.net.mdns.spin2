@@ -1,0 +1,235 @@
+{
+----------------------------------------------------------------------------------------------------
+    Filename:       protocol.net.mdns.spin2
+    Description:    Multicast DNS
+    Author:         Jesse Burt
+    Started:        Mar 29, 2025
+    Updated:        Mar 30, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
+}
+{Spin2_v46}
+
+#ifndef NET_COMMON
+#include "net-common.spin2h"
+#endif
+
+#include "mdns-common.spin2"
+
+#ifndef NETIF_DRIVER
+# define NETIF_DRIVER "net.eth.enc28j60"
+#endif
+
+con
+
+    ' limits
+    TRANS_ID_MDNS       = $0000                 ' always 0 for mDNS queries/responses
+    OPCODE_MDNS         = $0                    ' always 0 for mDNS
+
+    ' flags (some are valid only in responses)
+    FLAG_QR             = 15                    ' query or response?
+        QR_QUERY        = 0
+        QR_RESPONSE     = 1
+    FLAG_OPCODE         = 11                    ' (Q/R) always 0 for mDNS
+    FLAG_AUTH           = 10                    ' (R) server is authoritative for domain
+    FLAG_TRUNC          = 9                     ' (Q) is message truncated?
+    FLAG_RECURS         = 8                     ' (Q) is recursion desired?
+    FLAG_RECURS_AVAIL   = 7                     ' (R) recursion is available?
+    FLAG_ANSWER_AUTH    = 5                     ' (R) answer authenticated
+    FLAG_NON_AUTH       = 4                     ' (Q) is non-authenticated data acceptable?
+    FLAG_REPLY_CODE     = 0                     ' (R) reply code
+        NO_ERROR        = %0000                 ' always 0 for mDNS
+
+
+    ' answer RR types
+    RR_TYPE_A           = 1
+    RR_TYPE_PTR         = 12
+    RR_TYPE_TXT         = 16
+    RR_TYPE_AAAA        = 28
+    RR_TYPE_SRV         = 33
+    RR_TYPE_ANY         = 255
+
+    ' class types
+    CLASS_IN            = $0001
+        RESP_UNICAST    = 1 << 15               ' QCLASS flag: please respond via unicast
+        CACHE_FLUSH     = 1 << 15
+
+obj
+
+    net=    NETIF_DRIVER
+
+
+var
+
+    long p_ndev
+
+
+PUB init(optr)
+' Set pointer to network device object
+    p_ndev := optr
+
+
+pub additional_records(^mdns_header_s hdr): r
+' Get the number of additional records
+    return swap_word(hdr.arcount)
+
+
+pub answer_records(^mdns_header_s hdr): r
+' Get the number of answer records
+    return swap_word(hdr.ancount)
+
+
+pub authority_records(^mdns_header_s hdr): r
+' Get the number of authority records
+    return swap_word(hdr.nscount)
+
+
+pub flags(^mdns_header_s hdr): f
+' Get the header flags
+    return swap_word(hdr.flags)
+
+
+pub is_query(^mdns_header_s hdr): f
+' Flag indicating the message is a query
+    return response(hdr) == QR_QUERY
+
+
+pub is_response(^mdns_header_s hdr): f
+' Flag indicating the message is a reponse
+    return response(hdr) == QR_RESPONSE
+
+
+pub is_truncated(^mdns_header_s hdr): f
+' Get the truncated flag
+    return flags(hdr) >> FLAG_TRUNC
+
+
+pub non_auth_acceptable(^mdns_header_s hdr): f
+' Flag indicated non-authenticated data is acceptable
+    return flags(hdr) >> FLAG_NON_AUTH
+
+
+pub opcode(^mdns_header_s hdr): o
+' Get the opcode
+'   Returns:    4-bit opcode
+    return (flags(hdr) >> FLAG_OPCODE) & $0f
+
+
+pub questions(^mdns_header_s hdr): q
+' Get the number of questions
+    return swap_word(hdr.qdcount)
+
+
+pub recursion_desired(^mdns_header_s hdr): f
+' Get the recursion desired flag
+    return flags(hdr) >> FLAG_RECURS
+
+
+pub response(^mdns_header_s hdr): f
+' Get the response flag
+    return flags(hdr) >> FLAG_QR
+
+
+pub transaction_id(^mdns_header_s hdr): i
+' Get the transaction ID
+'   NOTE: This is always 0 for queries or responses
+    return swap_word(hdr.id)
+
+
+pub read_label(p_buff): l, t, c | len
+' Read label from queries or answers
+'   p_buff:     pointer to buffer where labels will be copied
+'   Returns:    network device FIFO read pointer (after reading)
+    l := 0
+    repeat
+        len := net[p_ndev].rd_byte()
+        if ( len == $00 )
+            quit                                ' end of name
+        elseif ( len & $c0 )                    ' compressed DNS name entry
+            len := read_compressed_entry(len, p_buff)
+            p_buff += len
+        else
+            byte[p_buff++] := len               ' copy the length and the entry
+            net[p_ndev].rd_block(p_buff, len)
+            p_buff += len
+            l++
+        l += len
+    t := net[p_ndev].rd_word()
+    c := net[p_ndev].rd_word()
+'    return l'net[p_ndev].fifo_rx_rd_ptr()
+
+
+pub read_compressed_entry(p, p_buff): l | cp, op
+
+    ' get 14-bit offset within mDNS datagram
+    cp := ( (p & $3f) << 8) | net[p_ndev].rd_byte()
+    op := net[p_ndev].fifo_rx_rd_ptr()          ' remember the FIFO read pointer for later
+    net[p_ndev].fifo_set_rx_rd_ptr(_dns_start+cp)   ' temporarily change it to the entry pointer
+
+    l := net[p_ndev].rd_byte()                  ' read the previously occuring label
+    ifnot ( l )
+        return 0                                ' this shouldn't happen, but guard it anyway
+    net[p_ndev].rd_block(p_buff, l)
+    net[p_ndev].fifo_set_rx_rd_ptr(op)          ' set the pointer back to the original value
+
+
+var long _dns_start
+pub rd_header(^mdns_header_s hdr)
+' Read mDNS header
+'   hdr:    destination mDNS header structure to read into from the network device
+    _dns_start := net[p_ndev].fifo_rd_ptr()  ' mark the start of the DNS payload
+    net[p_ndev].rd_block(@hdr, sizeof(hdr) )
+
+
+pub set_answer_records(^mdns_header_s hdr, r)
+' Set number of answer resource records in mDNS header
+    hdr.ancount := swap_word(r)
+
+
+pub set_additional_records(^mdns_header_s hdr, r)
+' Set number of additional resource records in mDNS header
+    hdr.arcount := swap_word(r)
+
+
+pub set_authority_records(^mdns_header_s hdr, r)
+' Set number of authority resource records in mDNS header
+    hdr.nscount := swap_word(r)
+
+
+pub set_flags(^mdns_header_s hdr, f)
+' Set flags in mDNS header
+    hdr.flags := swap_word(f)
+
+
+pub set_questions(^mdns_header_s hdr, q)
+' Set number of questions in mDNS header
+    hdr.qdcount := swap_word(q)
+
+
+pub wr_header(^mdns_header_s hdr)
+' Write currently assembled mDNS header
+'   hdr:    source mDNS header structure to write to the network device
+    net[p_ndev].wr_block(@hdr, sizeof(hdr) )
+
+
+DAT
+{
+Copyright 2025 Jesse Burt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+}
+
+
