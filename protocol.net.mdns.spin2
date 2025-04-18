@@ -129,6 +129,12 @@ pub nsec_type_is_set(p_bmap, len, t): f | i, bit, msk, b
     return false
 
 
+pub opcode(^mdns_header_s hdr): o
+' Get the opcode
+'   Returns:    4-bit opcode
+    return (flags(hdr) >> FLAG_OPCODE) & $0f
+
+
 pub parse_label(p_dest): l, ef | len, op, np, llsb
 ' Parse length-prefaced labels in a DNS label
 '   p_dest:     destination buffer to copy labels to
@@ -158,12 +164,6 @@ pub parse_label(p_dest): l, ef | len, op, np, llsb
                 byte[p_dest++] := "."           ' add '.' suffix/separator
                 l++
         l += len
-
-
-pub opcode(^mdns_header_s hdr): o
-' Get the opcode
-'   Returns:    4-bit opcode
-    return (flags(hdr) >> FLAG_OPCODE) & $0f
 
 
 pub questions(^mdns_header_s hdr): q
