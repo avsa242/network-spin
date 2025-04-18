@@ -4,7 +4,7 @@
     Description:    Multicast DNS
     Author:         Jesse Burt
     Started:        Mar 29, 2025
-    Updated:        Mar 30, 2025
+    Updated:        Apr 18, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -47,6 +47,7 @@ con
     RR_TYPE_TXT         = 16
     RR_TYPE_AAAA        = 28
     RR_TYPE_SRV         = 33
+    RR_TYPE_NSEC        = 47
     RR_TYPE_ANY         = 255
 
     ' class types
@@ -107,6 +108,25 @@ pub is_truncated(^mdns_header_s hdr): f
 pub non_auth_acceptable(^mdns_header_s hdr): f
 ' Flag indicated non-authenticated data is acceptable
     return flags(hdr) >> FLAG_NON_AUTH
+
+
+pub nsec_type_is_set(p_bmap, len, t): f | i, bit, msk, b
+' Check NSEC answer bitmap for type
+'   p_bmap: pointer to bitmap
+'   len:    length of bitmap (precedes bitmap bytes)
+'   t:      type to check for
+'   Returns:
+'       true (-1) if type bit is set
+'       false if not set
+    i := t >> 3
+    bit := t & 7
+    msk := 1 << (7 - bit)
+
+    if ( i < len )
+        if ( byte[p_bmap][i] & msk )
+            return true
+
+    return false
 
 
 pub opcode(^mdns_header_s hdr): o
