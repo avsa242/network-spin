@@ -129,6 +129,37 @@ pub nsec_type_is_set(p_bmap, len, t): f | i, bit, msk, b
     return false
 
 
+pub parse_label(p_dest): l, ef | len, op, np, llsb
+' Parse length-prefaced labels in a DNS label
+'   p_dest:     destination buffer to copy labels to
+'   Returns:    length, 'end-of-name' flag
+    l := 0                                      ' init total length and 'end flag'
+    ef := 0
+    repeat
+        len := net[p_ndev].rd_byte()            ' read the length preface byte
+        case len
+            0:                                  ' end of label
+                ef := true
+                quit
+            $c0..$ff:                           ' compressed DNS name entry: follow the pointer
+                op := net[p_ndev].fifo_rd_ptr() + 1' remember the position right after the pointer
+                llsb := net[p_ndev].rd_byte()
+                np := _dns_start + ( ( (len & $3f) << 8) | llsb )
+                net[p_ndev].fifo_set_rd_ptr(np)
+                len, ef := parse_label(p_dest)  ' recursively call to read the actual text
+                net[p_ndev].fifo_set_rd_ptr(op) ' set pointer to stored position
+                p_dest += len                   ' advance pointer by len read from call above
+                if ( ef )
+                    l += len                    ' end of label
+                    quit
+            other:                              ' label text
+                net[p_ndev].rd_block(p_dest, len)
+                p_dest += len
+                byte[p_dest++] := "."           ' add '.' suffix/separator
+                l++
+        l += len
+
+
 pub opcode(^mdns_header_s hdr): o
 ' Get the opcode
 '   Returns:    4-bit opcode
