@@ -11,7 +11,7 @@
 {Spin2_v46}
 
 #ifndef NET_COMMON
-#include "net-common.spin2h"
+# include "net-common.spin2h"
 #endif
 
 #include "mdns-common.spin2"
@@ -63,6 +63,7 @@ obj
 var
 
     long p_ndev
+    word _dns_msglen
 
 
 PUB init(optr)
@@ -134,37 +135,110 @@ pub opcode(^mdns_header_s hdr): o
 '   Returns:    4-bit opcode
     return (flags(hdr) >> FLAG_OPCODE) & $0f
 
+con
 
-pub parse_label(p_dest): l, ef | len, op, np, llsb
+    MAX_LABEL_RECURSION = 10
+    CPTR_MASK           = %1100_0000
+
+
+var long _cd
+pub parse_label(p_dest, buf_sz): l, ef | len, op, np, llsb, t1, t2, pt, optr, rem_space, offs, saved_ptr, rec_len, rec_end, unrd
 ' Parse length-prefaced labels in a DNS label
 '   p_dest:     destination buffer to copy labels to
 '   Returns:    length, 'end-of-name' flag
     l := 0                                      ' init total length and 'end flag'
     ef := 0
+    _cd++                                       ' track call depth (for recursive calls)
+    ser[p_ser].printf(@"parse_label(%x, %d) (cd: %d)\n\r", p_dest, buf_sz, _cd)
+    if ( _cd > MAX_LABEL_RECURSION )
+        ser[p_ser].strln(@"\033[1;31merror:\033[mparse_label: recursion limit reached")
+        _cd := 0
+        return 0, true
+
+    optr := p_dest
+    rem_space := buf_sz
+
     repeat
         len := net[p_ndev].rd_byte()            ' read the length preface byte
-        case len
-            0:                                  ' end of label
+        ser[p_ser].printf(@"len=%x\n\r", len)
+        if ( len == 0 )
+            ser[p_ser].printf(@"\033[1;32mend flag\033[m\n\r")
+            ef := true
+            l++
+            quit
+
+        if ( (len & CPTR_MASK) == CPTR_MASK )
+            llsb := net[p_ndev].rd_byte()
+            ser[p_ser].printf(@"llsb=%x\n\r", llsb)
+            offs := ((len & %00111111) << 8) + llsb
+            ser[p_ser].printf(@"cptr=%04.4x\n\r", offs)
+
+            if ( (offs < 0) or (offs >= _dns_msglen ) )
+                ser[p_ser].printf(@"\033[1;31merror:\033[m bad ptr offs %d\n\r", offs)
+                dump_mdns()
                 ef := true
                 quit
-            $c0..$ff:                           ' compressed DNS name entry: follow the pointer
-                op := net[p_ndev].fifo_rd_ptr() + 1' remember the position right after the pointer
-                llsb := net[p_ndev].rd_byte()
-                np := _dns_start + ( ( (len & $3f) << 8) | llsb )
-                net[p_ndev].fifo_set_rd_ptr(np)
-                len, ef := parse_label(p_dest)  ' recursively call to read the actual text
-                net[p_ndev].fifo_set_rd_ptr(op) ' set pointer to stored position
-                p_dest += len                   ' advance pointer by len read from call above
-                if ( ef )
-                    l += len                    ' end of label
-                    quit
-            other:                              ' label text
-                net[p_ndev].rd_block(p_dest, len)
-                p_dest += len
-                byte[p_dest++] := "."           ' add '.' suffix/separator
-                l++
-        l += len
 
+            saved_ptr := net[p_ndev].fifo_rd_ptr()
+            net[p_ndev].fifo_set_rd_ptr(_dns_start + offs)
+            rec_len, rec_end := parse_label(optr, rem_space)
+            net[p_ndev].fifo_set_rd_ptr(saved_ptr)
+
+            optr += rec_len
+            l += rec_len
+            ef := rec_end
+            quit
+
+        if ( len > (rem_space-1) )
+            unrd := len
+            ser[p_ser].printf(@"\033[1;31merror:\033[m out of space: len=%d\n\r", len)
+            dump_mdns()
+            len := rem_space-1
+            unrd := unrd-len
+        net[p_ndev].rd_block(optr, len)
+        repeat unrd
+            net[p_ndev].rd_byte()
+        optr      += len
+        rem_space -= len
+
+        ' add dot if there’s room
+        if ( rem_space > 1 )
+            byte[optr++] := "."
+            rem_space -= 1
+            l  += (len + 1)
+        else
+            l += len
+
+    _cd := 0
+    return l, ef
+
+
+var byte _tmp[1000]
+pub dump_mdns() | op
+
+    op := net[p_ndev].fifo_rd_ptr()
+    net[p_ndev].fifo_set_rd_ptr(_dns_start)
+    bytefill(@_tmp, 0, 1000)
+    net[p_ndev].rd_block(@_tmp, _dns_msglen <# 1000)
+    ser[p_ser].hexdump(@_tmp, 0, 3, _dns_msglen, 16 <# _dns_msglen)
+    net[p_ndev].fifo_set_rd_ptr(op)
+
+
+pub set_dns_msg_len(l)
+
+    _dns_msglen := l
+
+
+var long p_ser, p_time
+obj ser="com.serial.terminal.ansi"
+pub set_ser(p)
+
+    p_ser := p
+
+
+pub set_time(p)
+
+    p_time := p
 
 pub questions(^mdns_header_s hdr): q
 ' Get the number of questions
