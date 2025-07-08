@@ -4,7 +4,7 @@
     Description:    Internet Control Message Protocol
     Author:         Jesse Burt
     Started:        Mar 31, 2022
-    Updated:        Mar 29, 2025
+    Updated:        Jul 8, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -78,7 +78,9 @@ VAR
 
     long p_ndev                                 ' network driver object pointer
 
-    long _icmp_cksum_fifo_pos
+    ^icmp_msg_s hdr
+
+    long _cksum_pos
     byte _icmp_msg_len
     byte _echo_data_len
 
@@ -88,21 +90,26 @@ pub init(optr)
     p_ndev := optr
 
 
-PUB echo_reply(^icmp_msg_s hdr)
+pub set_header(p_hdr)
+
+    [hdr] := p_hdr
+
+
+PUB echo_reply()
 ' Set up for an echo reply message
 '   hdr:    ICMP header structure
-    set_chksum(hdr, 0)
-    set_msg_type(hdr, ECHO_REPL)
-    wr_icmp_msg(hdr)
+    set_chksum(0)
+    set_msg_type(ECHO_REPL)
+    wr_icmp_msg()
 
 
-PUB set_chksum(^icmp_msg_s hdr, ck)
+PUB set_chksum(ck)
 ' Set checksum (optional; set to 0 to ignore)
 '   hdr:    ICMP header structure
     hdr.checksum := swap_word(ck)
 
 
-PUB set_code(^icmp_msg_s hdr, c)
+PUB set_code(c)
 ' Set ICMP subtype
 '   hdr:    ICMP header structure
     hdr.code := c
@@ -118,7 +125,7 @@ PUB set_ident(^echo_msg_s msg, i)
     msg.ident := swap_word(i)
 
 
-PUB set_msg_type(^icmp_msg_s hdr, t)
+PUB set_msg_type(t)
 ' Set ICMP message type
 '   hdr:    ICMP header structure
     hdr.type := t
@@ -134,13 +141,13 @@ PUB set_timestamp(^timestamp_msg_s msg, tm)
     msg.time_origin := swap_long(tm)
 
 
-PUB chksum(^icmp_msg_s hdr): ck
+PUB chksum(): ck
 ' Get checksum
 '   hdr:    ICMP header structure
     return hdr.checksum
 
 
-PUB code(^icmp_msg_s hdr): c
+PUB code(): c
 ' Get ICMP subtype/code
 '   hdr:    ICMP header structure
     return hdr.code
@@ -161,7 +168,7 @@ PUB msg_len(): l
     return _icmp_msg_len
 
 
-PUB msg_type(^icmp_msg_s hdr): t
+PUB msg_type(): t
 ' Get ICMP message type
 '   hdr:    ICMP header structure
     return hdr.type
@@ -194,38 +201,41 @@ PUB rd_echo_data(p_buff, l=0): p
         net[p_ndev].rd_block(p_buff, _echo_data_len)
 
 
-PUB rd_icmp_msg(^icmp_msg_s hdr): p
+PUB rd_icmp_msg(): p
 ' Read ICMP message from network device
 '   hdr:    ICMP header structure
 '   Returns: network device FIFO write pointer, after reading
-    net[p_ndev].rd_block(@hdr, sizeof(hdr) )
+    net[p_ndev].rd_block(@hdr, ICMP_MSG_SZ)
 
     return net[p_ndev].fifo_wr_ptr()
 
 
-PUB update_chksum(^icmp_msg_s hdr, p_buff=0) | tmp
+PUB update_chksum(p_buff=0, len=0) | tmp
 ' Update the checksum field of the header
 '   hdr:    ICMP header structure
-'   p_buff: pointer to echo message data (optional; leave unspecified to ignore)
-    set_chksum(hdr, 0)
-    set_chksum(hdr, crc.inet_chksum(@hdr,           sizeof(hdr) ) )
+'   p_buff: pointer to message data (optional; leave unspecified to ignore)
+    set_chksum(0)
+    set_chksum(crc.inet_chksum(@hdr, ICMP_MSG_SZ, 0, false) )
     if ( p_buff )
-        set_chksum(hdr, crc.inet_chksum(@p_buff,        _echo_data_len, chksum(hdr) ) )
+        ifnot ( len )
+            if ( msg_type() == ECHO_REPL )
+                len := _echo_data_len
+        set_chksum(crc.inet_chksum(p_buff, len, hdr.checksum) )
 
     ' write the checksum to the ICMP header
     tmp := net[p_ndev].fifo_wr_ptr()            ' remember the current write pointer
-    net[p_ndev].fifo_set_wr_ptr(_icmp_cksum_fifo_pos)
+    net[p_ndev].fifo_set_wr_ptr(_cksum_pos)     ' move it to the ICMP checksum position
     net[p_ndev].wr_word(hdr.checksum)           ' write the checksum
     net[p_ndev].fifo_set_wr_ptr(tmp)            ' restore the original pointer
 
 
-PUB wr_icmp_msg(^icmp_msg_s hdr): p | st, nd
+PUB wr_icmp_msg(): p | st, nd
 ' Write/assemble ICMP message
 '   hdr:    ICMP header structure
 '   Returns: network device FIFO write pointer, after writing
     st := net[p_ndev].fifo_wr_ptr()
-    _icmp_cksum_fifo_pos := st + ICMP_CKSUM     ' record the position of the checksum field
-    net[p_ndev].wr_block(@hdr, sizeof(hdr) )
+    _cksum_pos := st + ICMP_CKSUM     ' record the position of the checksum field
+    net[p_ndev].wr_block(@hdr, ICMP_MSG_SZ)
     nd := net[p_ndev].fifo_wr_ptr()
 
     _icmp_msg_len := (nd - st)

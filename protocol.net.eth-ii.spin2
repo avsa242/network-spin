@@ -4,11 +4,11 @@
     Description:    Ethernet II protocol
     Author:         Jesse Burt
     Started:        Mar 1, 2022
-    Updated:        Mar 29, 2025
+    Updated:        Jul 8, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
-{Spin2_v46}
+{Spin2_v51}
 
 #ifndef NET_COMMON
 #include "net-common.spin2h"
@@ -29,27 +29,34 @@ VAR
 
     long p_ndev                                 ' network driver object pointer
 
+    ^ethii_t hdr
+
 
 PUB init(optr)
 ' Set pointer to network device object
     p_ndev := optr
 
 
-PUB dest_addr(^ethii_t hdr): a
+PUB set_header(p_hdr)
+
+    [hdr] := p_hdr
+
+
+PUB dest_addr(): a
 ' Get destination address of ethernet frame
 '   hdr:        ethernet-II structure
 '   Returns:    pointer to 6-byte MAC address
     return @hdr.dest
 
 
-PUB ethertype(^ethii_t hdr): t
+PUB ethertype(): t
 ' Get ethertype of ethernet frame
 '   hdr:        ethernet-II structure
 '   Returns:    word (little-endian)
     return hdr.ethertype
 
 
-PUB new(^ethii_t hdr, src, dest, ether_t)
+PUB new(src, dest, ether_t)
 ' Start new ethernet-II frame
 '   hdr:        ethernet-II structure
 '   src:        source MAC address (pointer)
@@ -59,10 +66,10 @@ PUB new(^ethii_t hdr, src, dest, ether_t)
     bytemove(@hdr.src, src, MACADDR_LEN)
     hdr.ethertype := ether_t
 
-    wr_ethii_frame(hdr)
+    wr_ethii_frame()
 
 
-PUB reply(^ethii_t hdr): p
+PUB reply(): p
 ' Set up/write Ethernet II frame as a reply to last received frame
 '   hdr:        ethernet-II structure
 '   Returns:    network device FIFO write pointer after writing ethernet-II data
@@ -72,49 +79,46 @@ PUB reply(^ethii_t hdr): p
     bytemove(@hdr.src, net[p_ndev].my_mac(), MACADDR_LEN)
 
     ' write the ethernet-II data
-    return wr_ethii_frame(hdr)
+    return wr_ethii_frame()
 
 
-PUB src_addr(^ethii_t hdr): addr
+PUB src_addr(): addr
 ' Get source address of ethernet frame
 '   hdr:        ethernet-II structure
 '   Returns:    pointer to 6-byte MAC address
     return @hdr.src
 
 
-PUB set_dest_addr(^ethii_t hdr, p_addr)
+PUB set_dest_addr(p_addr)
 ' Set destination address of ethernet frame
 '   hdr:    ethernet-II structure
 '   p_addr: destination MAC address (pointer)
     bytemove(@hdr.dest, p_addr, MACADDR_LEN)
 
 
-PUB set_ethertype(^ethii_t hdr, t)
+PUB set_ethertype(t)
 ' Set ethertype of ethernet frame
 '   hdr:    ethernet-II structure
 '   t:      ethertype (little-endian word)
     hdr.ethertype := t
 
 
-PUB set_src_addr(^ethii_t hdr, p_addr)
+PUB set_src_addr(p_addr)
 ' Set source address of ethernet frame
 '   hdr:    ethernet-II structure
 '   p_addr: source MAC address (pointer)
     bytemove(@hdr.src, p_addr, MACADDR_LEN)
 
 
-PUB rd_ethii_frame(^ethii_t hdr): p
+PUB rd_ethii_frame(): p
 ' Read ethernet-II frame
 '   hdr:    ethernet-II structure
 '   Returns: network device FIFO write pointer after reading
-    net[p_ndev].rd_block(@hdr.dest, MACADDR_LEN)
-    net[p_ndev].rd_block(@hdr.src, MACADDR_LEN)
-    net[p_ndev].rd_block(@hdr.ethertype, 2)
-
+    net[p_ndev].rd_block(@hdr, ETH_FRM_SZ)
     return net[p_ndev].fifo_wr_ptr()
 
 
-PUB wr_ethii_frame(^ethii_t hdr): p
+PUB wr_ethii_frame(): p
 ' Write ethernet-II frame
 '   hdr:        ethernet-II structure
 '   Returns:    network device FIFO write pointer after writing

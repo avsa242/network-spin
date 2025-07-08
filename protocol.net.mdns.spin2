@@ -4,7 +4,7 @@
     Description:    Multicast DNS
     Author:         Jesse Burt
     Started:        Mar 29, 2025
-    Updated:        Apr 18, 2025
+    Updated:        Jul 8, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -63,6 +63,9 @@ obj
 var
 
     long p_ndev
+
+    ^mdns_header_s hdr
+
     word _dns_msglen
 
 
@@ -71,44 +74,49 @@ PUB init(optr)
     p_ndev := optr
 
 
-pub additional_records(^mdns_header_s hdr): r
+pub set_header(p_hdr)
+
+    [hdr] := p_hdr
+
+
+pub additional_records(): r
 ' Get the number of additional records
     return swap_word(hdr.arcount)
 
 
-pub answer_records(^mdns_header_s hdr): r
+pub answer_records(): r
 ' Get the number of answer records
     return swap_word(hdr.ancount)
 
 
-pub authority_records(^mdns_header_s hdr): r
+pub authority_records(): r
 ' Get the number of authority records
     return swap_word(hdr.nscount)
 
 
-pub flags(^mdns_header_s hdr): f
+pub flags(): f
 ' Get the header flags
     return swap_word(hdr.flags)
 
 
-pub is_query(^mdns_header_s hdr): f
+pub is_query(): f
 ' Flag indicating the message is a query
-    return response(hdr) == QR_QUERY
+    return response() == QR_QUERY
 
 
-pub is_response(^mdns_header_s hdr): f
+pub is_response(): f
 ' Flag indicating the message is a reponse
-    return response(hdr) == QR_RESPONSE
+    return response() == QR_RESPONSE
 
 
-pub is_truncated(^mdns_header_s hdr): f
+pub is_truncated(): f
 ' Get the truncated flag
-    return flags(hdr) >> FLAG_TRUNC
+    return flags() >> FLAG_TRUNC
 
 
-pub non_auth_acceptable(^mdns_header_s hdr): f
+pub non_auth_acceptable(): f
 ' Flag indicated non-authenticated data is acceptable
-    return flags(hdr) >> FLAG_NON_AUTH
+    return flags() >> FLAG_NON_AUTH
 
 
 pub nsec_type_is_set(p_bmap, len, t): f | i, bit, msk, b
@@ -130,10 +138,10 @@ pub nsec_type_is_set(p_bmap, len, t): f | i, bit, msk, b
     return false
 
 
-pub opcode(^mdns_header_s hdr): o
+pub opcode(): o
 ' Get the opcode
 '   Returns:    4-bit opcode
-    return (flags(hdr) >> FLAG_OPCODE) & $0f
+    return (flags() >> FLAG_OPCODE) & $0f
 
 con
 
@@ -240,22 +248,22 @@ pub set_time(p)
 
     p_time := p
 
-pub questions(^mdns_header_s hdr): q
+pub questions(): q
 ' Get the number of questions
     return swap_word(hdr.qdcount)
 
 
-pub recursion_desired(^mdns_header_s hdr): f
+pub recursion_desired(): f
 ' Get the recursion desired flag
-    return flags(hdr) >> FLAG_RECURS
+    return flags() >> FLAG_RECURS
 
 
-pub response(^mdns_header_s hdr): f
+pub response(): f
 ' Get the response flag
-    return flags(hdr) >> FLAG_QR
+    return flags() >> FLAG_QR
 
 
-pub transaction_id(^mdns_header_s hdr): i
+pub transaction_id(): i
 ' Get the transaction ID
 '   NOTE: This is always 0 for queries or responses
     return swap_word(hdr.id)
@@ -299,39 +307,39 @@ pub read_compressed_entry(p, p_buff): l | cp, op
 
 
 var long _dns_start
-pub rd_header(^mdns_header_s hdr)
+pub rd_header()
 ' Read mDNS header
 '   hdr:    destination mDNS header structure to read into from the network device
     _dns_start := net[p_ndev].fifo_rd_ptr()  ' mark the start of the DNS payload
     net[p_ndev].rd_block(@hdr, sizeof(hdr) )
 
 
-pub set_answer_records(^mdns_header_s hdr, r)
+pub set_answer_records(r)
 ' Set number of answer resource records in mDNS header
     hdr.ancount := swap_word(r)
 
 
-pub set_additional_records(^mdns_header_s hdr, r)
+pub set_additional_records(r)
 ' Set number of additional resource records in mDNS header
     hdr.arcount := swap_word(r)
 
 
-pub set_authority_records(^mdns_header_s hdr, r)
+pub set_authority_records(r)
 ' Set number of authority resource records in mDNS header
     hdr.nscount := swap_word(r)
 
 
-pub set_flags(^mdns_header_s hdr, f)
+pub set_flags(f)
 ' Set flags in mDNS header
     hdr.flags := swap_word(f)
 
 
-pub set_questions(^mdns_header_s hdr, q)
+pub set_questions(q)
 ' Set number of questions in mDNS header
     hdr.qdcount := swap_word(q)
 
 
-pub wr_header(^mdns_header_s hdr)
+pub wr_header()
 ' Write currently assembled mDNS header
 '   hdr:    source mDNS header structure to write to the network device
     net[p_ndev].wr_block(@hdr, sizeof(hdr) )

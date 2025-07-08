@@ -4,11 +4,11 @@
     Description:    Internet Protocol
     Author:         Jesse Burt
     Started:        Feb 7, 2022
-    Updated:        Mar 29, 2025
+    Updated:        Jul 8, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
-{Spin2_v46}
+{Spin2_v51}
 
 #ifndef NET_COMMON
 #include "net-common.spin2h"
@@ -55,13 +55,21 @@ VAR
 
     long p_ndev                                 ' network driver object pointer
 
+    ^ip_header_s hdr
+
     long _my_ip
     word _ip_start
+
 
 
 pub init(optr)
 ' Set pointer to network device object
     p_ndev := optr
+
+
+pub set_header(p_hdr)
+
+    [hdr] := p_hdr
 
 
 pub addr8888to32b(a3, a2, a1, a0): a
@@ -78,54 +86,54 @@ pub addr8888to32l(a3, a2, a1, a0): a
     return (a3 << 24) | (a2 << 16) | (a1 << 8) | a0
 
 
-PUB dec_ttl(^ip_header_s hdr)
+PUB dec_ttl()
 ' Decrease time-to-live field by 1
     hdr.ttl := 0 #> (hdr.ttl-1)
 
 
-PUB dest_addr(^ip_header_s hdr): a
+PUB dest_addr(): a
 ' Get destination address of IP datagram
-'   Returns: 4 IPv4 address bytes packed into long
-    return swap_long(hdr.dest_addr)
+'   Returns: 32-bit IP address (LE)
+    return swap_long(hdr.dest_addr)             ' swap to host (Propeller) byte order
 
 
-PUB dgram_len(^ip_header_s hdr): l
+PUB dgram_len(): l
 ' Return total length of IP datagram, in bytes
 '   Returns: word (little-endian)
     return swap_word(hdr.dgram_len)
 
 
-PUB dscp(^ip_header_s hdr): cp
+PUB dscp(): cp
 ' Differentiated services code point
 '   Returns: 6-bit code point
     return (hdr.dscp_ecn >> 2) & $fc
 
 
-PUB ecn(^ip_header_s hdr): s
+PUB ecn(): s
 ' Explicit Congestion Notification
 '   Returns: 2-bit ECN state
     return (hdr.dscp_ecn & $03)
 
 
-PUB flags(^ip_header_s hdr): f
+PUB flags(): f
 ' Get fragmentation control flags
 '   Returns: 3-bit field
     return (hdr.flags_frag_h >> 5)
 
 
-PUB frag_offset(^ip_header_s hdr): o
+PUB frag_offset(): o
 ' Get offset in overall message of this fragment
 '   Returns: 13-bit offset (little-endian)
     return ( (hdr.flags_frag_h << 8) & $1f) | hdr.frag_l
 
 
-PUB hdr_chk(^ip_header_s hdr): c
+PUB hdr_chk(): c
 ' Get header checksum
 '   Returns: word (little-endian)
     return swap_word(hdr.checksum)
 
 
-PUB hdr_len(^ip_header_s hdr): l
+PUB hdr_len(): l
 ' Get header length, in bytes
 '   Returns: byte
     return ( (hdr.version & $0f) * 4)
@@ -140,47 +148,48 @@ PUB is_multicast_addr(ip): f
         return false
 
 
-PUB layer4_proto(^ip_header_s hdr): p
+PUB layer4_proto(): p
 ' Get layer 4/transport protocol carried in datagram
 '   Returns: byte
     return hdr.l4proto
 
 
-PUB msg_ident(^ip_header_s hdr): i
+PUB msg_ident(): i
 ' Get identification common to all fragments in a message
 '   Returns: word
     return swap_word(hdr.ident)
 
 
-PUB payload_length(^ip_header_s hdr): l
+PUB payload_length(): l
 ' Get the length of the payload (layer 4 and above) only
-    return dgram_len(hdr)-IP_HDR_SZ
+    return dgram_len()-IP_HDR_SZ
 
 
-PUB src_addr(^ip_header_s hdr): a
+PUB src_addr(): a
 ' Get source/originator of IP datagram
-'   Returns: 4 IPv4 address bytes packed into long
-    return swap_long(hdr.src_addr)
+'   Returns: 32-bit IP address (LE)
+    return swap_long(hdr.src_addr)              ' swap to host (Propeller) byte order
 
 
-PUB ttl(^ip_header_s hdr): t
+PUB ttl(): t
 ' Get number of router hops datagram is allowed to traverse
 '   Returns: byte
     return hdr.ttl
 
 
-PUB version(^ip_header_s hdr): v
+PUB version(): v
 ' Get IP version
 '   Returns: byte
     return ( (hdr.version >> 4) & $0f)
 
 
-PUB set_dest_addr(^ip_header_s hdr, a)
+PUB set_dest_addr(a)
 ' Set destination address of IP datagram
-    hdr.dest_addr := swap_long(a)
+'   a:  32-bit IP address (LE)
+    hdr.dest_addr := swap_long(a)               ' swap to network byte order
 
 
-PUB set_dgram_len(^ip_header_s hdr, len)
+PUB set_dgram_len(len)
 ' Set total length of IP datagram, in bytes
 '   len: L4 header length + data length
 '   NOTE: don't include the 20-bytes of IP header in the length
@@ -188,43 +197,43 @@ PUB set_dgram_len(^ip_header_s hdr, len)
     hdr.dgram_len := swap_word(len)
 
 
-PUB set_dscp(^ip_header_s hdr, cp)
+PUB set_dscp(cp)
 ' Set Differentiated services code point
     hdr.dscp_ecn |= (cp << 2)
 
 
-PUB set_ecn(^ip_header_s hdr, st)
+PUB set_ecn(st)
 ' Set Explicit Congestion Notification state
     hdr.dscp_ecn |= (st & $03)
 
 
-PUB set_flags(^ip_header_s hdr, f)
+PUB set_flags(f)
 ' Set fragmentation control flags
     hdr.flags_frag_h |= (f << 5)
 
 
-PUB set_frag_offset(^ip_header_s hdr, offs)
+PUB set_frag_offset(offs)
 ' Set offset in overall message of this fragment
     hdr.flags_frag_h |= (offs.byte[1] & $1f) | offs.byte[0]
 
 
-PUB set_hdr_chk(^ip_header_s hdr, ck)
+PUB set_hdr_chk(ck)
 ' Set header checksum
     hdr.checksum := swap_word(ck)
 
 
-PUB set_hdr_len(^ip_header_s hdr, len)
+PUB set_hdr_len(len)
 ' Set header length, in bytes
 '   NOTE: len must be a multiple of 4
     hdr.version |= (len / 4)
 
 
-PUB set_layer4_proto(^ip_header_s hdr, p)
+PUB set_layer4_proto(p)
 ' Set layer 4 protocol carried in datagram
     hdr.l4proto := p
 
 
-PUB set_msg_ident(^ip_header_s hdr, id)
+PUB set_msg_ident(id)
 ' Set identification common to all fragments in a message
     hdr.ident := swap_word(id)
 
@@ -244,17 +253,18 @@ PUB set_my_ip32(a)
     _my_ip := swap_long(a)                      ' convert IP address to network byte order
 
 
-PUB set_src_addr(^ip_header_s hdr, a)
+PUB set_src_addr(a)
 ' Set source/originator of IP datagram
-    hdr.src_addr := swap_long(a)
+'   a:  32-bit IP address (LE)
+    hdr.src_addr := swap_long(a)                ' swap to network byte order
 
 
-PUB set_ttl(^ip_header_s hdr, t)
+PUB set_ttl(t)
 ' Set number of router hops datagram is allowed to traverse
     hdr.ttl := t
 
 
-PUB set_version(^ip_header_s hdr, v)
+PUB set_version(v)
 ' Set IP version
     hdr.version |= (v << 4)
 
@@ -264,33 +274,33 @@ PUB start_pos(): p
     return _ip_start
 
 
-PUB new(^ip_header_s hdr, l4_proto, src_ip, dest_ip)
+PUB new(l4_proto, src_ip, dest_ip)
 ' Construct an IPV4 header
 '   l4_proto: OSI Layer-4 protocol (L4_TCP, L4_UDP, L4_ICMP)
     _ip_start := net[p_ndev].fifo_wr_ptr()
-    reset_ipv4(hdr)
-    set_ttl(hdr, TTL_DEFAULT)
-    set_layer4_proto(hdr, l4_proto)
-    set_src_addr(hdr, src_ip)
-    set_dest_addr(hdr, dest_ip)
-    wr_ip_header(hdr)
+    reset_ipv4()
+    set_ttl(TTL_DEFAULT)
+    set_layer4_proto(l4_proto)
+    set_src_addr(src_ip)
+    set_dest_addr(dest_ip)
+    wr_ip_header()
 
 
-PUB reply(^ip_header_s hdr): p
+PUB reply(): p
 ' Set up/write IPv4 header as a reply to last received header
-    set_hdr_chk(hdr, 0)                         ' init header checksum to 0
-    set_dest_addr(hdr, src_addr(hdr) )
-    set_src_addr(hdr, my_ip() )
+    set_hdr_chk(0)                         ' init header checksum to 0
+    set_dest_addr( src_addr() )
+    set_src_addr( my_ip() )
     _ip_start := net[p_ndev].fifo_wr_ptr()
-    wr_ip_header(hdr)
+    wr_ip_header()
 
 
-PUB swap_dest_src(^ip_header_s hdr)
+PUB swap_dest_src()
 ' Swap the destination and source IP address fields
     hdr.src_addr, hdr.dest_addr := hdr.dest_addr, hdr.src_addr
 
 
-PUB update_chksum(^ip_header_s hdr, len): ck | p_tmp
+PUB update_chksum(len): ck | p_tmp
 ' Update IP header with checksum
 '   len: length of datagram (layer-4 and datagram only; don't include the 20-byte IP header)
     p_tmp := net[p_ndev].fifo_wr_ptr()          ' save the current pointer
@@ -298,11 +308,11 @@ PUB update_chksum(^ip_header_s hdr, len): ck | p_tmp
     ' update IP header with specified length and calculate checksum;
     '   NOTE: the checksum should encompass the IP header _only_, _not_ the layer-4 protocol
     '   and the payload, if they exist
-    set_dgram_len(hdr, len)
+    set_dgram_len(len)
     net[p_ndev].fifo_set_wr_ptr(_p_dlen)        ' set pointer to datagram length field
     net[p_ndev].wr_word(hdr.dgram_len)
 
-    ck := crc.inet_chksum(@hdr, hdr_len(hdr) )  ' update the IP header checksum
+    ck := crc.inet_chksum(@hdr, hdr_len() )  ' update the IP header checksum
     net[p_ndev].fifo_set_wr_ptr(_p_chk)         ' set pointer to checksum field
     net[p_ndev].wr_word( swap_word(ck) )        '   and write it
 
@@ -314,27 +324,37 @@ PUB my_ip(): a
     return swap_long(_my_ip)
 
 
-PUB reset_ipv4(^ip_header_s hdr)
+PUB reset_ipv4()
 ' Reset all values to defaults for an IPV4 header
     hdr~
-    set_version(hdr, 4)
-    set_hdr_len(hdr, 20)
-    set_flags(hdr, DF)
-    set_ttl(hdr, 128)
-    set_msg_ident(hdr, $0001)
+    set_version(4)
+    set_hdr_len(20)
+    set_flags(DF)
+    set_ttl(128)
+    set_msg_ident($0001)
 
 
-PUB rd_ip_header(^ip_header_s hdr): p
-' Read IP header from buffer
-    _ip_start := net[p_ndev].fifo_rd_ptr()
-    net[p_ndev].rd_block(@hdr, IP_HDR_SZ)
+PUB rd_ip_header(p_src=0): p
+' Read IP header
+'   p_src:  pointer to source buffer in RAM containing IP header
+'           (optional; default is to read it from the network device instead)
+
+    ifnot ( p_src )
+        ' read an IP header from the network device
+        _ip_start := net[p_ndev].fifo_rd_ptr()
+        net[p_ndev].rd_block(@hdr, IP_HDR_SZ)
+    else
+        ' read an IP header from RAM
+        bytemove(@hdr, p_src, IP_HDR_SZ)
+
     return net[p_ndev].fifo_wr_ptr()
 
 
 VAR long _p_chk, _p_dlen
-PUB wr_ip_header(^ip_header_s hdr): p
+PUB wr_ip_header(): p
 ' Write IP header to buffer
 '   Returns: length of assembled header, in bytes
+'   xxx should just be able to get the start of IP here and use offsets from it instead of the two fifo_wr_ptr() calls below?
     net[p_ndev].wr_block(@hdr.version, 1)
     net[p_ndev].wr_block(@hdr.dscp_ecn, 1)
     _p_dlen := net[p_ndev].fifo_wr_ptr()

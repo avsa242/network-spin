@@ -4,14 +4,18 @@
     Description:    Universal Datagram Protocol
     Author:         Jesse Burt
     Started:        Feb 28, 2022
-    Updated:        Mar 29, 2025
+    Updated:        Jul 8, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
-{Spin2_v46}
+{Spin2_v51}
 
 #ifndef NET_COMMON
-#include "net-common.spin2h"
+# include "net-common.spin2h"
+#endif
+
+#ifndef NETIF_DRIVER
+# define NETIF_DRIVER "net.eth.enc28j60"
 #endif
 
 CON
@@ -29,6 +33,8 @@ VAR
 
     long p_ndev                                 ' network driver object pointer
 
+    ^udp_msg_s   hdr
+
     long _fifo_start                            ' start of the datagram in the FIFO
 
 
@@ -37,47 +43,51 @@ pub init(optr)
     p_ndev := optr
 
 
-PUB new(^udp_msg_s hdr, src_port, dest_port)
+pub set_header(p_hdr)
+
+    [hdr] := p_hdr
+
+PUB new(src_port, dest_port)
 ' Construct new UDP datagram
-    set_src_port(hdr, src_port)
-    set_dest_port(hdr, dest_port)
-    set_chksum(hdr, 0)
-    wr_udp_header(hdr)
+    set_src_port(src_port)
+    set_dest_port(dest_port)
+    set_chksum(0)
+    wr_udp_header()
 
 
-PUB set_chksum(^udp_msg_s hdr, ck)
+PUB set_chksum(ck)
 ' Set checksum (optional; set to 0 to ignore)
     hdr.checksum := swap_word(ck)
 
 
-PUB set_dest_port(^udp_msg_s hdr, p)
+PUB set_dest_port(p)
 ' Set destination port field
     hdr.dest_port := swap_word(p)
 
 
-PUB set_dgram_len(^udp_msg_s hdr, len)
+PUB set_dgram_len(len)
 ' Set length of UDP datagram
 '   NOTE: Don't include the 8-bytes of the UDP header itself
     len += UDP_MSG_SZ
     hdr.length := swap_word(len)
 
 
-PUB set_src_port(^udp_msg_s hdr, p)
+PUB set_src_port(p)
 ' Set source port field
     hdr.src_port := swap_word(p)
 
 
-PUB chksum(^udp_msg_s hdr): c
+PUB chksum(): c
 ' Get checksum
     return swap_word(hdr.checksum)
 
 
-PUB dest_port(^udp_msg_s hdr): p
+PUB dest_port(): p
 ' Get destination port field
     return swap_word(hdr.dest_port)
 
 
-PUB dgram_len(^udp_msg_s hdr): l
+PUB dgram_len(): l
 ' Get length of UDP datagram
 '   NOTE: This length includes the 8-bytes UDP header itself
     return swap_word(hdr.length)
@@ -88,26 +98,26 @@ PUB hdr_len(): l
     return UDP_MSG_SZ
 
 
-PUB payload_len(^udp_msg_s hdr): l
+PUB payload_len(): l
 ' Get length of datagram
 '   NOTE: This length is of the payload portion of the datagram only
-    return dgram_len(hdr)-UDP_MSG_SZ
+    return dgram_len()-UDP_MSG_SZ
 
 
-PUB src_port(^udp_msg_s hdr): p
+PUB src_port(): p
 ' Get source port field
     return swap_word(hdr.src_port)
 
 
-PUB reset_udp(^udp_msg_s hdr)
+PUB reset_udp()
 ' Reset all values to defaults
     hdr~
 
 
-PUB rd_udp_header(^udp_msg_s hdr): l
+PUB rd_udp_header(): l
 ' Read/disassemble UDP header
 '   Returns: network device FIFO write position
-    net[p_ndev].rd_block(@hdr, sizeof(hdr) )
+    net[p_ndev].rd_block(@hdr, UDP_MSG_SZ)
 
     return net[p_ndev].fifo_wr_ptr()
 
@@ -117,12 +127,12 @@ pub start_pos(): p
     return _fifo_start
 
 
-PUB update_len_chksum(^udp_msg_s hdr, len, ck=0) | tmp, c
+PUB update_len_chksum(len, ck=0) | tmp, c
 ' Update the UDP header length and checksum
 '   len:    datagram length
 '   ck:     checksum (optional; omit, or specify 0 to ignore)
-    set_dgram_len(hdr, len)
-    set_chksum(hdr, ck)
+    set_dgram_len(len)
+    set_chksum(ck)
     tmp := net[p_ndev].fifo_wr_ptr()            ' remember the current fifo pointer
     net[p_ndev].fifo_set_wr_ptr(start_pos()+UDP_DGRAMLEN)
     net[p_ndev].wr_word(hdr.length)             ' write the new length
@@ -131,7 +141,7 @@ PUB update_len_chksum(^udp_msg_s hdr, len, ck=0) | tmp, c
     net[p_ndev].fifo_set_wr_ptr(tmp)            ' restore the write pointer
 
 
-PUB wr_udp_header(^udp_msg_s hdr): ptr
+PUB wr_udp_header(): ptr
 ' Write/assemble UDP header
 '   Returns: length of assembled header, in bytes
     _fifo_start := net[p_ndev].fifo_wr_ptr()    ' save this FIFO position as the start of UDP

@@ -8,7 +8,6 @@
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
-{Spin2_v46}
 #ifndef NET_COMMON
 # define NET_COMMON
 
@@ -29,15 +28,16 @@ CON
 
    ' ethernet-II header
     struct ethii_t(...
-        macaddr_s   dest, ...
-        macaddr_s   src, ...
+        byte        dest[6], ...
+        byte        src[6], ...
         word        ethertype)
 
     ' ARP table/cache
     struct arp_entry_s(...
         word        proto_t, ...
         long        proto_addr, ...
-        macaddr_s   hw_addr)
+        macaddr_s   hw_addr, ...
+        byte        resolved)
 
     ' ARP header
     struct arp_msg_s(...
@@ -115,7 +115,7 @@ CON
         word    checksum, ...
         word    urg_ptr)
 
-    pseudo_hdr_s(...
+    struct pseudo_hdr_s(...
         long    src_ip, ...
         long    dest_ip, ...
         word    l4_proto, ...                   ' TCP | $00
@@ -250,12 +250,12 @@ CON
     TCPH_OPTS           = 20'..n                ' start of TCP options, if used
 
 
-PUB swap_long(l): sl
+pri swap_long(l): sl
 ' Swap the byte order of a word
     sl.byte[0], sl.byte[1], sl.byte[2], sl.byte[3]  := l.byte[3], l.byte[2], l.byte[1], l.byte[0]
 
 
-PUB swap_word(w): sw
+pri swap_word(w): sw
 ' Swap the byte order of a word
     sw.byte[0], sw.byte[1] := w.byte[1], w.byte[0]
 
