@@ -1,0 +1,21 @@
+<label>
+  <input type="checkbox" id="lightToggle">
+  Light
+</label>
+
+<label for="vol">Volume:</label>
+<input type="range" id="vol" min="0" max="10" value="5">
+
+<script>
+  // Send checkbox changes
+  document.getElementById('lightToggle')
+    .addEventListener('change', e => {
+      fetch(`/light?on=${e.target.checked ? 1:0}`);
+    });
+
+  // Send slider moves (on release)
+  document.getElementById('vol')
+    .addEventListener('change', e => {
+      fetch(`/volume?level=${e.target.value}`);
+    });
+</script>

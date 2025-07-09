@@ -1,0 +1,323 @@
+{
+----------------------------------------------------------------------------------------------------
+    Filename:       socket-common.spin2
+    Description:    Sockets shared/common code
+    Author:         Jesse Burt
+    Started:        Nov 8, 2023
+    Updated:        Jul 8, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
+}
+{Spin2_v51}
+con
+
+    RINGBUFF_SZ = 1024
+    RB_MASK     = RINGBUFF_SZ-1
+
+    ' socket definitions
+    struct rcv_s(...
+        long        irs, ...                    ' initial receive sequence number
+        long        wnd, ...                    ' receive window
+        long        nxt, ...                    ' next expected sequence #
+        long        up)                         ' urgent pointer (ignored)
+
+    struct snd_s(...
+        long        iss, ...                    ' initial send sequence number
+        long        una, ...                    ' oldest unacknowledged sequence number
+        long        nxt, ...                    ' next expected sequence number
+        long        wnd, ...                    ' send window
+        long        wl1, ...
+        long        wl2, ...
+        long        up)                         ' urgent pointer (ignored)
+
+    struct buffer_s(...
+        word        head, ...
+        word        tail, ...
+        byte        buffer[RINGBUFF_SZ])
+
+    struct backlog_s(...                        ' TCP pending connection backlog
+        long        max_depth, ...
+        long        pending, ...
+        long        head, ...
+        long        tail, ...
+        long        pnext)
+
+    struct socket_s(...
+        long        local_ip, ...
+        word        local_port, ...
+        byte        local_mac[6], ...
+        long        remote_ip, ...
+        word        remote_port, ...
+        byte        remote_mac[6], ...
+        long        p_signal, ...               ' pointer to signalling "mailbox"
+        snd_s       snd, ...
+        rcv_s       rcv, ...
+        buffer_s    rxbuff, ...
+        buffer_s    txbuff, ...
+        byte        state, ...
+        byte        prev_state, ...
+        byte        protocol, ...
+        byte        push, ...
+        backlog_s   backlog)
+
+
+   ' socket states
+    #0, CLOSED, SYN_SENT, SYN_RECEIVED, ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, ...
+    CLOSING, LAST_ACK, TIME_WAIT, LISTENING
+
+
+    ' messages to netloop
+    CMD_CONNECT         = 1                     ' connect a socket
+    CMD_DISCONNECT      = 2                     ' disconnect a socket
+    CMD_PUSH            = 3                     ' deliver a TCP datagram immediately
+
+
+    ' signals
+    SIGNALS_MASK        = $ffff_ffff
+    PUSH_RECEIVED       = 1 << 0                ' TCP segment received with PSH bit set
+    STATE_CHANGED       = 1 << 1                ' socket connection state has changed
+    CONN_CLOSED_REMOTE  = 1 << 2                ' connection closed by remote host
+    DATA_READY          = 1 << 3
+
+    CLEAR_PUSH_RECEIVED = PUSH_RECEIVED ^ SIGNALS_MASK
+    CLEAR_STATE_CHANGED = STATE_CHANGED ^ SIGNALS_MASK
+
+    EBUFF_FULL          = -1
+
+
+pri rx_available(sck): q
+' Get the number of unread bytes available in the buffer
+    return abs(socket[sck].rxbuff.head - socket[sck].rxbuff.tail)
+
+
+pri rx_bytes_free(sck): b
+' Get the number of bytes free in the ring buffer
+    return RB_MASK - ( (socket[sck].rxbuff.head - socket[sck].rxbuff.tail) & RB_MASK )
+
+
+pri rxget(sck, p_dest, len=0): l | a
+' Get some data from the receive ring buffer
+'   sck:        pointer to socket structure
+'   p_dest:     buffer to copy data into
+'   len:        number of bytes to copy (optional; default is the maximum available)
+'   Returns:    number of bytes actually copied
+'   NOTE: length of data copied will be limited by what is actually available in the buffer
+    a := rx_available(sck)
+    ifnot ( len )                               ' copy all available if length isn't specified
+        len := a
+
+    len := ( len <# a )                         ' limit request to what's actually available
+
+    if ( len )                                  ' don't do anything if the buffer's empty
+        if ( (len + socket[sck].rxbuff.tail) > RINGBUFF_SZ )
+            ' case 1: current read pointer + length requested goes past the 'end' of the buffer:
+            '   read what we can...
+            bytemove(   p_dest, ...
+                        (@socket[sck].rxbuff.buffer+socket[sck].rxbuff.tail), ...
+                        (RINGBUFF_SZ-socket[sck].rxbuff.tail) )
+
+            ' ...now wrap around to the beginning and get the rest
+            p_dest += (RINGBUFF_SZ-socket[sck].rxbuff.tail)
+            bytemove(   p_dest, ...
+                        @socket[sck].rxbuff.buffer, ...
+                        (len-(RINGBUFF_SZ-socket[sck].rxbuff.tail)) )
+            socket[sck].rxbuff.tail := ( socket[sck].rxbuff.tail + len) & RB_MASK
+        else
+            ' case 2: all of the data lies between the current pointer and the end
+            bytemove(p_dest, (@socket[sck].rxbuff.buffer + socket[sck].rxbuff.tail), len)
+            socket[sck].rxbuff.tail := ( socket[sck].rxbuff.tail + len ) & RB_MASK
+
+    return len
+
+
+pri rxput(sck, p_src, len): n
+' Copy data into the receive ring buffer
+'   p_src: pointer to buffer to receive data from
+'   len: number of bytes to receive
+'   Returns: number of bytes received, or EBUFF_FULL if there isn't enough space in the buffer
+    if ( len > rx_bytes_free(sck) )
+        ' don't bother doing anything if there isn't enough space in the buffer
+        return EBUFF_FULL
+
+    if ( (len + socket[sck].rxbuff.head) > RINGBUFF_SZ )
+        ' current write pointer + length requested doesn't fit in the 'end' of the buffer:
+        '   fit what we can...
+        bytemove(   (@socket[sck].rxbuff.buffer + socket[sck].rxbuff.head), ...
+                    p_src, ...
+                    (RINGBUFF_SZ-socket[sck].rxbuff.head) )
+        p_src += (RINGBUFF_SZ-socket[sck].rxbuff.head)        ' advance source data pointer
+
+        ' ...now wrap around to the beginning and write the rest
+        bytemove(   @socket[sck].rxbuff.buffer, ...
+                    p_src, ...
+                    (len-(RINGBUFF_SZ-socket[sck].rxbuff.head)) )
+        socket[sck].rxbuff.head := ( socket[sck].rxbuff.head + len) & RB_MASK
+    else
+        ' all of the data fits - simply write it
+        bytemove(   (@socket[sck].rxbuff.buffer + socket[sck].rxbuff.head), ...
+                    p_src, ...
+                    len)
+        socket[sck].rxbuff.head := ( socket[sck].rxbuff.head + len) & RB_MASK
+
+    return len
+
+
+pri tx_available(sck): q
+' Get the number of unread bytes available in the buffer
+    return abs(socket[sck].txbuff.head - socket[sck].txbuff.tail)
+
+
+pri tx_bytes_free(sck): b
+' Get the number of bytes free in the ring buffer
+    return RB_MASK - ( (socket[sck].txbuff.head - socket[sck].txbuff.tail) & RB_MASK )
+
+
+pri txget(sck, p_dest, len=0): l | a
+' Get some data from the transmit ring buffer
+'   sck:        pointer to socket structure
+'   p_dest:     buffer to copy data into
+'   len:        number of bytes to copy (optional; default is the maximum available)
+'   Returns:    number of bytes actually copied
+'   NOTE: length of data copied will be limited by what is actually available in the buffer
+    a := tx_available(sck)
+    ifnot ( len )                               ' copy all available if length isn't specified
+        len := a
+
+    len := ( len <# a )                         ' limit request to what's actually available
+
+    if ( len )                                  ' don't do anything if the buffer's empty
+        if ( (len + socket[sck].txbuff.tail) > RINGBUFF_SZ )
+            ' case 1: current read pointer + length requested goes past the 'end' of the buffer:
+            '   read what we can...
+            bytemove(   p_dest, ...
+                        (@socket[sck].txbuff.buffer+socket[sck].txbuff.tail), ...
+                        (RINGBUFF_SZ-socket[sck].txbuff.tail) )
+
+            ' ...now wrap around to the beginning and get the rest
+            p_dest += (RINGBUFF_SZ-socket[sck].txbuff.tail)
+            bytemove(   p_dest, ...
+                        @socket[sck].txbuff.buffer, ...
+                        (len-(RINGBUFF_SZ-socket[sck].txbuff.tail)) )
+            socket[sck].txbuff.tail := ( socket[sck].txbuff.tail + len) & RB_MASK
+        else
+            ' case 2: all of the data lies between the current pointer and the end
+            bytemove(   p_dest, ...
+                        (@socket[sck].txbuff.buffer + socket[sck].txbuff.tail), ...
+                        len)
+            socket[sck].txbuff.tail := ( socket[sck].txbuff.tail + len ) & RB_MASK
+
+    return len
+
+
+pri txput(sck, p_src, len): n
+' Copy data into the transmit ring buffer
+'   p_src:      pointer to buffer to copy data from
+'   len:        number of bytes to copy
+'   Returns:    number of bytes received, or EBUFF_FULL if there isn't enough space in the buffer
+    if ( len > tx_bytes_free(sck) )
+        ' don't bother doing anything if there isn't enough space in the buffer
+        return EBUFF_FULL
+
+    if ( (len + socket[sck].txbuff.head) > RINGBUFF_SZ )
+        ' current write pointer + length requested doesn't fit in the 'end' of the buffer:
+        '   fit what we can...
+        bytemove(   (@socket[sck].txbuff.buffer + socket[sck].txbuff.head), ...
+                    p_src, ...
+                    (RINGBUFF_SZ-socket[sck].txbuff.head) )
+        p_src += (RINGBUFF_SZ-socket[sck].txbuff.head)        ' advance source data pointer
+
+        ' ...now wrap around to the beginning and write the rest
+        bytemove(   @socket[sck].txbuff.buffer, ...
+                    p_src, ...
+                    (len-(RINGBUFF_SZ-socket[sck].txbuff.head)) )
+        socket[sck].txbuff.head := ( socket[sck].txbuff.head + len) & RB_MASK
+    else
+        ' all of the data fits - simply write it
+        bytemove(   (@socket[sck].txbuff.buffer + socket[sck].txbuff.head), ...
+                    p_src, ...
+                    len)
+        socket[sck].txbuff.head := ( socket[sck].txbuff.head + len) & RB_MASK
+
+    return len
+
+
+pri xtxput(sck, len=0): l | a
+' Copy data from the ring buffer into the network device
+'   sck:        pointer to socket structure
+'   len:        number of bytes to copy (optional; default is the maximum available)
+'   Returns:    number of bytes actually copied
+'   NOTE: length of data copied will be limited by what is actually available in the buffer
+    a := tx_available(sck)
+    ifnot ( len )                               ' copy all available if length isn't specified
+        len := a
+
+    len := ( len <# a )                         ' limit request to what's actually available
+
+    if ( len )                                  ' don't do anything if the buffer's empty
+        if ( (len + socket[sck].txbuff.tail) > RINGBUFF_SZ )
+            ' case 1: current read pointer + length requested goes past the 'end' of the buffer:
+            '   read what we can...
+            net.wr_block(   (@socket[sck].txbuff.buffer+socket[sck].txbuff.tail), ...
+                            (RINGBUFF_SZ-socket[sck].txbuff.tail) )
+
+            ' ...now wrap around to the beginning and get the rest
+            net.wr_block(   @socket[sck].txbuff.buffer, ...
+                            (len-(RINGBUFF_SZ-socket[sck].txbuff.tail) ) )
+            socket[sck].txbuff.tail := (socket[sck].txbuff.tail + len) & RB_MASK
+        else
+            ' case 2: all of the data lies between the current pointer and the end
+            net.wr_block(   (@socket[sck].txbuff.buffer + socket[sck].txbuff.tail), ...
+                            len)
+            socket[sck].txbuff.tail := (socket[sck].txbuff.tail + len) & RB_MASK
+
+    return len
+
+
+pri xrxget(sck, len): l
+' Copy data into the ring buffer from the network device
+'   sck:        pointer to socket structure
+'   len:        number of bytes to copy to the ring buffer
+'   Returns:    number of bytes actually copied
+    if ( len > rx_bytes_free(sck) )
+        ' don't bother doing anything if there isn't enough space in the buffer
+        return EBUFF_FULL
+
+    if ( (len + socket[sck].rxbuff.head) > RINGBUFF_SZ )
+        ' current write pointer + length requested doesn't fit in the 'end' of the buffer:
+        '   fit what we can...
+        net.rd_block(   (@socket[sck].rxbuff.buffer+socket[sck].rxbuff.head), ...
+                        (RINGBUFF_SZ-socket[sck].rxbuff.head) )
+
+        ' ...now wrap around to the beginning and write the rest
+        net.rd_block(   @socket[sck].rxbuff.buffer, ...
+                        (len-(RINGBUFF_SZ-socket[sck].rxbuff.head) ) )
+        socket[sck].rxbuff.head := ( socket[sck].rxbuff.head + len) & RB_MASK
+    else
+        ' all of the data fits - simply write it
+        net.rd_block(   (@socket[sck].rxbuff.buffer + socket[sck].rxbuff.head), ...
+                        len)
+        socket[sck].rxbuff.head := ( socket[sck].rxbuff.head + len) & RB_MASK
+
+    return len
+
+
+DAT
+{
+Copyright 2025 Jesse Burt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+}
+

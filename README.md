@@ -14,7 +14,7 @@ This is a P8X32A/Propeller, P2X8C4M64P/Propeller 2 networking stack
 * TCP
 * ICMP
 * BOOTP/DHCP
-* Socket manager (TCP, single socket)
+* Socket manager (P1: TCP, single socket, P2: TCP, UDP, multiple sockets; both currently only support the ENC28J60)
 
 
 ## Requirements
@@ -34,8 +34,8 @@ P2/SPIN2:
 |-----------|----------|------------------------|-------------|-----------------------|
 | P1        | SPIN1    | FlexSpin (6.9.4)       | Bytecode    | OK                    |
 | P1        | SPIN1    | FlexSpin (6.9.4)       | Native code | OK                    |
-| P2        | SPIN2    | FlexSpin (6.9.4)       | NuCode      | Untested              |
-| P2        | SPIN2    | FlexSpin (6.9.4)       | Native code | Untested              |
+| P2        | SPIN2    | FlexSpin (7.3.1-beta)  | NuCode      | FTBFS                 |
+| P2        | SPIN2    | FlexSpin (7.3.1-beta)  | Native code | OK                    |
 
 (other versions or toolchains not listed are __not supported__, and _may or may not_ work)
 

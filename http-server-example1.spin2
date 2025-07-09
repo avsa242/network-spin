@@ -1,0 +1,400 @@
+{
+----------------------------------------------------------------------------------------------------
+    Filename:       http-server-example1.spin2
+    Description:    HTTP server example
+        * Multiple clients
+        * Demonstrate basic webpage controls 
+    Author:         Jesse Burt
+    Started:        Jul 3, 2023
+    Updated:        Jul 9, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
+}
+
+{Spin2_v51}
+#include "net-common.spin2h"
+
+
+con
+
+    _clkfreq    = 250_000_000
+    _xtlfreq    = 20_000_000
+
+' -- User-modifiable constants
+
+    ' SD card
+    SD_CLK      = 61
+    SD_CS       = 60
+    SD_DI       = 59
+    SD_DO       = 58
+
+    ' ENC28J60
+    CLICK_BASE  = 0
+    NET_CS      = CLICK_BASE+8
+    NET_SCK     = CLICK_BASE+9
+    NET_MOSI    = CLICK_BASE+11
+    NET_MISO    = CLICK_BASE+10
+    NET_SPI_FREQ= 20_000_000
+
+    ' LED for webpage control
+    LED1        = 56
+    LED2        = 57
+
+    MAX_CLIENTS = 5
+
+' --
+
+    struct proto_mbox_s(...
+        long message_type, ...
+        long message)
+
+
+    NEW         = 0
+    BUFF_SZ     = 1000
+
+
+obj
+
+    ser:    "com.serial.terminal.ansi" | SER_BAUD=2_000_000
+    sck:    "socket-manager"
+    str:    "string"
+    libc:   "libc"
+
+
+var
+
+
+    proto_mbox_s    mailbox                     ' interface to receive messages from socket manager
+
+    long _client_sck[MAX_CLIENTS]               ' table of client connections
+
+    long _file_sz
+    long _file_ptr
+
+    word _wr_ptr
+    byte _server_buffer[BUFF_SZ]
+
+
+dat
+
+    _mac_local  byte $02, $98, $0c, $01, $02, $03
+    _my_ip      byte "192.168.1.10", 0
+    _webpg_file byte "/sd/INDEX.HTM", 0
+
+
+pub main() | s, ls, skn, cl, tmp, m
+
+    ser.startrxtx(63, 62, 0, 2_000_000)
+    ser.clear()
+    ser.strln(@"serial started")
+
+    m := _mount(@"/sd", libc._vfs_open_sdcardx(SD_CLK, SD_CS, SD_DI, SD_DO) )
+    if ( m )
+        ser.printf(@"error mounting SD card: %d\n\r", m)
+        repeat
+
+    _file_ptr := libc.fopen(@_webpg_file, @"rb")
+    ifnot ( _file_ptr )
+        ser.printf(@"error opening %s", @_webpg_file)
+        repeat
+    libc.fseek(_file_ptr, 0, libc.SEEK_END)
+    _file_sz := libc.ftell(_file_ptr)
+    libc.fseek(_file_ptr, 0, libc.SEEK_SET)
+
+    pinl(LED1 addpins 1)
+
+    repeat MAX_CLIENTS with cl
+        _client_sck[cl] := -1
+
+    sck.set_mac_addr(@_mac_local)
+    sck.set_ip(str.strtoip(@_my_ip))
+
+    ifnot ( sck.start(NET_CS, NET_SCK, NET_MOSI, NET_MISO, NET_SPI_FREQ) )
+        ser.strln(@"ENC28J60 driver failed to start - halting")
+        repeat
+
+    waitms(20)
+
+    ' register a service running on port 80
+    sck.register_service(80, L4_TCP, @mailbox)
+
+    s := sck.new_socket(L4_TCP)
+    sck.bind(s, str.strtoip(@_my_ip), @_mac_local)
+    ls := sck.listen(80)                        ' create a socket listening on port 80 (TCP)
+    if ( ls >= 0 )
+        ser.printf(@"got listening socket %d\n\r", ls)
+    else
+        ser.printf(@"error setting up socket: %d\n\r", ls)
+        repeat
+
+    repeat
+        ' task: accept client connections
+        if ( active_clients() <= MAX_CLIENTS )
+            skn := sck.accept(ls)
+            if ( skn >= 1 )
+                ser.printf(@"new client connection from %s on socket #%d\n\r", ...
+                            str.iptostr(sck.socket[skn].remote_ip), ...
+                            skn)
+                new_client(skn)
+        ' task: service http requests
+        repeat MAX_CLIENTS with cl
+            if ( (_client_sck[cl] >= 0) and (sck.recvq(_client_sck[cl]) > 0) )
+                parse_request(cl)
+        ' task: check for disconnected sockets
+        if ( mailbox.message_type )
+            if ( mailbox.message_type & sck.CONN_CLOSED_REMOTE )
+                ' a socket was disconnected
+                ser.printf(@"socket %d closed by remote host\n\r", mailbox.message)
+                cl := get_client_by_socket(mailbox.message)
+                s := _client_sck[cl]
+                sck.disconnect(s)
+                delete_client(cl)
+                mailbox~
+        case ser.getchar_noblock()
+            "c":
+                ser.strln(@"client connections:")
+                repeat MAX_CLIENTS with cl
+                    ser.printf(@"%d socket %d\n\r", cl, _client_sck[cl])
+            "l":
+                show_socket_table()
+            "d":
+                ser.str(@"Disconnect socket# ")
+                tmp := ser.getdec()
+                sck.disconnect(tmp)
+                delete_client(get_client_by_socket(tmp))
+
+
+pub active_clients(): c | cl
+' Get the number of active clients
+    c := 0
+    repeat MAX_CLIENTS with cl
+'        ser.printf(@" cl %d s %d\n\r", cl, _client_sck[cl])
+        if ( _client_sck[cl] >= 0 )
+            c++
+
+
+pub delete_client(c)
+' Delete a client from the table
+'   c:  client ID
+    ser.printf(@"delete client %d\n\r", c)
+    _client_sck[c] := -1
+
+
+pub get_client_by_socket(s): c
+' Find a client ID by the socket number
+'   s:          socket ID
+'   Returns:    client ID
+    repeat MAX_CLIENTS with c
+        if ( _client_sck[c] == s )
+            return
+
+    return -1
+
+
+pub new_client(s): c
+' Add a new client to the table
+'   s:          socket ID to assign to the client
+'   Returns:    client ID on success
+'               -1 on failure (table full; increase MAX_CLIENTS)
+    repeat MAX_CLIENTS with c
+        if ( _client_sck[c] < 0 )
+            ser.printf(@"adding client #%d\n\r", c)
+            _client_sck[c] := s
+            return c
+    return -1
+
+
+con MAX_REQUEST_SZ  = 2048
+var byte _req_tmp[MAX_REQUEST_SZ]
+pub parse_request(cl) | s, lsw, vol, ch, b, p, rl
+' Parse a client request
+'   cl: client ID(0..MAX_CLIENTS-1)
+    s := _client_sck[cl]
+    ser.printf(@"client %d socket %d (len %d)\n\r", cl, s, sck.recvq(s) )
+
+    rl := sck.recv(s, @_req_tmp)
+    if ( rl >= 5 )
+        p := str.find(@_req_tmp, @_request_base)' look for "GET /" in the request
+        p += strsize(@_request_base)
+        if ( byte[p] == " " )                   ' serve root/main page
+            send_page(cl)
+        else                                    ' process commands
+            if ( str.find(p, @_light_cmd) )     ' LED on/off command
+                p += strsize(@_light_cmd)
+                if ( str.find(p, @_light_param) )
+                    p += strsize(@_light_param)
+                    lsw := byte[p]
+                    if ( str.atoi(@lsw) == 0 )
+                        pinl(LED1)
+                    elseif ( str.atoi(@lsw) == 1 )
+                        pinh(LED1)
+                send_empty_content(cl)          ' tell the client that's it; disconnect
+                return
+            elseif ( str.find(p, @_vol_cmd) )   ' volume slider
+                p += strsize(@_vol_cmd)
+                if ( str.find(p, @_vol_param) )
+                    p += strsize(@_vol_param)
+                    b := 0
+                    repeat
+                        ch := byte[p++]
+                        if ( ch == " " )
+                            quit
+                        vol.byte[b++] := ch
+                    vol := str.atoi(@vol)       ' convert volume level ascii to integer
+                    ser.printf(@"Volume=%d\n\r", vol)
+                send_empty_content(cl)
+                return
+    else
+        return
+
+
+pub prostr(p): s
+' Get string representation of layer-4 protocol
+'   p:          protocol number (L4_UDP, L4_TCP)
+'   Returns:    string
+    case p
+        L4_UDP: return @"UDP"
+        L4_TCP: return @"TCP"
+
+
+pub send_page(cl)
+' Build and send a simple webpage
+'   cl: client ID
+    bytefill(@_server_buffer, 0, BUFF_SZ)
+    _wr_ptr := 0
+    write_http_header(200, @_reason_ok, _file_sz, @_mimetype_html)
+    libc.fseek(_file_ptr, 0, libc.SEEK_SET)
+    libc.fread(@_server_buffer+strsize(@_server_buffer), _file_sz, 1, _file_ptr)
+    sck.send(_client_sck[cl], @_server_buffer, strsize(@_server_buffer), true)
+
+
+pub send_empty_content(cl)
+' Send an empty content header to the client
+'   cl: client id
+    write_http_header(204, @_reason_no_cont)
+    sck.send(_client_sck[cl], @_server_buffer, strsize(@_server_buffer), true)
+
+
+pub show_socket_table() | s
+' Show the socket table (similar to 'netstat')
+    ser.pos_x(0)
+    ser.str(@"#")
+    ser.pos_x(3)
+    ser.str(@"local")
+    ser.pos_x(26)
+    ser.str(@"remote")
+    ser.pos_x(49)
+    ser.str(@"proto")
+    ser.pos_x(56)
+    ser.str(@"state")
+    ser.pos_x(73)
+    ser.str(@"sendq")
+    ser.pos_x(80)
+    ser.str(@"recvq")
+    ser.newline()
+    repeat sck.MAX_SOCKETS with s
+        ser.pos_x(0)
+        ser.printf(@"%d", s)
+        ser.pos_x(3)
+        ser.printf(@"%s:%d",  str.iptostr( sck.socket[s].local_ip ), ...
+                                sck.socket[s].local_port)
+        ser.pos_x(26)
+        ser.printf(@"%s:%d",  str.iptostr( sck.socket[s].remote_ip ), ...
+                                sck.socket[s].remote_port)
+        ser.pos_x(49)
+        ser.printf(@"%s", prostr(sck.socket[s].protocol) )
+
+        ser.pos_x(56)
+        ser.printf(@"%s", state_str(sck.socket[s].state) )
+
+        ser.pos_x(73)
+        ser.printf(@"%d", sck.sendq(s) )
+
+        ser.pos_x(80)
+        ser.printf(@"%d", sck.recvq(s) )
+        ser.newline()
+
+
+con
+   ' socket states
+    #0, CLOSED, SYN_SENT, SYN_RECEIVED, ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, ...
+    CLOSING, LAST_ACK, TIME_WAIT, LISTENING
+
+pub state_str(st): p
+' Get string representation of socket state
+'   st:         socket state
+'   Returns:    string
+    case st
+        CLOSED:         return @"CLOSED"
+        SYN_SENT:       return @"SYN_SENT"
+        SYN_RECEIVED:   return @"SYN_RECEIVED"
+        ESTABLISHED:    return @"ESTABLISHED"
+        FIN_WAIT_1:     return @"FIN_WAIT_1"
+        FIN_WAIT_2:     return @"FIN_WAIT_2"
+        CLOSE_WAIT:     return @"CLOSE_WAIT"
+        CLOSING:        return @"CLOSING"
+        LAST_ACK:       return @"LAST_ACK"
+        TIME_WAIT:      return @"TIME_WAIT"
+        LISTENING:      return @"LISTEN"
+        other:          return @"???"
+
+
+pub putchar(ch)
+' Write a single character to the server output buffer
+    _server_buffer[_wr_ptr++] := ch
+    if ( _wr_ptr >= BUFF_SZ )
+        _wr_ptr := 0
+
+
+pub write_http_header(cd, rsn, clen=0, ctype=0)
+' Wire an HTTP header to the server TX buffer
+'   cd:     code
+'   rsn:    reason (string)
+'   clen:   content-length (optional; default is 0)
+'   ctype:  content-type (optional; field will not be emitted if unspecified) 
+    bytefill(@_server_buffer, 0, BUFF_SZ)
+    _wr_ptr := 0
+    printf(@"HTTP/1.1 %d %s\r\n", cd, rsn)
+    if ( ctype )
+        printf(@"Content-Type: %s\r\n", ctype)
+    printf(@"Content-Length: %d\r\n", clen)
+    printf(@"Connection: close\r\n\r\n")
+
+
+dat
+
+    _request_base           byte "GET /", 0
+    _light_cmd              byte "light?", 0
+    _light_param            byte "on=", 0
+    _vol_cmd                byte "volume?", 0
+    _vol_param              byte "level=", 0
+    _mimetype_html          byte "text/html", 0
+
+    _reason_ok              byte "OK", 0
+    _reason_no_cont         byte "No Content", 0
+    _reason_uri_too_long    byte "Request-URI Too Long", 0
+
+
+#include "terminal.common.spin2h"               ' terminal routines (puts(), printf(), etc)
+
+
+DAT
+{
+Copyright 2025 Jesse Burt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+}
+
