@@ -79,7 +79,7 @@ dat
 
     _mac_local  byte $02, $98, $0c, $01, $02, $03
     _my_ip      byte "192.168.1.10", 0
-    _webpg_file byte "/sd/INDEX.HTM", 0
+    _webpg_file byte "/sd/INDEX.HTM", 0         ' place this file in the root of your SD card
 
 
 pub main() | s, ls, skn, cl, tmp, m
