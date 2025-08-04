@@ -133,17 +133,21 @@ pub bind(sck, lip, lmac=0): s
 '   Returns:    0 on success
 '               negative numbers on failure
 
-'    dbg.str(@"bind(): ")
+#ifdef DEBUG
+    dbg.str(@"bind(): ")
+#endif
     ifnot ( socket[sck].local_ip )
         socket[sck].local_ip := lip
         if ( lmac )
             bytemove(@socket[sck].local_mac, lmac, MACADDR_LEN)
         else
             bytemove(@socket[sck].local_mac, net.my_mac(), MACADDR_LEN)
-'        dbg.printf( @"socket %d  ip: %s  mac: %s\n\r", ...
-'                    sck, ...
-'                    str.iptostr(socket[sck].local_ip), ...
-'                    str.mactostr(@socket[sck].local_mac) )
+#ifdef DEBUG
+        dbg.printf( @"socket %d  ip: %s  mac: %s\n\r", ...
+                    sck, ...
+                    str.iptostr(socket[sck].local_ip), ...
+                    str.mactostr(@socket[sck].local_mac) )
+#endif
         return OK
     else
 '        dbg.strln(@"error: address already in use")
@@ -192,8 +196,10 @@ pub listen(port, bl=5): s | svn, skn
     repeat MAX_SERVICES with svn                ' look for a registered handler for this port
         if ( service[svn].port == port )
             ' found matching service
-'            dbg.printf(@"found service %d registered on port %d (%s)\n\r", ...
-'                svn, port, prostr(pro) )
+#ifdef DEBUG
+            dbg.printf(@"found service %d registered on port %d (%s)\n\r", ...
+                svn, port, prostr(service[svn].proto) )
+#endif
             repeat MAX_SOCKETS with skn
                 if ( socket[skn].local_ip and ...
                     (socket[skn].state == CLOSED) and ...
@@ -210,9 +216,13 @@ pub listen(port, bl=5): s | svn, skn
                     socket[skn].backlog.head := -1
                     socket[skn].backlog.tail := -1
                     return skn
-'            dbg.strln(@"error: no sockets available")
+#ifdef DEBUG
+            dbg.strln(@"error: no sockets available")
+#endif
             return -1
-'    dbg.printf(@"error: no service registered with port %d\n\r", port)
+#ifdef DEBUG
+    dbg.printf(@"error: no service registered with port %d\n\r", port)
+#endif
     return -2                                   ' no service assigned to this port, protocol pair
 
 
@@ -268,7 +278,9 @@ pub register_service(port, proto, p_mbox=0): s
             service[s].proto := proto
             if ( p_mbox )
                 service[s].p_signal := p_mbox
-'            dbg.printf(@"assigned port %d to service slot %d\n\r", port, s)
+#ifdef DEBUG
+            dbg.printf(@"assigned port %d to service slot %d\n\r", port, s)
+#endif
             return s
 
     return -1                                   ' error: no more services available
@@ -676,13 +688,17 @@ pri process_icmp() | icmp_msg_s ich
 
 pri process_ipv4() | ip_header_s ih, sn
 ' Process received IPv4 headers
-'    dbg.strln(@"process_ipv4()")
+#ifdef DEBUG
+    dbg.strln(@"process_ipv4()")
+#endif
     ip.set_header(@ih)
     ip.rd_ip_header()
-'    ifnot ( ip.is_multicast_addr(ip.dest_addr() ) )
-'        dbg.printf(@"src %s  ", str.iptostr(ip.src_addr()))
-'        dbg.printf(@"dest %s  ", str.iptostr(ip.dest_addr()))
-'        dbg.printf(@"proto %0x\n\r", ip.layer4_proto())
+#ifdef DEBUG
+    ifnot ( ip.is_multicast_addr(ip.dest_addr() ) )
+        dbg.printf(@"src %s  ", str.iptostr(ip.src_addr()))
+        dbg.printf(@"dest %s  ", str.iptostr(ip.dest_addr()))
+        dbg.printf(@"proto %0x\n\r", ip.layer4_proto())
+#endif
 
     repeat MAX_SOCKETS with sn
         if ( (ip.dest_addr() == socket[sn].local_ip) )
@@ -986,18 +1002,24 @@ pri process_tcp(): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop
 
 pri process_udp(): s | udp_msg_s uh, l, skn, sck
 ' Process received UDP headers
-'    dbg.strln(@"process_udp()")
+#ifdef DEBUG
+    dbg.strln(@"process_udp()")
+#endif
     udp.set_header(@uh)
     udp.rd_udp_header()
 
     sck := -1
     repeat MAX_SOCKETS with skn
         if ( (udp.dest_port() == socket[skn].local_port) )
-'            dbg.printf(@"sck %d port match\n\r", skn)
+#ifdef DEBUG
+            dbg.printf(@"sck %d port match\n\r", skn)
+#endif
             if ( socket[skn].state == ESTABLISHED )
                 ' found an existing matching connection; make this our working socket
                 sck := skn
-'                dbg.printf(@"sck %d matches\n\r", sck)
+#ifdef DEBUG
+                dbg.printf(@"sck %d matches\n\r", sck)
+#endif
                 quit
     if ( sck == -1 )                            ' didn't find a connection; look for a listener
         repeat MAX_SOCKETS with skn
@@ -1010,14 +1032,20 @@ pri process_udp(): s | udp_msg_s uh, l, skn, sck
                     socket[sck].remote_ip := ip.src_addr()
                     socket[sck].remote_port := udp.src_port()
                     set_state(sck, ESTABLISHED)
-'                    dbg.printf(@"socket %d created from listening socket %d\n\r", sck, skn)
+#ifdef DEBUG
+                    dbg.printf(@"socket %d created from listening socket %d\n\r", sck, skn)
+#endif
                     quit
     if ( sck >= 0 )                             ' one of the above found a suitable socket
         l := udp.payload_len()                  '   receive the data
-'        dbg.printf(@"receiving %d bytes\n\r", l)
+#ifdef DEBUG
+        dbg.printf(@"receiving %d bytes\n\r", l)
+#endif
         xrxget(sck, l)
     else                                        ' no, there really is no match; bounce it
-'        dbg.strln(@"no matching socket")
+#ifdef DEBUG
+        dbg.strln(@"no matching socket")
+#endif
         ' no socket exists with that port; bounce message
         send_icmp(icmp.DEST_UNREACH, icmp.PORT_UNREACH, ip.start_pos() )
 
