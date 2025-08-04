@@ -7,7 +7,7 @@
         * Multiple sockets
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Jul 8, 2025
+    Updated:        Aug 4, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -84,7 +84,7 @@ pub start(CS, SCK, MOSI, MISO, SPI_FREQ=10_000_000): s | st
 '   MISO:       Master-In Slave-Out
 '   SPI_FREQ:   SPI bus frequency (20_000_000 max, default is 10_000_000)
 #ifdef DEBUG
-    dbg.startrxtx(DBG_RX, DBG_TX, 2_000_000)
+    dbg.startrxtx(DBG_RX, DBG_TX, 0, 2_000_000)
     dbg.clear()
     dbg.strln(@"dbg started")
 #endif
