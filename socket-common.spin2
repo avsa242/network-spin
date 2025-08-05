@@ -4,7 +4,7 @@
     Description:    Sockets shared/common code
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Jul 8, 2025
+    Updated:        Aug 5, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -87,12 +87,14 @@ con
 
 pri rx_available(sck): q
 ' Get the number of unread bytes available in the buffer
-    return abs(socket[sck].rxbuff.head - socket[sck].rxbuff.tail)
+'   sck:    socket number
+    return (socket[sck].rxbuff.head - socket[sck].rxbuff.tail) & RB_MASK
 
 
 pri rx_bytes_free(sck): b
 ' Get the number of bytes free in the ring buffer
-    return RB_MASK - ( (socket[sck].rxbuff.head - socket[sck].rxbuff.tail) & RB_MASK )
+'   sck:    socket number
+    return ( socket[sck].rxbuff.tail - socket[sck].rxbuff.head - 1 ) & RB_MASK
 
 
 pri rxget(sck, p_dest, len=0): l | a
@@ -164,12 +166,14 @@ pri rxput(sck, p_src, len): n
 
 pri tx_available(sck): q
 ' Get the number of unread bytes available in the buffer
-    return abs(socket[sck].txbuff.head - socket[sck].txbuff.tail)
+'   sck:    socket number
+    return (socket[sck].txbuff.head - socket[sck].txbuff.tail) & RB_MASK
 
 
 pri tx_bytes_free(sck): b
 ' Get the number of bytes free in the ring buffer
-    return RB_MASK - ( (socket[sck].txbuff.head - socket[sck].txbuff.tail) & RB_MASK )
+'   sck:    socket number
+    return ( socket[sck].txbuff.tail - socket[sck].txbuff.head - 1 ) & RB_MASK
 
 
 pri txget(sck, p_dest, len=0): l | a
