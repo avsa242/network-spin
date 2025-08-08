@@ -7,7 +7,7 @@
         * Multiple sockets
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Aug 4, 2025
+    Updated:        Aug 8, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -1028,6 +1028,8 @@ pri process_udp(): s | udp_msg_s uh, l, skn, sck
                     ' are we listening on that port?
                     '   look for an unused socket to copy the listening socket to
                     sck := new_socket()
+                    if ( sck < 0 )
+                        return -1               ' error: no sockets available
                     bytemove(@socket[sck], @socket[skn], sizeof(socket_s) )
                     socket[sck].remote_ip := ip.src_addr()
                     socket[sck].remote_port := udp.src_port()
