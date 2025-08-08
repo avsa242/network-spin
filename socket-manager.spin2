@@ -125,28 +125,32 @@ pub accept(ls): cs
     return cs
 
 
-pub bind(sck, lip, lmac=0): s
+pub bind(sck, lip, lp=0, lmac=0): s
 ' Bind an address to a socket
 '   sck:        socket number
 '   lip:        local IP address (little-endian/Propeller byte order)
-'   lmac:       local MAC address (OUI MSB first)
+'   lp:         local port (optional; a random value will be selected if omitted)
+'   lmac:       local MAC address (optional; OUI MSB first)
 '   Returns:    0 on success
 '               negative numbers on failure
 
 #ifdef DEBUG
-    dbg.str(@"bind(): ")
+'    dbg.str(@"bind(): ")
 #endif
     ifnot ( socket[sck].local_ip )
         socket[sck].local_ip := lip
+        ifnot ( lp )                            ' choose a random ephemeral port number if
+            lp := 49152+math.rndi(16383)        '   one wasn't specified
+        socket[sck].local_port := lp
         if ( lmac )
             bytemove(@socket[sck].local_mac, lmac, MACADDR_LEN)
         else
             bytemove(@socket[sck].local_mac, net.my_mac(), MACADDR_LEN)
 #ifdef DEBUG
-        dbg.printf( @"socket %d  ip: %s  mac: %s\n\r", ...
-                    sck, ...
-                    str.iptostr(socket[sck].local_ip), ...
-                    str.mactostr(@socket[sck].local_mac) )
+'        dbg.printf( @"socket %d  ip: %s  mac: %s\n\r", ...
+'                    sck, ...
+'                    str.iptostr(socket[sck].local_ip), ...
+'                    str.mactostr(@socket[sck].local_mac) )
 #endif
         return OK
     else
@@ -337,6 +341,42 @@ pub sendq(sck): a
     return tx_available(sck)
 
 
+pub sendto(sck, p_src, len, addr, port): s
+' Send data to a UDP socket
+'   sck:        socket number
+'   p_src:      pointer to data to send
+'   len:        length of data to send
+'   flags:      send flags (currently unused)
+'   addr:       remote address
+'   port:       remote port
+'   Returns:    number of bytes sent on success
+'               -1 on failure
+'    dbg.printf(@"send(%d, %08x, %d)\n\r", sck, p_src, len)
+    s := 0
+    ifnot ( addr or port )
+        return -1                               ' error: invalid argument (bad remote socket)
+
+    if ( socket[sck].state <> CLOSED )
+        if ( (addr <> socket[sck].remote_ip) or (port <> socket[sck].remote_port) )
+            return -1                           ' error: socket already in use
+
+    socket[sck].remote_ip := addr
+    socket[sck].remote_port := port
+    ifnot ( arp.hw_addr_valid(@socket[sck].remote_mac) )
+        if ( arp.hw_addr_of(socket[sck].remote_ip) < 0 )
+            arp.cache_entry(@socket[sck].remote_mac, socket[sck].remote_ip, arp.PROTO_TYPE_IP)
+'            dbg.strln(@"sendto(): remote MAC unknown; queuing for resolution")
+            repeat
+            until arp.hw_addr_valid( arp.hw_addr_of(addr) )
+        bytemove(@socket[sck].remote_mac, arp.hw_addr_of(addr), MACADDR_LEN)
+'        dbg.printf(@"sendto(): remote is %s\n\r", str.mactostr(@socket[sck].remote_mac))
+
+    set_state(sck, ESTABLISHED)
+    s := txput(sck, p_src, len)                 ' copy data to the socket's buffer
+'    dbg.printf(@"txput(): socket %d %d\n\r", sck, s)
+'    dbg.hexdump(@socket[sck].txbuff.buffer, 0, 3, len, 16 <# len)
+    return
+
 pub service_number(port, proto): s
 ' Get index in the service table for matching service
 '   port:       port number to match
@@ -421,7 +461,8 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, ls, st
 '                dbg.printf( @"ARP entry %d (%s) not resolved\n\r", ...
 '                            e, ...
 '                            str.iptostr(arp.entry[e].proto_addr))
-                if ( abs(getct()-t) > clkfreq )
+                if ( getsec() > arp.entry[e].last_checked )
+                    arp.entry[e].last_checked := getsec()
                     resolve_ip(0, arp.entry[e].proto_addr)
                     t := getct()
 

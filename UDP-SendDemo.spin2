@@ -1,0 +1,108 @@
+{
+----------------------------------------------------------------------------------------------------
+    Filename:       UDP-SendDemo.spin2
+    Description:    UDP Demo
+        * Set up socket
+        * Send datagram
+    Author:         Jesse Burt
+    Started:        Aug 8, 2025
+    Updated:        Aug 8, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
+}
+{Spin2_v51}
+#include "net-common.spin2h"
+#include "core.con.click.spin2"
+
+con
+
+    _clkfreq    = 180_000_000
+    _xtlfreq    = 20_000_000
+
+    CLICK_BASE  = 0
+
+
+obj
+
+    ser:    "com.serial.terminal.ansi" | SER_BAUD=2_000_000
+    net:    "socket-manager"
+    str:    "string"
+
+
+dat
+
+    _mac_local  byte $02, $98, $0c, $06, $01, $c9
+    _my_ip      byte "10.42.0.216", 0
+
+
+var
+
+    byte _testdata[100]
+
+
+pub main() | sck, s, t, len, rem_ip, rem_port, ch
+
+    ser.startrxtx(63, 62, 0, 2_000_000)
+    ser.clear()
+    ser.strln(@"serial started")
+
+    net.set_mac_addr(@_mac_local)
+    net.set_ip(str.strtoip(@_my_ip))
+
+    net.start(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN)
+
+    ' 1. Check out a new socket
+    sck := net.new_socket(L4_UDP)
+    if ( sck < 0 )
+        ' this shouldn't actually happen in this case, but is used here
+        ' to show that you _should_ check for it
+        ser.strln(@"error: no free sockets")
+        repeat
+
+    ' 2. Bind an IP address and (optionally) a port to this socket. Leave port at 0 to pick
+    '   a random one.
+    net.bind(sck, str.strtoip(@_my_ip), 0, @net._mac_local)
+
+    repeat
+        ' build the message to send
+        str.sprintf1(@_testdata, @"This is test message #%d from the P2\n\r", t++)
+        len := strsize(@_testdata)
+
+        ' 3. Send the datagram to a remote host
+        ' Note that the first datagram will take longer to send as the P2 waits for ARP to find
+        '   the MAC address associated with the IP address. It then gets cached so subsequent
+        '   datagrams will be sent much more quickly (until the next reload).
+        rem_ip := str.strtoip(@"10.42.0.1")
+        rem_port := 1234
+        net.sendto(sck, @_testdata, len, rem_ip, rem_port)
+        ser.printf(@"Sent '%s'\n\r", @_testdata)
+        ch := ser.getchar()
+    until ( ch == "q" )
+    ser.strln(@"quit - closing socket")
+
+    ' 4. This isn't needed in this demo, but in general, when you're finished, close the socket.
+    net.disconnect(sck)
+
+    repeat
+
+
+DAT
+{
+Copyright 2025 Jesse Burt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+}
+

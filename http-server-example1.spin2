@@ -6,7 +6,7 @@
         * Demonstrate basic webpage controls 
     Author:         Jesse Burt
     Started:        Jul 3, 2023
-    Updated:        Jul 9, 2025
+    Updated:        Aug 8, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -119,7 +119,7 @@ pub main() | s, ls, skn, cl, tmp, m
     sck.register_service(80, L4_TCP, @mailbox)
 
     s := sck.new_socket(L4_TCP)
-    sck.bind(s, str.strtoip(@_my_ip), @_mac_local)
+    sck.bind(s, str.strtoip(@_my_ip), 0, @_mac_local)
     ls := sck.listen(80)                        ' create a socket listening on port 80 (TCP)
     if ( ls >= 0 )
         ser.printf(@"got listening socket %d\n\r", ls)
@@ -225,8 +225,10 @@ pub parse_request(cl) | s, lsw, vol, ch, b, p, rl
                     p += strsize(@_light_param)
                     lsw := byte[p]
                     if ( str.atoi(@lsw) == 0 )
+                        ser.strln(@"LED1 off")
                         pinl(LED1)
                     elseif ( str.atoi(@lsw) == 1 )
+                        ser.strln(@"LED1 on")
                         pinh(LED1)
                 send_empty_content(cl)          ' tell the client that's it; disconnect
                 return

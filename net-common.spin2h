@@ -4,7 +4,7 @@
     Description:    Constants common to multiple networking objects
     Author:         Jesse Burt
     Started:        Mar 12, 2022
-    Updated:        Mar 29, 2025
+    Updated:        Aug 8, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -34,8 +34,9 @@ CON
 
     ' ARP table/cache
     struct arp_entry_s(...
-        word        proto_t, ...
+        long        last_checked, ...
         long        proto_addr, ...
+        word        proto_t, ...
         macaddr_s   hw_addr, ...
         byte        resolved)
 
