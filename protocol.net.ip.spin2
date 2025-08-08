@@ -4,7 +4,7 @@
     Description:    Internet Protocol
     Author:         Jesse Burt
     Started:        Feb 7, 2022
-    Updated:        Jul 8, 2025
+    Updated:        Aug 8, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -142,8 +142,15 @@ PUB hdr_len(): l
 PUB is_multicast_addr(ip): f
 ' Flag indicating the given address is a multicast address
     if ( (ip >= $e0_00_00_00) and (ip <= $ef_ff_ff_ff) )
-    ' ip is between 224.0.0.0 and 239.255.255.255 (inclusive)
-        return true
+        return true                             ' multicast ip is 224.0.0.0 to 239.255.255.255
+    else
+        return false
+
+
+pub is_multicast_link_local_addr(ip): f
+' Flag indicating the given address is a link-local multicast address
+    if ( (ip >= $e0_00_00_00) and (ip <= $e0_00_00_ff) )
+        return true                             ' multicast ip is 224.0.0.0 to 224.0.0.255
     else
         return false
 
