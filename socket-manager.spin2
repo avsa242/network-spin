@@ -246,23 +246,41 @@ pub recv(sck, p_dest, len=posx, flags=0): s
 
     s := 0
 
-    case socket[sck].state
-        ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2:
-'            dbg.strln(@"connected")
-        LISTENING, SYN_SENT, SYN_RECEIVED:      ' queue for processing in ESTABLISHED state
-'            dbg.strln(@"not yet connected; queue")
-            return OK
-        CLOSE_WAIT:                             ' deliver remaining text
-            ifnot ( rx_available(sck) )         '   otherwise, error: connection closing
-'                dbg.strln(@"error: connection closing")
-                return -1                       ' error: socket not connected
-        CLOSED:
-'            dbg.strln(@"error: connection doesn't exist")
-            return -1                           ' error: connection doesn't exist
-        CLOSING, LAST_ACK, TIME_WAIT:           ' error: connection closing
-'                dbg.strln(@"error: connection closing")
+    if ( socket[sck].protocol == L4_TCP )
+        case socket[sck].state
+            ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2:
+                dbg.strln(@"connected")
+            LISTENING, SYN_SENT, SYN_RECEIVED:      ' queue for processing in ESTABLISHED state
+                dbg.strln(@"not yet connected; queue")
+                return OK
+            CLOSE_WAIT:                             ' deliver remaining text
+                ifnot ( rx_available(sck) )         '   otherwise, error: connection closing
+                    dbg.strln(@"error: connection closing")
+                    return -1                       ' error: socket not connected
+            CLOSED:
+                dbg.strln(@"error: connection doesn't exist")
+                return -1                           ' error: connection doesn't exist
+            CLOSING, LAST_ACK, TIME_WAIT:           ' error: connection closing
+                    dbg.strln(@"error: connection closing")
 
     return rxget(sck, p_dest, len)              ' copy data from the socket buffer
+
+
+pub recvfrom(sck, p_dest, max_len, flags, ^sockaddr_s p_addr, addrlen=0): l
+' Receive data from a UDP socket
+'   sck:        socket number
+'   p_dest:     pointer to destination to copy received data to
+'   max_len:    maximum length of data to receive
+'   flags:      currently unused
+'   p_addr:     pointer to sockaddr_s structure (.address, .port) to copy remote IP and port to
+'               (optional; specify 0 to ignore)
+'   addrlen:    currently unused
+    l := recvq(sck)
+
+    if ( l > 0 )
+        l := recv(sck, p_dest, max_len)
+        p_addr.address := ip.src_addr()
+        p_addr.port := udp.src_port()
 
 
 pub recvq(sck): a
@@ -377,6 +395,7 @@ pub sendto(sck, p_src, len, addr, port): s
 '    dbg.hexdump(@socket[sck].txbuff.buffer, 0, 3, len, 16 <# len)
     return
 
+
 pub service_number(port, proto): s
 ' Get index in the service table for matching service
 '   port:       port number to match
@@ -397,6 +416,13 @@ pub set_ip(addr)
 pub set_mac_addr(p_addr)
 ' Set the MAC address of the network device
     bytemove(@_mac_local, p_addr, MACADDR_LEN)
+
+
+pub set_socket_mailbox(sck, p_mbox)
+' Set a socket's signal mailbox pointer
+'   sck:    socket number
+'   p_mbox: pointer to mailbox (2 longs)
+    socket[sck].p_signal := p_mbox
 
 
 var long _netloop_stack[NET_STACK_SZ]
@@ -1041,7 +1067,7 @@ pri process_tcp(): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop
     return OK
 
 
-pri process_udp(): s | udp_msg_s uh, l, skn, sck
+pri process_udp(): s | udp_msg_s uh, l, skn
 ' Process received UDP headers
 #ifdef DEBUG
     dbg.strln(@"process_udp()")
@@ -1051,46 +1077,22 @@ pri process_udp(): s | udp_msg_s uh, l, skn, sck
 
     sck := -1
     repeat MAX_SOCKETS with skn
-        if ( (udp.dest_port() == socket[skn].local_port) )
+        if ( (udp.dest_port() == socket[skn].local_port) and (socket[skn].protocol == L4_UDP) )
 #ifdef DEBUG
             dbg.printf(@"sck %d port match\n\r", skn)
 #endif
-            if ( socket[skn].state == ESTABLISHED )
-                ' found an existing matching connection; make this our working socket
-                sck := skn
+            l := udp.payload_len()
+            xrxget(skn, l)
+            if ( socket[skn].p_signal )         ' notify the service/protcol handler, if defined
+                long[socket[skn].p_signal+4] := skn
+                long[socket[skn].p_signal] := DATA_READY
+            return
+
 #ifdef DEBUG
-                dbg.printf(@"sck %d matches\n\r", sck)
+    dbg.strln(@"no matching socket")
 #endif
-                quit
-    if ( sck == -1 )                            ' didn't find a connection; look for a listener
-        repeat MAX_SOCKETS with skn
-            if ( (udp.dest_port() == socket[skn].local_port) )
-                if ( socket[skn].state == LISTENING )
-                    ' are we listening on that port?
-                    '   look for an unused socket to copy the listening socket to
-                    sck := new_socket()
-                    if ( sck < 0 )
-                        return -1               ' error: no sockets available
-                    bytemove(@socket[sck], @socket[skn], sizeof(socket_s) )
-                    socket[sck].remote_ip := ip.src_addr()
-                    socket[sck].remote_port := udp.src_port()
-                    set_state(sck, ESTABLISHED)
-#ifdef DEBUG
-                    dbg.printf(@"socket %d created from listening socket %d\n\r", sck, skn)
-#endif
-                    quit
-    if ( sck >= 0 )                             ' one of the above found a suitable socket
-        l := udp.payload_len()                  '   receive the data
-#ifdef DEBUG
-        dbg.printf(@"receiving %d bytes\n\r", l)
-#endif
-        xrxget(sck, l)
-    else                                        ' no, there really is no match; bounce it
-#ifdef DEBUG
-        dbg.strln(@"no matching socket")
-#endif
-        ' no socket exists with that port; bounce message
-        send_icmp(icmp.DEST_UNREACH, icmp.PORT_UNREACH, ip.start_pos() )
+    ' no socket exists with that port; bounce message
+    send_icmp(icmp.DEST_UNREACH, icmp.PORT_UNREACH, ip.start_pos() )
 
     return
 

@@ -1,0 +1,108 @@
+{
+----------------------------------------------------------------------------------------------------
+    Filename:       UDP-RecvDemo.spin2
+    Description:    UDP Demo
+        * Set up socket
+        * Receive datagram
+    Author:         Jesse Burt
+    Started:        Aug 8, 2025
+    Updated:        Aug 8, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
+}
+{Spin2_v51}
+#include "net-common.spin2h"
+#include "core.con.click.spin2"
+#define DEBUG
+#pragma exportdef(DEBUG)
+
+con
+
+    _clkfreq    = 180_000_000
+    _xtlfreq    = 20_000_000
+
+    CLICK_BASE  = 0
+
+
+obj
+
+    ser:    "com.serial.terminal.ansi" | SER_BAUD=2_000_000
+    net:    "socket-manager"
+    str:    "string"
+
+
+var
+
+    long mailbox[2]
+    byte _rxbuff[1024]
+
+
+dat
+
+    _mac_local  byte $02, $98, $0c, $06, $01, $c9
+    _my_ip      byte "10.42.0.216", 0
+
+
+con struct sockaddr_s = net.sockaddr_s
+
+pub main() | sck, rd[net.MAX_SOCKETS], ls, rl, rs, s, port, sockaddr_s sockaddr, max_len
+
+    ser.startrxtx(63, 62, 0, 2_000_000)
+    ser.clear()
+    ser.strln(@"serial started")
+
+    net.set_mac_addr(@_mac_local)
+    net.set_ip(str.strtoip(@_my_ip))
+
+    net.start(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN)
+    waitms(20)
+
+    ' 1. Register the port as a service, protocol UDP
+    port := 1235
+    net.register_service(port, L4_UDP, @mailbox)
+
+    ' 2. Check out a new socket
+    sck := net.new_socket(L4_UDP)
+    if ( sck < 0 )
+        ' this shouldn't actually happen in this case, but is used here
+        ' to show that you _should_ check for it
+        ser.strln(@"error: no free sockets")
+        repeat
+
+    ' 3. Bind an IP address and the same port to this socket.
+    net.bind(sck, str.strtoip(@_my_ip), port, @net._mac_local)
+    net.set_socket_mailbox(sck, @mailbox)
+    max_len := 1024
+    repeat
+        bytefill(@_rxbuff, 0, 1024)
+        sockaddr~
+        ' 4. Poll 'recvfrom()' for data on this socket. The return value indicates the number of
+        '   bytes received. 
+        rl := net.recvfrom(sck, @_rxbuff, max_len, 0, @sockaddr, 4)
+        if ( rl > 0 )
+            ser.printf(@"Received %d bytes from %s:%d\n\r", ...
+                        rl, ...
+                        str.iptostr(sockaddr.address), sockaddr.port)
+            ser.hexdump(@_rxbuff, rl, 4, rl, 16 <# rl)
+
+
+DAT
+{
+Copyright 2025 Jesse Burt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+}
+

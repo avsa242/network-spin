@@ -4,7 +4,7 @@
     Description:    Sockets shared/common code
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Aug 5, 2025
+    Updated:        Aug 8, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -41,6 +41,10 @@ con
         long        head, ...
         long        tail, ...
         long        pnext)
+
+    struct sockaddr_s(...
+        long        address, ...
+        word        port)
 
     struct socket_s(...
         long        local_ip, ...
