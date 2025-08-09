@@ -40,11 +40,16 @@ P2/SPIN2:
 (other versions or toolchains not listed are __not supported__, and _may or may not_ work)
 
 
+## Hardware compatibility
+
+* Tested with ENC28J60 (primary development device)
+
+
 ## Limitations
 
 * Very early in development - may malfunction, or outright fail to build
 * Some things are currently hardcoded
 * API unstable (only one network device driver currently exists)
 * IP only really supports 20-byte headers
-* ICMP is currently _very_ primitive - only enough is implemented to store/retrieve metadata and is written with enough to form reply messages to echo requests.
+* spin1: ICMP is currently _very_ primitive - only enough is implemented to store/retrieve metadata and is written with enough to form reply messages to echo requests.
 
