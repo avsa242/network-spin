@@ -99,7 +99,7 @@ pub init(optr)
 
 
 pub set_header(p_hdr)
-
+' Set pointer to IPv4 header ip_header_s structure
     [hdr] := p_hdr
 
 
@@ -119,7 +119,8 @@ pub addr8888to32l(a3, a2, a1, a0): a
 
 pub clear_option(idx)
 ' Clear a cached option
-    option[idx]~
+    if ( (idx >= 0) and (idx <= MAX_OPTS) )
+        option[idx]~
 
 
 PUB dec_ttl()
@@ -203,27 +204,118 @@ PUB msg_ident(): i
     return swap_word(hdr.ident)
 
 
+PUB my_ip(): a
+' Get this node's IP address
+    return swap_long(_my_ip)
+
+
+PUB new(l4_proto, src_ip, dest_ip)
+' Construct an IPV4 header
+'   l4_proto: OSI Layer-4 protocol (L4_TCP, L4_UDP, L4_ICMP)
+    _ip_start := net[p_ndev].fifo_wr_ptr()
+    reset_ipv4()
+    set_layer4_proto(l4_proto)
+    set_src_addr(src_ip)
+    set_dest_addr(dest_ip)
+    if ( is_multicast_link_local_addr(dest_ip) )' ttl _must_ be 1 when datagrams are sent to
+        set_ttl(1)                              '   link-local (224.0.0.0 to .255) multicast addr
+    else
+        set_ttl(TTL_DEFAULT)
+
+    wr_ip_header()
+
+
+pub option_class(o): c
+' Get the class field of a cached option
+'   o:  cached option index (0..MAX_OPTS-1)
+'   Returns:
+'       2-bit class on success
+'       -1 on failure
+    if ( (o < 0) or (o > MAX_OPTS) )
+        return -1
+
+    return (option[o].type & TYPE_CLASS_BITS) >> TYPE_CLASS
+
+
+pub option_copy_on_frag(o): c
+' Get the copy-on-fragmentation field of a cached option
+'   o:  cached option index (0..MAX_OPTS-1)
+'   Returns:
+'       1-bit flag on success (0: false, 1: true)
+'       -1 on failure
+    if ( (o < 0) or (o > MAX_OPTS) )
+        return -1
+
+    return (option[o].type & TYPE_COF_BITS) >> TYPE_COF
+
+
+pub option_number(o): n
+' Get the number field of a cached option
+'   o:  cached option index (0..MAX_OPTS-1)
+'   Returns:
+'       5-bit number on success
+'       -1 on failure
+    if ( (o < 0) or (o > MAX_OPTS) )
+        return -1
+
+    return (option[o].type & TYPE_NUMBER_BITS)
+
+
 PUB payload_length(): l
 ' Get the length of the payload (layer 4 and above) only
     return dgram_len()-IP_HDR_SZ
 
 
-PUB src_addr(): a
-' Get source/originator of IP datagram
-'   Returns: 32-bit IP address (LE)
-    return swap_long(hdr.src_addr)              ' swap to host (Propeller) byte order
+PUB rd_ip_header(p_src=0): p | ihl, o
+' Read IP header
+'   p_src:  pointer to source buffer in RAM containing IP header
+'           (optional; default is to read it from the network device instead)
+
+    ifnot ( p_src )                             ' read an IP header from the network device
+        _ip_start := net[p_ndev].fifo_rd_ptr()
+        net[p_ndev].rd_block(@hdr, IP_HDR_SZ)
+    else                                        ' read an IP header from RAM
+        bytemove(@hdr, p_src, IP_HDR_SZ)
+
+    ihl := hdr_len()
+    if ( ihl > IP_HDR_SZ )                      ' IP header > 20 bytes? options are attached
+        ihl -= IP_HDR_SZ                        ' header length - 20 = options length
+        repeat MAX_OPTS with o
+            ifnot ( option[o].type )
+                ihl -= rd_option(@option)
+            if ( ihl <= 0 )
+                quit
+
+    return net[p_ndev].fifo_wr_ptr()
 
 
-PUB ttl(): t
-' Get number of router hops datagram is allowed to traverse
-'   Returns: byte
-    return hdr.ttl
+pub rd_option(^ip_option_s opt): t
+' Read IP header option
+'   opt:    pointer to ip_option_s structure
+    opt.type := net[p_ndev].rd_byte()
+    opt.length := net[p_ndev].rd_byte()
+    net[p_ndev].rd_block(@opt.vals, opt.length-2)
+
+    return opt.length
 
 
-PUB version(): v
-' Get IP version
-'   Returns: byte
-    return ( (hdr.version >> 4) & $0f)
+PUB reply(): p
+' Set up/write IPv4 header as a reply to last received header
+    set_hdr_chk(0)                         ' init header checksum to 0
+    set_dest_addr( src_addr() )
+    set_src_addr( my_ip() )
+    _ip_start := net[p_ndev].fifo_wr_ptr()
+    wr_ip_header()
+
+
+PUB reset_ipv4()
+' Reset all values to defaults for an IPV4 header
+    hdr~
+    set_version(4)
+    set_hdr_len(IP_HDR_SZ)
+    set_flags(DF)
+    set_ttl(TTL_DEFAULT)
+    set_msg_ident($0001)
 
 
 PUB set_dest_addr(a)
@@ -312,39 +404,26 @@ PUB set_version(v)
     hdr.version |= (v << 4)
 
 
+PUB src_addr(): a
+' Get source/originator of IP datagram
+'   Returns: 32-bit IP address (LE)
+    return swap_long(hdr.src_addr)              ' swap to host (Propeller) byte order
+
+
 PUB start_pos(): p
 ' Get pointer to start of IP header
     return _ip_start
 
 
-PUB new(l4_proto, src_ip, dest_ip)
-' Construct an IPV4 header
-'   l4_proto: OSI Layer-4 protocol (L4_TCP, L4_UDP, L4_ICMP)
-    _ip_start := net[p_ndev].fifo_wr_ptr()
-    reset_ipv4()
-    set_layer4_proto(l4_proto)
-    set_src_addr(src_ip)
-    set_dest_addr(dest_ip)
-    if ( is_multicast_link_local_addr(dest_ip) )' ttl _must_ be 1 when datagrams are sent to 
-        set_ttl(1)                              '   link-local (224.0.0.0 to .255) multicast addr
-    else
-        set_ttl(TTL_DEFAULT)
-
-    wr_ip_header()
-
-
-PUB reply(): p
-' Set up/write IPv4 header as a reply to last received header
-    set_hdr_chk(0)                         ' init header checksum to 0
-    set_dest_addr( src_addr() )
-    set_src_addr( my_ip() )
-    _ip_start := net[p_ndev].fifo_wr_ptr()
-    wr_ip_header()
-
-
 PUB swap_dest_src()
 ' Swap the destination and source IP address fields
     hdr.src_addr, hdr.dest_addr := hdr.dest_addr, hdr.src_addr
+
+
+PUB ttl(): t
+' Get number of router hops datagram is allowed to traverse
+'   Returns: byte
+    return hdr.ttl
 
 
 PUB update_chksum(len): ck | p_tmp
@@ -366,88 +445,10 @@ PUB update_chksum(len): ck | p_tmp
     net[p_ndev].fifo_set_wr_ptr(p_tmp)          ' restore pointer pos
 
 
-PUB my_ip(): a
-' Get this node's IP address
-    return swap_long(_my_ip)
-
-
-pub option_class(o): c
-' Get the class field of a cached option
-'   o:  cached option index (0..MAX_OPTS-1)
-'   Returns:
-'       2-bit class on success
-'       -1 on failure
-    if ( (o < 0) or (o > MAX_OPTS) )
-        return -1
-
-    return (option[o].type & TYPE_CLASS_BITS) >> TYPE_CLASS
-
-
-pub option_copy_on_frag(o): c
-' Get the copy-on-fragmentation field of a cached option
-'   o:  cached option index (0..MAX_OPTS-1)
-'   Returns:
-'       1-bit flag on success (0: false, 1: true)
-'       -1 on failure
-    if ( (o < 0) or (o > MAX_OPTS) )
-        return -1
-
-    return (option[o].type & TYPE_COF_BITS) >> TYPE_COF
-
-
-pub option_number(o): n
-' Get the number field of a cached option
-'   o:  cached option index (0..MAX_OPTS-1)
-'   Returns:
-'       5-bit number on success
-'       -1 on failure
-    if ( (o < 0) or (o > MAX_OPTS) )
-        return -1
-
-    return (option[o].type & TYPE_NUMBER_BITS)
-
-
-PUB reset_ipv4()
-' Reset all values to defaults for an IPV4 header
-    hdr~
-    set_version(4)
-    set_hdr_len(20)
-    set_flags(DF)
-    set_ttl(128)
-    set_msg_ident($0001)
-
-
-PUB rd_ip_header(p_src=0): p | ihl, o
-' Read IP header
-'   p_src:  pointer to source buffer in RAM containing IP header
-'           (optional; default is to read it from the network device instead)
-
-    ifnot ( p_src )                             ' read an IP header from the network device
-        _ip_start := net[p_ndev].fifo_rd_ptr()
-        net[p_ndev].rd_block(@hdr, IP_HDR_SZ)
-    else                                        ' read an IP header from RAM
-        bytemove(@hdr, p_src, IP_HDR_SZ)
-
-    ihl := hdr_len()
-    if ( ihl > IP_HDR_SZ )                      ' IP header > 20 bytes? options are attached
-        ihl -= IP_HDR_SZ                        ' header length - 20 = options length
-        repeat MAX_OPTS with o
-            ifnot ( option[o].type )
-                ihl -= rd_option(@option)
-            if ( ihl <= 0 )
-                quit
-
-    return net[p_ndev].fifo_wr_ptr()
-
-
-pub rd_option(^ip_option_s opt): t
-' Read IP header option
-'   opt:    pointer to ip_option_s structure
-    opt.type := net[p_ndev].rd_byte()
-    opt.length := net[p_ndev].rd_byte()
-    net[p_ndev].rd_block(@opt.vals, opt.length-2)
-
-    return opt.length
+PUB version(): v
+' Get IP version
+'   Returns: byte
+    return ( (hdr.version >> 4) & $0f)
 
 
 VAR long _p_chk, _p_dlen
