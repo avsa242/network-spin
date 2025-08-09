@@ -45,6 +45,36 @@ CON
     MF              = IP_MORE_FRAGS
 
 
+    ' IP header options
+    MAX_OPTS                = 13                ' most opts possible if all are 1-byte values
+    MAX_OPT_DATA_SZ         = 36
+
+    struct ip_option_s(...
+        byte type, ...
+        byte length, ...
+        byte vals[MAX_OPT_DATA_SZ])             ' 36 is worst-case scenario
+
+    TYPE_COF                = 7
+        COF_COPY            = 1 << TYPE_COF
+        COF_DONT_COPY       = 0
+    TYPE_COF_BITS           = 1 << TYPE_COF     ' copy on fragment
+    TYPE_CLASS              = 5
+    TYPE_CLASS_BITS         = %11 << TYPE_CLASS
+        CLASS_CONTROL       = %00
+        DBG_MEAS            = %10
+    TYPE_NUMBER             = 0
+    TYPE_NUMBER_BITS        = %11111 << TYPE_NUMBER
+        TYPE_END            = 0                 ' len=1
+        TYPE_NOOP           = 1                 ' len=1
+        TYPE_SECURITY       = 2                 ' len=11
+        TYPE_LOOSE_SRC      = 3                 ' len=var
+        TYPE_INET_TIMEST    = 4                 ' class=2, len=var
+        TYPE_REC_ROUTE      = 7                 ' len=var
+        TYPE_STREAM_ID      = 8                 ' len=4
+        TYPE_STRICT_SRC     = 9                 ' len=var
+        TYPE_ROUTER_ALERT   = 20                ' cof=copy, class=control, len=4
+
+
 OBJ
 
     net=    NETIF_DRIVER                        ' network driver "virtual" instance
@@ -56,10 +86,11 @@ VAR
     long p_ndev                                 ' network driver object pointer
 
     ^ip_header_s hdr
+    ip_option_s option[MAX_OPTS]                ' max options (assuming 1-byte values)
+
 
     long _my_ip
     word _ip_start
-
 
 
 pub init(optr)
@@ -84,6 +115,11 @@ pub addr8888to32l(a3, a2, a1, a0): a
 '   a3..a0:     IP address octets (MSB..LSB)
 '   Returns:    32-bit IP address (little-endian)
     return (a3 << 24) | (a2 << 16) | (a1 << 8) | a0
+
+
+pub clear_option(idx)
+' Clear a cached option
+    option[idx]~
 
 
 PUB dec_ttl()
@@ -335,6 +371,42 @@ PUB my_ip(): a
     return swap_long(_my_ip)
 
 
+pub option_class(o): c
+' Get the class field of a cached option
+'   o:  cached option index (0..MAX_OPTS-1)
+'   Returns:
+'       2-bit class on success
+'       -1 on failure
+    if ( (o < 0) or (o > MAX_OPTS) )
+        return -1
+
+    return (option[o].type & TYPE_CLASS_BITS) >> TYPE_CLASS
+
+
+pub option_copy_on_frag(o): c
+' Get the copy-on-fragmentation field of a cached option
+'   o:  cached option index (0..MAX_OPTS-1)
+'   Returns:
+'       1-bit flag on success (0: false, 1: true)
+'       -1 on failure
+    if ( (o < 0) or (o > MAX_OPTS) )
+        return -1
+
+    return (option[o].type & TYPE_COF_BITS) >> TYPE_COF
+
+
+pub option_number(o): n
+' Get the number field of a cached option
+'   o:  cached option index (0..MAX_OPTS-1)
+'   Returns:
+'       5-bit number on success
+'       -1 on failure
+    if ( (o < 0) or (o > MAX_OPTS) )
+        return -1
+
+    return (option[o].type & TYPE_NUMBER_BITS)
+
+
 PUB reset_ipv4()
 ' Reset all values to defaults for an IPV4 header
     hdr~
@@ -345,20 +417,37 @@ PUB reset_ipv4()
     set_msg_ident($0001)
 
 
-PUB rd_ip_header(p_src=0): p
+PUB rd_ip_header(p_src=0): p | ihl, o
 ' Read IP header
 '   p_src:  pointer to source buffer in RAM containing IP header
 '           (optional; default is to read it from the network device instead)
 
-    ifnot ( p_src )
-        ' read an IP header from the network device
+    ifnot ( p_src )                             ' read an IP header from the network device
         _ip_start := net[p_ndev].fifo_rd_ptr()
         net[p_ndev].rd_block(@hdr, IP_HDR_SZ)
-    else
-        ' read an IP header from RAM
+    else                                        ' read an IP header from RAM
         bytemove(@hdr, p_src, IP_HDR_SZ)
 
+    ihl := hdr_len()
+    if ( ihl > IP_HDR_SZ )                      ' IP header > 20 bytes? options are attached
+        ihl -= IP_HDR_SZ                        ' header length - 20 = options length
+        repeat MAX_OPTS with o
+            ifnot ( option[o].type )
+                ihl -= rd_option(@option)
+            if ( ihl <= 0 )
+                quit
+
     return net[p_ndev].fifo_wr_ptr()
+
+
+pub rd_option(^ip_option_s opt): t
+' Read IP header option
+'   opt:    pointer to ip_option_s structure
+    opt.type := net[p_ndev].rd_byte()
+    opt.length := net[p_ndev].rd_byte()
+    net[p_ndev].rd_block(@opt.vals, opt.length-2)
+
+    return opt.length
 
 
 VAR long _p_chk, _p_dlen
