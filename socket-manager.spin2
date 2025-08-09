@@ -7,7 +7,7 @@
         * Multiple sockets
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Aug 8, 2025
+    Updated:        Aug 9, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -158,13 +158,21 @@ pub bind(sck, lip, lp=0, lmac=0): s
         return -1
 
 
-pub connect(sck, lp, pro, rip, rp)
+pub connect(sck, lp, pro, rip, rp): s
 ' Connect a socket to a remote host
 '   sck:    socket number
 '   lp:     local port
 '   pro:    layer-4 protocol (L4_UDP, L4_TCP)
 '   rip:    remote IP
 '   rp:     remote port
+'   Returns:
+'       0 on success (i.e., no errors in the method call syntax)
+'       -1 on failure
+
+    s := 0
+    if ( (pro == L4_TCP) and ip.is_multicast_addr(rip) )
+        return -1                               ' error: TCP is unicast only
+
     netcmd.parameter := @sck
     netcmd.command := CMD_CONNECT
 
@@ -378,6 +386,7 @@ pub sendto(sck, p_src, len, addr, port): s
 '   port:       remote port
 '   Returns:    number of bytes sent on success
 '               -1 on failure
+'   NOTE: This method blocks
 '    dbg.printf(@"send(%d, %08x, %d)\n\r", sck, p_src, len)
     s := 0
     ifnot ( addr or port )
@@ -391,14 +400,18 @@ pub sendto(sck, p_src, len, addr, port): s
     socket[sck].remote_port := port
     ifnot ( arp.hw_addr_valid(@socket[sck].remote_mac) )
         if ( arp.hw_addr_of(socket[sck].remote_ip) < 0 )
+            ' IP/MAC address pair isn't cached; queue it for resolution
             arp.cache_entry(@socket[sck].remote_mac, socket[sck].remote_ip, arp.PROTO_TYPE_IP)
 '            dbg.strln(@"sendto(): remote MAC unknown; queuing for resolution")
-            repeat
+            repeat                              ' wait for resolution
             until arp.hw_addr_valid( arp.hw_addr_of(addr) )
-        bytemove(@socket[sck].remote_mac, arp.hw_addr_of(addr), MACADDR_LEN)
-'        dbg.printf(@"sendto(): remote is %s\n\r", str.mactostr(@socket[sck].remote_mac))
 
-    set_state(sck, ESTABLISHED)
+        bytemove(   @socket[sck].remote_mac, ...
+                    arp.hw_addr_of(addr), ...
+                    MACADDR_LEN)                ' copy the MAC address to the socket
+
+'   dbg.printf(@"sendto(): remote is %s\n\r", str.mactostr(@socket[sck].remote_mac))
+
     s := txput(sck, p_src, len)                 ' copy data to the socket's buffer
 '    dbg.printf(@"txput(): socket %d %d\n\r", sck, s)
 '    dbg.hexdump(@socket[sck].txbuff.buffer, 0, 3, len, 16 <# len)
@@ -480,11 +493,11 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, ls, st
             \process_ethii()                    ' parse incoming frames; trap lower-level errors
         ' task: check the socket table for sockets with pending data to be transmitted
         repeat MAX_SOCKETS with s
-            if ( (socket[s].state == ESTABLISHED) and tx_available(s) > 0 )
+            if ( tx_available(s) > 0 )
                 'dbg.printf(@"socket %d sendq=%d\n\r", s, tx_available(s) )
                 if ( socket[s].protocol == ip.UDP )
                     udp_send(s)
-                elseif ( socket[s].protocol == ip.TCP )
+                elseif ( socket[s].protocol == ip.TCP and (socket[s].state == ESTABLISHED) )
                     if ( socket[s].push )
                         tcp_send_socket(s, tcp.PSH|tcp.ACK, tx_available(s) )
                         socket[s].push := 0
@@ -641,7 +654,7 @@ pri open(p_setup): s | sck, lp, pro, rip, rp, sn
 '            dbg.strln(@"error: socket not bound to ip")
             return -1                           ' error: socket not bound to an interface/IP
 
-        if ( lp < 0 )
+        if ( lp < 0 )                           ' pick a random local port if one wasn't specified
             lp := 49152+math.rndi(16383)
 
         socket[sck].local_port := lp

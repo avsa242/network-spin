@@ -6,7 +6,7 @@
         * Send datagram
     Author:         Jesse Burt
     Started:        Aug 8, 2025
-    Updated:        Aug 8, 2025
+    Updated:        Aug 9, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -77,7 +77,7 @@ pub main() | sck, s, t, len, rem_ip, rem_port, ch
         rem_ip := str.strtoip(@"10.42.0.1")
         rem_port := 1234
         net.sendto(sck, @_testdata, len, rem_ip, rem_port)
-        ser.printf(@"Sent '%s'\n\r", @_testdata)
+        ser.printf(@"Sent '%s' to %s\n\r", @_testdata, str.iptostr(rem_ip))
         ch := ser.getchar()
     until ( ch == "q" )
     ser.strln(@"quit - closing socket")

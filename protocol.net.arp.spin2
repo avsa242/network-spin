@@ -4,7 +4,7 @@
     Description:    Address Resolution Protocol
     Author:         Jesse Burt
     Started:        Feb 27, 2022
-    Updated:        Jul 8, 2025
+    Updated:        Aug 9, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -125,12 +125,30 @@ PUB entry_is_used(e): f
     return ( entry[e].proto_t <> 0 )
 
 
+var byte _macaddr_tmp[MACADDR_LEN]
 pub hw_addr_of(ip): hw | e
 ' Read an entry from the cache by IP address
-    hw := -1
-    e := proto_addr_entry(ip)
-    if ( e >= 0 )
-        return @entry[e].hw_addr
+'   ip:         protocol (IPv4) address to resolve
+'   Returns:
+'           pointer to hardware (MAC) address associated with IPv4 address on success
+'           -1 on failure
+    if ( (ip >= $e0_00_00_00) and (ip <= $ef_ff_ff_ff) )
+        ' IP is a multicast address
+        bytefill(@_macaddr_tmp, 0, MACADDR_LEN)
+        _macaddr_tmp[0] := $01
+        _macaddr_tmp[1] := $00
+        _macaddr_tmp[2] := $5e
+        _macaddr_tmp[3] := ip.byte[2] & $7f     ' use the lower 23 bits of the address in the MAC
+        _macaddr_tmp[4] := ip.byte[1]
+        _macaddr_tmp[5] := ip.byte[0]
+        return @_macaddr_tmp
+    else
+        ' IP is a unicast address
+        e := proto_addr_entry(ip)
+        if ( e >= 0 )
+            return @entry[e].hw_addr
+
+    return -1
 
 
 PUB hw_addr_len(): l
