@@ -4,7 +4,7 @@
     Description:    Internet Protocol
     Author:         Jesse Burt
     Started:        Feb 7, 2022
-    Updated:        Aug 8, 2025
+    Updated:        Aug 9, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -286,10 +286,14 @@ PUB new(l4_proto, src_ip, dest_ip)
 '   l4_proto: OSI Layer-4 protocol (L4_TCP, L4_UDP, L4_ICMP)
     _ip_start := net[p_ndev].fifo_wr_ptr()
     reset_ipv4()
-    set_ttl(TTL_DEFAULT)
     set_layer4_proto(l4_proto)
     set_src_addr(src_ip)
     set_dest_addr(dest_ip)
+    if ( is_multicast_link_local_addr(dest_ip) )' ttl _must_ be 1 when datagrams are sent to 
+        set_ttl(1)                              '   link-local (224.0.0.0 to .255) multicast addr
+    else
+        set_ttl(TTL_DEFAULT)
+
     wr_ip_header()
 
 
