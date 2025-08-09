@@ -57,7 +57,7 @@ obj
     tcp:    "protocol.net.tcp"
     str:    "string"
     math:   "math.int"
-#ifdef DEBUG
+#ifdef EXT_DBG
     dbg:    "com.serial.terminal.ansi"
 #endif
 
@@ -83,7 +83,7 @@ pub start(CS, SCK, MOSI, MISO, SPI_FREQ=10_000_000): s | st
 '   MOSI:       Master-Out Slave-In
 '   MISO:       Master-In Slave-Out
 '   SPI_FREQ:   SPI bus frequency (20_000_000 max, default is 10_000_000)
-#ifdef DEBUG
+#ifdef EXT_DBG
     dbg.startrxtx(DBG_RX, DBG_TX, 0, 2_000_000)
     dbg.clear()
     dbg.strln(@"dbg started")
@@ -134,7 +134,7 @@ pub bind(sck, lip, lp=0, lmac=0): s
 '   Returns:    0 on success
 '               negative numbers on failure
 
-#ifdef DEBUG
+#ifdef EXT_DBG
 '    dbg.str(@"bind(): ")
 #endif
     ifnot ( socket[sck].local_ip )
@@ -146,7 +146,7 @@ pub bind(sck, lip, lp=0, lmac=0): s
             bytemove(@socket[sck].local_mac, lmac, MACADDR_LEN)
         else
             bytemove(@socket[sck].local_mac, net.my_mac(), MACADDR_LEN)
-#ifdef DEBUG
+#ifdef EXT_DBG
 '        dbg.printf( @"socket %d  ip: %s  mac: %s\n\r", ...
 '                    sck, ...
 '                    str.iptostr(socket[sck].local_ip), ...
@@ -200,7 +200,7 @@ pub listen(port, bl=5): s | svn, skn
     repeat MAX_SERVICES with svn                ' look for a registered handler for this port
         if ( service[svn].port == port )
             ' found matching service
-#ifdef DEBUG
+#ifdef EXT_DBG
             dbg.printf(@"found service %d registered on port %d (%s)\n\r", ...
                 svn, port, prostr(service[svn].proto) )
 #endif
@@ -220,11 +220,11 @@ pub listen(port, bl=5): s | svn, skn
                     socket[skn].backlog.head := -1
                     socket[skn].backlog.tail := -1
                     return skn
-#ifdef DEBUG
+#ifdef EXT_DBG
             dbg.strln(@"error: no sockets available")
 #endif
             return -1
-#ifdef DEBUG
+#ifdef EXT_DBG
     dbg.printf(@"error: no service registered with port %d\n\r", port)
 #endif
     return -2                                   ' no service assigned to this port, protocol pair
@@ -249,20 +249,29 @@ pub recv(sck, p_dest, len=posx, flags=0): s
     if ( socket[sck].protocol == L4_TCP )
         case socket[sck].state
             ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2:
+#ifdef EXT_DBG
                 dbg.strln(@"connected")
+#endif
             LISTENING, SYN_SENT, SYN_RECEIVED:      ' queue for processing in ESTABLISHED state
+#ifdef EXT_DBG
                 dbg.strln(@"not yet connected; queue")
+#endif
                 return OK
             CLOSE_WAIT:                             ' deliver remaining text
                 ifnot ( rx_available(sck) )         '   otherwise, error: connection closing
+#ifdef EXT_DBG
                     dbg.strln(@"error: connection closing")
+#endif
                     return -1                       ' error: socket not connected
             CLOSED:
+#ifdef EXT_DBG
                 dbg.strln(@"error: connection doesn't exist")
+#endif
                 return -1                           ' error: connection doesn't exist
             CLOSING, LAST_ACK, TIME_WAIT:           ' error: connection closing
-                    dbg.strln(@"error: connection closing")
-
+#ifdef EXT_DBG
+                dbg.strln(@"error: connection closing")
+#endif
     return rxget(sck, p_dest, len)              ' copy data from the socket buffer
 
 
@@ -300,7 +309,7 @@ pub register_service(port, proto, p_mbox=0): s
             service[s].proto := proto
             if ( p_mbox )
                 service[s].p_signal := p_mbox
-#ifdef DEBUG
+#ifdef EXT_DBG
             dbg.printf(@"assigned port %d to service slot %d\n\r", port, s)
 #endif
             return s
@@ -755,12 +764,12 @@ pri process_icmp() | icmp_msg_s ich
 
 pri process_ipv4() | ip_header_s ih, sn
 ' Process received IPv4 headers
-#ifdef DEBUG
+#ifdef EXT_DBG
     dbg.strln(@"process_ipv4()")
 #endif
     ip.set_header(@ih)
     ip.rd_ip_header()
-#ifdef DEBUG
+#ifdef EXT_DBG
     ifnot ( ip.is_multicast_addr(ip.dest_addr() ) )
         dbg.printf(@"src %s  ", str.iptostr(ip.src_addr()))
         dbg.printf(@"dest %s  ", str.iptostr(ip.dest_addr()))
@@ -1069,16 +1078,15 @@ pri process_tcp(): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop
 
 pri process_udp(): s | udp_msg_s uh, l, skn
 ' Process received UDP headers
-#ifdef DEBUG
+#ifdef EXT_DBG
     dbg.strln(@"process_udp()")
 #endif
     udp.set_header(@uh)
     udp.rd_udp_header()
 
-    sck := -1
     repeat MAX_SOCKETS with skn
         if ( (udp.dest_port() == socket[skn].local_port) and (socket[skn].protocol == L4_UDP) )
-#ifdef DEBUG
+#ifdef EXT_DBG
             dbg.printf(@"sck %d port match\n\r", skn)
 #endif
             l := udp.payload_len()
@@ -1088,7 +1096,7 @@ pri process_udp(): s | udp_msg_s uh, l, skn
                 long[socket[skn].p_signal] := DATA_READY
             return
 
-#ifdef DEBUG
+#ifdef EXT_DBG
     dbg.strln(@"no matching socket")
 #endif
     ' no socket exists with that port; bounce message
@@ -1254,7 +1262,7 @@ pri udp_send(sck) | ethii_t eh, ip_header_s ih, udp_msg_s uh, la
 
 
 '--
-#ifdef DEBUG
+#ifdef EXT_DBG
 pri prostr(p): s
 ' Get string representation of layer-4 protocol
 '   p:  protocol number (L4_UDP, L4_TCP)

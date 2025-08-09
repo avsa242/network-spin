@@ -13,8 +13,8 @@
 {Spin2_v51}
 #include "net-common.spin2h"
 #include "core.con.click.spin2"
-#define DEBUG
-#pragma exportdef(DEBUG)
+'#define EXT_DBG
+'#pragma exportdef(EXT_DBG)
 
 con
 
