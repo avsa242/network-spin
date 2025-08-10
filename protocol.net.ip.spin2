@@ -350,7 +350,7 @@ PUB reset_ipv4()
     set_hdr_len(IP_HDR_SZ)
     set_flags(DF)
     set_ttl(TTL_DEFAULT)
-    set_msg_ident($0001)
+    set_msg_ident(0)
 
 
 PUB set_dest_addr(a)

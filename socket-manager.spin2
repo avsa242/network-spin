@@ -53,6 +53,7 @@ obj
     ip:     "protocol.net.ip"
     arp:    "protocol.net.arp"
     icmp:   "protocol.net.icmp"
+    igmp:   "protocol.net.igmp"
     udp:    "protocol.net.udp"
     tcp:    "protocol.net.tcp"
     str:    "string"
@@ -461,6 +462,7 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, ls, st
     ip.init(@net)
     arp.init(@net)
     icmp.init(@net)
+    igmp.init(@net)
     udp.init(@net)
     tcp.init(@net)
 
@@ -478,6 +480,7 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, ls, st
             until ( net.phy_link_state() == net.UP )
 '            dbg.strln(@"net link UP")
             arp_announce()
+'            join_multicast_group(str.strtoip(@"224.0.0.251"))
             ls := 1
         ' task: check for commands sent by the user
         case netcmd.command                     ' process commands to the network loop
@@ -637,6 +640,24 @@ pri find_listening_socket(port, proto): s
             return s
 
     return -1                                   ' no matching socket is listening
+
+
+pri join_multicast_group(mc_addr) | ethii_t eh, ip_header_s ih
+' Join a multicast group
+'   mc_addr:    multicast IP address
+    ethii.set_header(@eh)
+    ip.set_header(@ih)
+    net.start_frame()
+        ethii.new(net.my_mac(), arp.hw_addr_of(igmp.IGMPV3_MCAST_IP), ETYP_IPV4)
+        ip.new(L4_IGMP, ip.my_ip(), igmp.IGMPV3_MCAST_IP, ip.CS6)
+        igmp.report_clear()
+        igmp.set_message_type(igmp.MEMBER_REPORT_V3)
+        igmp.set_report_flags(0)
+        igmp.add_group_record(igmp.CHANGE_TO_EXCLUDE, 0, mc_addr )
+        igmp.wr_header()
+        igmp.update_checksum()
+        ip.update_chksum( igmp.message_len() )
+    net.send_frame()
 
 
 pri open(p_setup): s | sck, lp, pro, rip, rp, sn

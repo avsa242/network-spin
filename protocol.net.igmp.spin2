@@ -19,6 +19,7 @@ con
     ' limits
     MAX_GROUP_RECORDS   = 16
 
+    IGMPV3_MCAST_IP     = $e0_00_00_16          ' 224.0.0.22
 
     ' IGMP message types
     MEMBER_QUERY        = $11
