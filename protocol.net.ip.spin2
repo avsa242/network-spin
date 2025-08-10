@@ -4,7 +4,7 @@
     Description:    Internet Protocol
     Author:         Jesse Burt
     Started:        Feb 7, 2022
-    Updated:        Aug 9, 2025
+    Updated:        Aug 10, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -74,6 +74,10 @@ CON
         TYPE_STRICT_SRC     = 9                 ' len=var
         TYPE_ROUTER_ALERT   = 20                ' cof=copy, class=control, len=4
 
+    ROUTER_ALERT_EXAMINE_PKT= $00
+
+    HDRLEN_MASK             = $f0
+
 
 OBJ
 
@@ -91,6 +95,7 @@ VAR
 
     long _my_ip
     word _ip_start
+    byte _nr_options
 
 
 pub init(optr)
@@ -101,6 +106,24 @@ pub init(optr)
 pub set_header(p_hdr)
 ' Set pointer to IPv4 header ip_header_s structure
     [hdr] := p_hdr
+
+
+pub add_option(t, len, p_vals): l | o
+' Add option to be written to an IP header
+'   t:          option type
+'   len:        option length (include the 2 bytes for the type and length fields; max is 36)
+'   p_vals:     pointer to buffer containing values (max 36 bytes)
+'   Returns:
+'               total length of option in bytes on success
+'               negative numbers on failure
+    repeat MAX_OPTS with o
+        ifnot ( option[o].type )
+            option[o].type := t
+            option[o].length := len
+            bytemove(@option[o].vals, p_vals, len-2)
+            _nr_options++
+            return len
+    return -1
 
 
 pub addr8888to32b(a3, a2, a1, a0): a
@@ -209,20 +232,32 @@ PUB my_ip(): a
     return swap_long(_my_ip)
 
 
-PUB new(l4_proto, src_ip, dest_ip)
+PUB new(l4_proto, src_ip, dest_ip, cp=0) | tmp, ol
 ' Construct an IPV4 header
-'   l4_proto: OSI Layer-4 protocol (L4_TCP, L4_UDP, L4_ICMP)
+'   l4_proto:   OSI Layer-4 protocol (L4_TCP, L4_UDP, L4_ICMP)
+'   src_ip:     source IP
+'   dest_ip:    destination IP
+'   cp:         codepoint (default is CP0 if unspecified)
     _ip_start := net[p_ndev].fifo_wr_ptr()
+    _nr_options := 0
+    ol := 0
     reset_ipv4()
     set_layer4_proto(l4_proto)
     set_src_addr(src_ip)
     set_dest_addr(dest_ip)
+    set_dscp(cp)
+    if ( dscp() == CS6 )
+        tmp := ROUTER_ALERT_EXAMINE_PKT
+        ol += add_option(TYPE_ROUTER_ALERT | COF_COPY, 4, @tmp)
+        set_hdr_len(IP_HDR_SZ + ol)
     if ( is_multicast_link_local_addr(dest_ip) )' ttl _must_ be 1 when datagrams are sent to
         set_ttl(1)                              '   link-local (224.0.0.0 to .255) multicast addr
     else
         set_ttl(TTL_DEFAULT)
 
     wr_ip_header()
+    if ( _nr_options )                          ' write header options if any are stored
+        wr_options()
 
 
 pub option_class(o): c
@@ -327,8 +362,8 @@ PUB set_dest_addr(a)
 PUB set_dgram_len(len)
 ' Set total length of IP datagram, in bytes
 '   len: L4 header length + data length
-'   NOTE: don't include the 20-bytes of IP header in the length
-    len += IP_HDR_SZ
+'   NOTE: don't include the IP header in the length
+    len += hdr_len()
     hdr.dgram_len := swap_word(len)
 
 
@@ -360,6 +395,7 @@ PUB set_hdr_chk(ck)
 PUB set_hdr_len(len)
 ' Set header length, in bytes
 '   NOTE: len must be a multiple of 4
+    hdr.version &= HDRLEN_MASK
     hdr.version |= (len / 4)
 
 
@@ -426,7 +462,7 @@ PUB ttl(): t
     return hdr.ttl
 
 
-PUB update_chksum(len): ck | p_tmp
+PUB update_chksum(len): ck | p_tmp, ihl
 ' Update IP header with checksum
 '   len: length of datagram (layer-4 and datagram only; don't include the 20-byte IP header)
     p_tmp := net[p_ndev].fifo_wr_ptr()          ' save the current pointer
@@ -438,10 +474,15 @@ PUB update_chksum(len): ck | p_tmp
     net[p_ndev].fifo_set_wr_ptr(_p_dlen)        ' set pointer to datagram length field
     net[p_ndev].wr_word(hdr.dgram_len)
 
-    ck := crc.inet_chksum(@hdr, hdr_len() )  ' update the IP header checksum
+    ihl := hdr_len()-IP_HDR_SZ
+    if ( _nr_options > 0 )                      ' update the IP header checksum
+        ck := crc.inet_chksum(@hdr, 20, 0, false )
+        ck := crc.inet_chksum(@option[0], 4, ck)
+    else
+        ck := crc.inet_chksum(@hdr, hdr_len() )
+
     net[p_ndev].fifo_set_wr_ptr(_p_chk)         ' set pointer to checksum field
     net[p_ndev].wr_word( swap_word(ck) )        '   and write it
-
     net[p_ndev].fifo_set_wr_ptr(p_tmp)          ' restore pointer pos
 
 
@@ -471,6 +512,25 @@ PUB wr_ip_header(): p
     net[p_ndev].wr_block(@hdr.dest_addr, 4)
 
     return net[p_ndev].fifo_wr_ptr()
+
+
+pub wr_option(t, len, p_vals): l
+' Write an IP header option
+'   t:      type
+'   len:    length
+'   p_vals: pointer to values to write
+    net[p_ndev].wr_byte(t)
+    net[p_ndev].wr_byte(len)
+    len -= 2
+    net[p_ndev].wr_block(p_vals, len)       ' get values indirectly
+
+    return len
+
+
+pub wr_options() | o
+' Write all options currently stored in RAM
+    repeat o from 0 to _nr_options-1
+        wr_option( option[o].type, option[o].length, @option[o].vals )
 
 
 DAT

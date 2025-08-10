@@ -1,0 +1,321 @@
+{
+----------------------------------------------------------------------------------------------------
+    Filename:       protocol.net.igmp.spin2
+    Description:    Internet Group Messaging Protocol v3
+    Author:         Jesse Burt
+    Started:        Aug 9, 2025
+    Updated:        Aug 10, 2025
+    Copyright (c) 2025 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
+}
+{Spin2_v51}
+
+#ifndef NET_COMMON
+#include "net-common.spin2h"
+#endif
+
+con
+
+    ' limits
+    MAX_GROUP_RECORDS   = 16
+
+
+    ' IGMP message types
+    MEMBER_QUERY        = $11
+    MEMBER_REPORT_V1    = $12
+    MEMBER_REPORT_V2    = $16
+    LEAVE_GROUP_V2      = $17
+    MEMBER_REPORT_V3    = $22
+
+    ' header/record lengths
+    IGMPV3_QUERY_HDR_SZ = 1+2+4+1+1+2
+    IGMPV3_REPORT_HDR_SZ= 1+2+2+2
+    IGMPV3_GRP_RECORD_SZ= 1+1+2+4
+
+
+    ' membership report record type enums
+    #1, MODE_IS_INCLUDE, MODE_IS_EXCLUDE, CHANGE_TO_INCLUDE, CHANGE_TO_EXCLUDE, ALLOW_NEW, ...
+    BLOCK_OLD
+
+
+obj
+
+    net=    NETIF_DRIVER                        ' network driver "virtual" instance
+    crc:    "math.crc"
+    ser=    "com.serial.terminal.ansi"
+
+
+var
+
+    long p_ndev                                 ' network driver object pointer
+    long pser
+
+    long _fifo_start
+    long _fifo_chksum
+    long _msg_len
+    long _source_addr
+
+    igmpv3_member_query_hdr_s   query_hdr
+    igmpv3_member_report_hdr_s  report_hdr
+    igmpv3_group_record_s       grp_record[MAX_GROUP_RECORDS]
+
+    byte _type
+
+
+pub init(optr)
+' Set pointer to network device object
+    p_ndev := optr
+
+
+pub sser(ps)
+    pser := ps
+
+
+pub set_header(p_hdr)
+' Set pointer to IGMPv3 header structure
+    [hdr] := p_hdr
+
+
+pub add_group_record(t, nr_src, addr): s | r
+' Add a MEMBER_REPORT_V3 group record
+'   t:      record type (MODE_IS_INCLUDE, MODE_IS_EXCLUDE, CHANGE_TO_INCLUDE, CHANGE_TO_EXCLUDE,
+'                       ALLOW_NEW, BLOCK_OLD)
+'   nr_src: number of sources
+'   addr:   source address
+    repeat MAX_GROUP_RECORDS with r
+        ifnot ( grp_record[r].type )
+            grp_record[r].type := t
+            grp_record[r].aux_data_len := 0     ' undefined by RFC 9776
+            grp_record[r].num_src := swap_word(nr_src)
+            grp_record[r].mcast_addr := swap_long(addr)
+            set_report_num_records( report_num_records() + 1 )
+            return r
+
+    return -1                                   ' error: group records list full
+
+
+pub group_record_aux_data_len(r): l
+' Get length of the auxilliary data
+'   NOTE: RFC 9776 doesn't define any auxilliary data and specifies that implementations must not
+'       include any; this field should return 0.
+    return (grp_record[r].aux_data_len * 4)
+
+
+pub group_record_multicast_addr(r): a
+' Get group record multicast IP address
+'   r:          group record number
+'   Returns:    IP address
+    return swap_long(grp_record[r].mcast_addr)
+
+
+pub group_record_num_sources(r): l
+' Get the number of source addresses in a report group record
+'   r:          group record number
+'   Returns:    number of source addresses
+    return swap_word(grp_record[r].num_src)
+
+
+pub group_record_type(r): t
+' Get a report group record's type
+'   r:          group record number
+'   Returns:    report group record type (MODE_IS_INCLUDE, MODE_IS_EXCLUDE, CHANGE_TO_INCLUDE,
+'                   CHANGE_TO_EXCLUDE, ALLOW_NEW, BLOCK_OLD)
+    return grp_record[r].type
+
+
+pub query_checksum(): c
+' Get the membership query header checksum
+    return swap_word(query_hdr.checksum)
+
+
+pub query_clear()
+' Clear the membership query header in RAM
+    query_hdr~
+
+
+pub query_flags(): f
+' Get the membership query header flags, S-Flag, QRV 
+    return query_hdr.flags_qrv
+
+
+pub query_group_address(): a
+' Get the membership query group address
+    return swap_long(query_hdr.group_addr)
+
+
+pub query_interval(): t
+' Get the membership querier's query interval code
+    return query_hdr.qqic
+
+
+pub query_max_response_timeout(): t
+' Get the max time allowed before sending a membership report responding to this query
+    return query_hdr.max_resp_code
+
+
+pub query_num_sources(): n
+' Get the number of source addresses present in the membership query
+    return swap_word(query_hdr.num_src)
+
+
+pub message_len(): l
+' Get the currently assembled message's length
+    return _msg_len
+
+
+pub message_type(): t
+' Get the currently assembled message's type
+    return _type
+
+
+pub report_checksum(): c
+' Get the membership report's header checksum
+    return swap_word(report_hdr.checksum)
+
+
+pub report_clear()
+' Clear the membership report header in RAM
+    report_hdr~
+
+
+pub report_flags(): f
+' Get the membership report's header flags
+    return swap_word(report_hdr.flags)
+
+
+pub report_num_records(): n
+' Get the number of group records in the membership report message
+    return swap_word(report_hdr.num_records)
+
+
+pub set_message_type(t): s
+' Set the IGMP message type
+'   t:  message type (MEMBER_QUERY, MEMBER_REPORT_V3, LEAVE_GROUP_V2)
+    s := 0
+    ifnot ( lookdown(t: MEMBER_QUERY, MEMBER_REPORT_V3, LEAVE_GROUP_V2) )
+        return -1                               ' error: invalid message type
+
+    _type := t
+
+
+pub set_query_checksum(c)
+' Set the membership query header's checksum
+    query_hdr.checksum := swap_word(c)
+
+
+pub set_report_checksum(c)
+' Set the membership report header's checksum
+    report_hdr.checksum := swap_word(c)
+
+
+pub set_report_flags(f)
+' Set the membership query header's flags
+    report_hdr.flags := f
+
+
+pub set_report_num_records(n)
+' Set the number of group records in the membership report
+    report_hdr.num_records := swap_word(n)
+
+
+pub rd_header() | n, rec
+' Read the IGMP header
+    _fifo_start := net[p_ndev].fifo_rd_ptr()
+    _type := net[p_ndev].rd_byte()
+
+    case _type
+        MEMBER_QUERY:
+'            ser[pser].strln(@"[IGMP]: RD MEMBER_QUERY")
+            net[p_ndev].rd_block(@query_hdr, IGMPV3_QUERY_HDR_SZ)
+        MEMBER_REPORT_V3:
+'            ser[pser].strln(@"[IGMP]: RD MEMBER_REPORT_V3")
+            report_hdr.type := _type
+            net[p_ndev].rd_block(@report_hdr+1, IGMPV3_REPORT_HDR_SZ)
+            n := swap_word(report_hdr.num_records)
+'            ser[pser].printf(@"[IGMP]: RD %d records\n\r", n)
+            repeat n with rec
+                net[p_ndev].rd_block(@grp_record[rec], IGMPV3_GRP_RECORD_SZ)
+
+
+pub record_type(r): t
+' Get the type field of a group record
+'   r:          record number
+'   Returns:    type
+    return grp_record[r].type
+
+
+pub wr_header() | n, rec
+' Write the IGMP header
+    _fifo_start := net[p_ndev].fifo_wr_ptr()    ' remember the position of the header start
+    _fifo_chksum := _fifo_start + 2             '   and the checksum field
+    _msg_len := 0
+
+    case _type
+        MEMBER_QUERY:
+'            ser[pser].strln(@"[IGMP]: WR MEMBER_QUERY")
+            net[p_ndev].wr_block(@query_hdr, IGMPV3_QUERY_HDR_SZ+1)
+            _msg_len += IGMPV3_QUERY_HDR_SZ+1
+        MEMBER_REPORT_V3:
+'            ser[pser].strln(@"[IGMP]: WR MEMBER_REPORT_V3")
+            report_hdr.type := MEMBER_REPORT_V3
+            report_hdr.reserved := 0
+            set_report_checksum(0)
+            net[p_ndev].wr_block(@report_hdr, IGMPV3_REPORT_HDR_SZ+1)
+            _msg_len += IGMPV3_REPORT_HDR_SZ+1
+            n := report_num_records()
+'            ser[pser].printf(@"[IGMP]: WR %d records\n\r", n)
+            repeat n with rec
+'                ser[pser].printf(@"[IGMP]: WR record %d\n\r", rec)
+                net[p_ndev].wr_block(@grp_record[rec], IGMPV3_GRP_RECORD_SZ)
+                _msg_len += IGMPV3_GRP_RECORD_SZ
+
+
+pub update_checksum() | tmp, ck
+' Update IGMP checksum field based on currently stored message type
+
+    case _type                                  ' which message type is currently stored in RAM?
+        MEMBER_QUERY:
+            set_query_checksum(crc.inet_chksum(@query_hdr, IGMPV3_QUERY_HDR_SZ, 0, false) )
+            tmp := net[p_ndev].fifo_wr_ptr()
+            net[p_ndev].fifo_set_wr_ptr(_fifo_chksum)
+            net[p_ndev].wr_word(query_hdr.checksum)
+            net[p_ndev].fifo_set_wr_ptr(tmp)
+        MEMBER_REPORT_V3:
+            ck := crc.inet_chksum(...
+                    @report_hdr, ...
+                    IGMPV3_REPORT_HDR_SZ+1, ...
+                    0, ...
+                    false)
+            ck := crc.inet_chksum(...
+                    @grp_record[0], ...
+                    IGMPV3_GRP_RECORD_SZ, ...
+                    ck, ...
+                    true)
+            set_report_checksum(ck)
+
+            tmp := net[p_ndev].fifo_wr_ptr()    ' write checksum and restore write pointer after
+            net[p_ndev].fifo_set_wr_ptr(_fifo_chksum)
+            net[p_ndev].wr_word(report_hdr.checksum)
+            net[p_ndev].fifo_set_wr_ptr(tmp)
+
+
+DAT
+{
+Copyright 2025 Jesse Burt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+}
+
