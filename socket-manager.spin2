@@ -7,7 +7,7 @@
         * Multiple sockets
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Aug 9, 2025
+    Updated:        Aug 11, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -58,6 +58,7 @@ obj
     tcp:    "protocol.net.tcp"
     str:    "string"
     math:   "math.int"
+    crc:    "math.crc"
 #ifdef EXT_DBG
     dbg:    "com.serial.terminal.ansi"
 #endif
@@ -413,6 +414,7 @@ pub sendto(sck, p_src, len, addr, port): s
 
 '   dbg.printf(@"sendto(): remote is %s\n\r", str.mactostr(@socket[sck].remote_mac))
 
+    udp.set_payload_checksum( crc.inet_chksum(p_src, len, 0, false) )
     s := txput(sck, p_src, len)                 ' copy data to the socket's buffer
 '    dbg.printf(@"txput(): socket %d %d\n\r", sck, s)
 '    dbg.hexdump(@socket[sck].txbuff.buffer, 0, 3, len, 16 <# len)
@@ -1296,6 +1298,7 @@ pri udp_send(sck) | ethii_t eh, ip_header_s ih, udp_msg_s uh, la
         udp.new(socket[sck].local_port, socket[sck].remote_port)
         xtxput(sck, la)
         udp.update_len_chksum(la)
+        udp.update_checksum(socket[sck].local_ip, socket[sck].remote_ip, la)
         ip.update_chksum( udp.dgram_len() )
     net.send_frame()
 
