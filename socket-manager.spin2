@@ -297,9 +297,8 @@ pub recvfrom(sck, p_dest, max_len, flags, ^sockaddr_s p_addr, addrlen=0): l
     l := recvq(sck)
 
     if ( l > 0 )
+        rxget(sck, [p_addr], 6)
         l := recv(sck, p_dest, max_len)
-        p_addr.address := ip.src_addr()
-        p_addr.port := udp.src_port()
 
 
 pub recvq(sck): a
@@ -1116,10 +1115,10 @@ pri process_tcp(): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop
     return OK
 
 
-pri process_udp(): s | udp_msg_s uh, l, skn
+pri process_udp(): s | udp_msg_s uh, l, skn, rip, rp
 ' Process received UDP headers
 #ifdef EXT_DBG
-    dbg.strln(@"process_udp()")
+'    dbg.strln(@"process_udp()")
 #endif
     udp.set_header(@uh)
     udp.rd_udp_header()
@@ -1127,9 +1126,14 @@ pri process_udp(): s | udp_msg_s uh, l, skn
     repeat MAX_SOCKETS with skn
         if ( (udp.dest_port() == socket[skn].local_port) and (socket[skn].protocol == L4_UDP) )
 #ifdef EXT_DBG
-            dbg.printf(@"sck %d port match\n\r", skn)
+'            dbg.printf(@"sck %d port match\n\r", skn)
 #endif
             l := udp.payload_len()
+            rip := ip.src_addr()
+            rp := udp.src_port()
+            rxput(skn, @rip, 6)
+'            dbg.hexdump_noascii(@socket[skn].rxbuff.buffer, 0, 1, 6, 6)
+
             xrxget(skn, l)
             if ( socket[skn].p_signal )         ' notify the service/protcol handler, if defined
                 long[socket[skn].p_signal+4] := skn
@@ -1137,7 +1141,7 @@ pri process_udp(): s | udp_msg_s uh, l, skn
             return
 
 #ifdef EXT_DBG
-    dbg.strln(@"no matching socket")
+'    dbg.strln(@"no matching socket")
 #endif
     ifnot ( ip.is_multicast_addr(ip.dest_addr() ) )
         ' no socket exists with that port; bounce message

@@ -4,7 +4,7 @@
     Description:    Sockets shared/common code
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Aug 8, 2025
+    Updated:        Aug 12, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -33,7 +33,8 @@ con
     struct buffer_s(...
         word        head, ...
         word        tail, ...
-        byte        buffer[RINGBUFF_SZ])
+        byte        buffer[RINGBUFF_SZ], ...
+        byte        busy)
 
     struct backlog_s(...                        ' TCP pending connection backlog
         long        max_depth, ...
@@ -108,12 +109,17 @@ pri rxget(sck, p_dest, len=0): l | a
 '   len:        number of bytes to copy (optional; default is the maximum available)
 '   Returns:    number of bytes actually copied
 '   NOTE: length of data copied will be limited by what is actually available in the buffer
+    repeat
+    until socket[sck].rxbuff.busy == 0
+    socket[sck].rxbuff.busy := 1
+
     a := rx_available(sck)
     ifnot ( len )                               ' copy all available if length isn't specified
         len := a
 
     len := ( len <# a )                         ' limit request to what's actually available
-
+'    dbg.str(@"rxget() ")
+'    dbg.hexdump(@socket[sck].rxbuff.buffer+socket[sck].rxbuff.tail, 0, 2, len, len)
     if ( len )                                  ' don't do anything if the buffer's empty
         if ( (len + socket[sck].rxbuff.tail) > RINGBUFF_SZ )
             ' case 1: current read pointer + length requested goes past the 'end' of the buffer:
@@ -133,6 +139,7 @@ pri rxget(sck, p_dest, len=0): l | a
             bytemove(p_dest, (@socket[sck].rxbuff.buffer + socket[sck].rxbuff.tail), len)
             socket[sck].rxbuff.tail := ( socket[sck].rxbuff.tail + len ) & RB_MASK
 
+    socket[sck].rxbuff.busy := 0
     return len
 
 
@@ -141,6 +148,10 @@ pri rxput(sck, p_src, len): n
 '   p_src: pointer to buffer to receive data from
 '   len: number of bytes to receive
 '   Returns: number of bytes received, or EBUFF_FULL if there isn't enough space in the buffer
+    repeat
+    until socket[sck].rxbuff.busy == 0
+    socket[sck].rxbuff.busy := 1
+
     if ( len > rx_bytes_free(sck) )
         ' don't bother doing anything if there isn't enough space in the buffer
         return EBUFF_FULL
@@ -152,7 +163,8 @@ pri rxput(sck, p_src, len): n
                     p_src, ...
                     (RINGBUFF_SZ-socket[sck].rxbuff.head) )
         p_src += (RINGBUFF_SZ-socket[sck].rxbuff.head)        ' advance source data pointer
-
+'        dbg.str(@"rxput(): ")
+'        dbg.hexdump_noascii(p_src, 0, 2, len, len)
         ' ...now wrap around to the beginning and write the rest
         bytemove(   @socket[sck].rxbuff.buffer, ...
                     p_src, ...
@@ -164,7 +176,10 @@ pri rxput(sck, p_src, len): n
                     p_src, ...
                     len)
         socket[sck].rxbuff.head := ( socket[sck].rxbuff.head + len) & RB_MASK
+'        dbg.str(@"rxput(): ")
+'        dbg.hexdump_noascii(p_src, 0, 2, len, len)
 
+    socket[sck].rxbuff.busy := 0
     return len
 
 
@@ -286,6 +301,10 @@ pri xrxget(sck, len): l
 '   sck:        pointer to socket structure
 '   len:        number of bytes to copy to the ring buffer
 '   Returns:    number of bytes actually copied
+    repeat
+    until socket[sck].rxbuff.busy == 0
+    socket[sck].rxbuff.busy := 1
+
     if ( len > rx_bytes_free(sck) )
         ' don't bother doing anything if there isn't enough space in the buffer
         return EBUFF_FULL
@@ -306,6 +325,7 @@ pri xrxget(sck, len): l
                         len)
         socket[sck].rxbuff.head := ( socket[sck].rxbuff.head + len) & RB_MASK
 
+    socket[sck].rxbuff.busy := 0
     return len
 
 
