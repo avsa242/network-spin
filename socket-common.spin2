@@ -4,15 +4,20 @@
     Description:    Sockets shared/common code
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Aug 12, 2025
+    Updated:        Aug 17, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
 {Spin2_v51}
 con
 
-    RINGBUFF_SZ = 1024
-    RB_MASK     = RINGBUFF_SZ-1
+    ' limits
+    RINGBUFF_SZ     = 1024                      ' socket send/receive buffer size (power of 2)
+    MAX_DATAGRAMS   = 16                        ' max RX datagrams that can be queued (power of 2)
+
+    RB_MASK         = RINGBUFF_SZ-1
+    DG_MASK         = MAX_DATAGRAMS-1
+
 
     ' socket definitions
     struct rcv_s(...
@@ -47,23 +52,33 @@ con
         long        address, ...
         word        port)
 
+    struct descr_s(...                          ' datagram descriptor
+        sockaddr_s  remote, ...
+        word        len)
+
+    struct dgram_ring_s(...                     ' datagram RX ring
+        descr_s     descr[MAX_DATAGRAMS], ...
+        byte        head, ...
+        byte        tail)
+
     struct socket_s(...
-        long        local_ip, ...
-        word        local_port, ...
-        byte        local_mac[6], ...
-        long        remote_ip, ...
-        word        remote_port, ...
-        byte        remote_mac[6], ...
-        long        p_signal, ...               ' pointer to signalling "mailbox"
-        snd_s       snd, ...
-        rcv_s       rcv, ...
-        buffer_s    rxbuff, ...
-        buffer_s    txbuff, ...
-        byte        state, ...
-        byte        prev_state, ...
-        byte        protocol, ...
-        byte        push, ...
-        backlog_s   backlog)
+        long            local_ip, ...
+        word            local_port, ...
+        byte            local_mac[6], ...
+        long            remote_ip, ...
+        word            remote_port, ...
+        byte            remote_mac[6], ...
+        long            p_signal, ...           ' pointer to signalling "mailbox"
+        snd_s           snd, ...
+        rcv_s           rcv, ...
+        buffer_s        rxbuff, ...
+        buffer_s        txbuff, ...
+        byte            state, ...
+        byte            prev_state, ...
+        byte            protocol, ...
+        byte            push, ...
+        backlog_s       backlog, ...
+        dgram_ring_s    datagram)
 
 
    ' socket states
@@ -93,27 +108,42 @@ con
 pri rx_available(sck): q
 ' Get the number of unread bytes available in the buffer
 '   sck:    socket number
-    return (socket[sck].rxbuff.head - socket[sck].rxbuff.tail) & RB_MASK
+    repeat
+    until locktry(_slock)
+
+    q := (socket[sck].rxbuff.head - socket[sck].rxbuff.tail) & RB_MASK
+
+    lockrel(_slock)
+
+    return
 
 
 pri rx_bytes_free(sck): b
 ' Get the number of bytes free in the ring buffer
 '   sck:    socket number
-    return ( socket[sck].rxbuff.tail - socket[sck].rxbuff.head - 1 ) & RB_MASK
+    repeat
+    until locktry(_slock)
+
+    b := ( socket[sck].rxbuff.tail - socket[sck].rxbuff.head - 1 ) & RB_MASK
+
+    lockrel(_slock)
+
+    return
 
 
-pri rxget(sck, p_dest, len=0): l | a
+pri rxget(sck, p_dest, len=0): l | a, s, h2e
 ' Get some data from the receive ring buffer
 '   sck:        pointer to socket structure
 '   p_dest:     buffer to copy data into
 '   len:        number of bytes to copy (optional; default is the maximum available)
 '   Returns:    number of bytes actually copied
 '   NOTE: length of data copied will be limited by what is actually available in the buffer
-    repeat
-    until socket[sck].rxbuff.busy == 0
-    socket[sck].rxbuff.busy := 1
 
-    a := rx_available(sck)
+    repeat
+    until locktry(_slock)
+
+    a := (socket[sck].rxbuff.head - socket[sck].rxbuff.tail) & RB_MASK
+
     ifnot ( len )                               ' copy all available if length isn't specified
         len := a
 
@@ -124,62 +154,64 @@ pri rxget(sck, p_dest, len=0): l | a
         if ( (len + socket[sck].rxbuff.tail) > RINGBUFF_SZ )
             ' case 1: current read pointer + length requested goes past the 'end' of the buffer:
             '   read what we can...
+            h2e := RINGBUFF_SZ-socket[sck].rxbuff.tail
             bytemove(   p_dest, ...
                         (@socket[sck].rxbuff.buffer+socket[sck].rxbuff.tail), ...
-                        (RINGBUFF_SZ-socket[sck].rxbuff.tail) )
+                        h2e)
 
             ' ...now wrap around to the beginning and get the rest
-            p_dest += (RINGBUFF_SZ-socket[sck].rxbuff.tail)
+            p_dest += h2e
             bytemove(   p_dest, ...
                         @socket[sck].rxbuff.buffer, ...
-                        (len-(RINGBUFF_SZ-socket[sck].rxbuff.tail)) )
-            socket[sck].rxbuff.tail := ( socket[sck].rxbuff.tail + len) & RB_MASK
+                        (len-h2e) )
         else
             ' case 2: all of the data lies between the current pointer and the end
             bytemove(p_dest, (@socket[sck].rxbuff.buffer + socket[sck].rxbuff.tail), len)
-            socket[sck].rxbuff.tail := ( socket[sck].rxbuff.tail + len ) & RB_MASK
 
-    socket[sck].rxbuff.busy := 0
+        ' update the tail pointer
+        socket[sck].rxbuff.tail := ( socket[sck].rxbuff.tail + len ) & RB_MASK
+
+    lockrel(_slock)
     return len
 
 
-pri rxput(sck, p_src, len): n
+pri rxput(sck, p_src, len): n | h2e
 ' Copy data into the receive ring buffer
 '   p_src: pointer to buffer to receive data from
 '   len: number of bytes to receive
 '   Returns: number of bytes received, or EBUFF_FULL if there isn't enough space in the buffer
-    repeat
-    until socket[sck].rxbuff.busy == 0
-    socket[sck].rxbuff.busy := 1
 
-    if ( len > rx_bytes_free(sck) )
-        ' don't bother doing anything if there isn't enough space in the buffer
+    repeat
+    until locktry(_slock)
+
+    ' check for enough space in the buffer before going any further
+    if (len > ( ( socket[sck].rxbuff.tail - socket[sck].rxbuff.head - 1 ) & RB_MASK) )
         return EBUFF_FULL
 
     if ( (len + socket[sck].rxbuff.head) > RINGBUFF_SZ )
         ' current write pointer + length requested doesn't fit in the 'end' of the buffer:
         '   fit what we can...
+        h2e := (RINGBUFF_SZ-socket[sck].rxbuff.head)
         bytemove(   (@socket[sck].rxbuff.buffer + socket[sck].rxbuff.head), ...
                     p_src, ...
-                    (RINGBUFF_SZ-socket[sck].rxbuff.head) )
-        p_src += (RINGBUFF_SZ-socket[sck].rxbuff.head)        ' advance source data pointer
+                    h2e)
+        p_src += h2e                            ' advance source data pointer
 '        dbg.str(@"rxput(): ")
 '        dbg.hexdump_noascii(p_src, 0, 2, len, len)
         ' ...now wrap around to the beginning and write the rest
         bytemove(   @socket[sck].rxbuff.buffer, ...
                     p_src, ...
-                    (len-(RINGBUFF_SZ-socket[sck].rxbuff.head)) )
-        socket[sck].rxbuff.head := ( socket[sck].rxbuff.head + len) & RB_MASK
+                    (len-h2e) )
     else
         ' all of the data fits - simply write it
         bytemove(   (@socket[sck].rxbuff.buffer + socket[sck].rxbuff.head), ...
                     p_src, ...
                     len)
-        socket[sck].rxbuff.head := ( socket[sck].rxbuff.head + len) & RB_MASK
+    socket[sck].rxbuff.head := ( socket[sck].rxbuff.head + len) & RB_MASK
 '        dbg.str(@"rxput(): ")
 '        dbg.hexdump_noascii(p_src, 0, 2, len, len)
 
-    socket[sck].rxbuff.busy := 0
+    lockrel(_slock)
     return len
 
 
@@ -296,36 +328,37 @@ pri xtxput(sck, len=0): l | a
     return len
 
 
-pri xrxget(sck, len): l
+pri xrxget(sck, len): l | s, h2e
 ' Copy data into the ring buffer from the network device
 '   sck:        pointer to socket structure
 '   len:        number of bytes to copy to the ring buffer
 '   Returns:    number of bytes actually copied
-    repeat
-    until socket[sck].rxbuff.busy == 0
-    socket[sck].rxbuff.busy := 1
 
-    if ( len > rx_bytes_free(sck) )
-        ' don't bother doing anything if there isn't enough space in the buffer
+    repeat
+    until locktry(_slock)
+
+    ' check for enough space in the buffer before going any further
+    if (len > (socket[sck].rxbuff.tail - socket[sck].rxbuff.head - 1 ) & RB_MASK )
         return EBUFF_FULL
 
     if ( (len + socket[sck].rxbuff.head) > RINGBUFF_SZ )
         ' current write pointer + length requested doesn't fit in the 'end' of the buffer:
         '   fit what we can...
+        h2e := (RINGBUFF_SZ-socket[sck].rxbuff.head)
         net.rd_block(   (@socket[sck].rxbuff.buffer+socket[sck].rxbuff.head), ...
-                        (RINGBUFF_SZ-socket[sck].rxbuff.head) )
+                        h2e)
 
         ' ...now wrap around to the beginning and write the rest
         net.rd_block(   @socket[sck].rxbuff.buffer, ...
-                        (len-(RINGBUFF_SZ-socket[sck].rxbuff.head) ) )
-        socket[sck].rxbuff.head := ( socket[sck].rxbuff.head + len) & RB_MASK
+                        (len-h2e) )
     else
         ' all of the data fits - simply write it
         net.rd_block(   (@socket[sck].rxbuff.buffer + socket[sck].rxbuff.head), ...
                         len)
-        socket[sck].rxbuff.head := ( socket[sck].rxbuff.head + len) & RB_MASK
 
-    socket[sck].rxbuff.busy := 0
+    socket[sck].rxbuff.head := ( socket[sck].rxbuff.head + len) & RB_MASK
+
+    lockrel(_slock)
     return len
 
 

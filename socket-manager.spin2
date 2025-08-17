@@ -292,13 +292,18 @@ pub recvfrom(sck, p_dest, max_len, flags, ^sockaddr_s p_addr, addrlen=0): l
 '   max_len:    maximum length of data to receive
 '   flags:      currently unused
 '   p_addr:     pointer to sockaddr_s structure (.address, .port) to copy remote IP and port to
-'               (optional; specify 0 to ignore)
 '   addrlen:    currently unused
-    l := recvq(sck)
 
-    if ( l > 0 )
-        rxget(sck, [p_addr], 6)
-        l := recv(sck, p_dest, max_len)
+    ' check if there are any datagrams queued
+    if ( ( (socket[sck].datagram.head - socket[sck].datagram.tail) & DG_MASK) > 0 )
+        bytemove(   [p_addr], ...
+                    @socket[sck].datagram.descr[ socket[sck].datagram.tail ].remote, ...
+                    sizeof(sockaddr_s) )
+        l := rxget( sck, ...
+                    p_dest, ...
+                    socket[sck].datagram.descr[ socket[sck].datagram.tail ].len <# max_len)
+        socket[sck].datagram.descr[ socket[sck].datagram.tail ]~
+        socket[sck].datagram.tail := (socket[sck].datagram.tail + 1) & DG_MASK
 
 
 pub recvq(sck): a
@@ -449,7 +454,7 @@ pub set_socket_mailbox(sck, p_mbox)
     socket[sck].p_signal := p_mbox
 
 
-var long _netloop_stack[NET_STACK_SZ]
+var long _netloop_stack[NET_STACK_SZ], _slock, _link_state
 pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, ls, st
 ' Network processing loop
     st := net.startx(CS, SCK, MOSI, MISO, SPI_FREQ)
@@ -457,6 +462,7 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, ls, st
         cogstop( cogid() )
 
     _cog := cogid()                             ' signal that we've started successfully
+    _slock := locknew()
 
     ' set up protocols - point them to the network device object
     ethii.init(@net)
@@ -475,14 +481,14 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, ls, st
     repeat
         ' suspend processing if the network link is/goes down
         if ( (net.phy_link_state() == net.DOWN) or (ls == 0) )
-            ls := 0
+            ls := _link_state := 0
 '            dbg.strln(@"net link DOWN")
             repeat
             until ( net.phy_link_state() == net.UP )
 '            dbg.strln(@"net link UP")
             arp_announce()
 '            join_multicast_group(str.strtoip(@"224.0.0.251"))
-            ls := 1
+            ls := _link_state := 1
         ' task: check for commands sent by the user
         case netcmd.command                     ' process commands to the network loop
             CMD_CONNECT:
@@ -800,15 +806,15 @@ pri process_icmp() | icmp_msg_s ich
 pri process_ipv4() | ip_header_s ih, sn
 ' Process received IPv4 headers
 #ifdef EXT_DBG
-    dbg.strln(@"process_ipv4()")
+'    dbg.strln(@"process_ipv4()")
 #endif
     ip.set_header(@ih)
     ip.rd_ip_header()
 #ifdef EXT_DBG
     ifnot ( ip.is_multicast_addr(ip.dest_addr() ) )
-        dbg.printf(@"src %s  ", str.iptostr(ip.src_addr()))
-        dbg.printf(@"dest %s  ", str.iptostr(ip.dest_addr()))
-        dbg.printf(@"proto %0x\n\r", ip.layer4_proto())
+'        dbg.printf(@"src %s  ", str.iptostr(ip.src_addr()))
+'        dbg.printf(@"dest %s  ", str.iptostr(ip.dest_addr()))
+'        dbg.printf(@"proto %0x\n\r", ip.layer4_proto())
 #endif
 
     repeat MAX_SOCKETS with sn
@@ -1115,7 +1121,7 @@ pri process_tcp(): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop
     return OK
 
 
-pri process_udp(): s | udp_msg_s uh, l, skn, rip, rp
+pri process_udp(): s | udp_msg_s uh, skn, l
 ' Process received UDP headers
 #ifdef EXT_DBG
 '    dbg.strln(@"process_udp()")
@@ -1129,12 +1135,9 @@ pri process_udp(): s | udp_msg_s uh, l, skn, rip, rp
 '            dbg.printf(@"sck %d port match\n\r", skn)
 #endif
             l := udp.payload_len()
-            rip := ip.src_addr()
-            rp := udp.src_port()
-            rxput(skn, @rip, 6)
-'            dbg.hexdump_noascii(@socket[skn].rxbuff.buffer, 0, 1, 6, 6)
-
-            xrxget(skn, l)
+            store_datagram( skn, ...
+                            ip.src_addr(), udp.src_port(), ...
+                            l)
             if ( socket[skn].p_signal )         ' notify the service/protcol handler, if defined
                 long[socket[skn].p_signal+4] := skn
                 long[socket[skn].p_signal] := DATA_READY
@@ -1208,6 +1211,27 @@ pri set_state(sck, new_state)
     long[socket[sck].p_signal+4] := sck
     long[socket[sck].p_signal] |= STATE_CHANGED ' signal state change to the application
 '    dbg.printf(@"sent signal to %08x\n\r", socket[sck].p_signal)
+
+
+pri store_datagram(sck, rip, rp, len): s
+' Store a datagram in the socket and create a corresponding descriptor for it
+'   sck:    socket number
+'   rip:    sender IP
+'   rp:     sender port
+'   len:    datagram length
+
+    ' check for space in the datagram descriptor queue
+    if ( ( (socket[sck].datagram.tail - socket[sck].datagram.head - 1) & DG_MASK) > 0 )
+        s := xrxget(sck, len)
+        if ( s > 0 )
+            socket[sck].datagram.descr[ socket[sck].datagram.head ].remote.address := rip
+            socket[sck].datagram.descr[ socket[sck].datagram.head ].remote.port := rp
+            socket[sck].datagram.descr[ socket[sck].datagram.head ].len := s
+            socket[sck].datagram.head := (socket[sck].datagram.head + 1) & DG_MASK
+            return
+
+    return -1                                   ' error: socket buffer or descriptor table full
+
 
 
 pri tcp_send(lmac, rmac, lip, rip, lp, rp, seqnr, acknr, flags, rwin) | ethii_t eh, ip_header_s ih, tcp_msg_s th
