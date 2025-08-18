@@ -4,7 +4,7 @@
     Description:    Internet Protocol
     Author:         Jesse Burt
     Started:        Feb 7, 2022
-    Updated:        Aug 10, 2025
+    Updated:        Aug 18, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -232,7 +232,7 @@ PUB my_ip(): a
     return swap_long(_my_ip)
 
 
-PUB new(l4_proto, src_ip, dest_ip, cp=0) | tmp, ol
+PUB new(l4_proto, src_ip, dest_ip, cp=0, ttl=0) | tmp, ol
 ' Construct an IPV4 header
 '   l4_proto:   OSI Layer-4 protocol (L4_TCP, L4_UDP, L4_ICMP)
 '   src_ip:     source IP
@@ -253,7 +253,10 @@ PUB new(l4_proto, src_ip, dest_ip, cp=0) | tmp, ol
     if ( is_multicast_link_local_addr(dest_ip) )' ttl _must_ be 1 when datagrams are sent to
         set_ttl(1)                              '   link-local (224.0.0.0 to .255) multicast addr
     else
-        set_ttl(TTL_DEFAULT)
+        ifnot ( ttl )                           ' use default TTL if it's unspecified
+            set_ttl(TTL_DEFAULT)
+        else
+            set_ttl(ttl)
 
     wr_ip_header()
     if ( _nr_options )                          ' write header options if any are stored
