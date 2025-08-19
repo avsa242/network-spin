@@ -4,7 +4,7 @@
     Description:    Sockets shared/common code
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Aug 17, 2025
+    Updated:        Aug 19, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -77,6 +77,7 @@ con
         byte            prev_state, ...
         byte            protocol, ...
         byte            push, ...
+        byte            ttl, ...
         backlog_s       backlog, ...
         dgram_ring_s    datagram)
 

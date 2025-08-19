@@ -7,7 +7,7 @@
         * Multiple sockets
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Aug 11, 2025
+    Updated:        Aug 19, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -435,6 +435,23 @@ pub service_number(port, proto): s
     repeat MAX_SERVICES with s
         if ( (port == service[s].port) and (proto == service[s].proto) )
             return s
+
+
+con
+
+    ' socket options
+    #1, IP_TTL
+
+pub setsockopt(sck, opt, val): s
+' Set socket options
+'   sck:    socket number
+'   opt:    option
+'   val:    value
+    case opt
+        IP_TTL:                                 ' IP time to live (0..255)
+            socket[sck].ttl := val
+        other:
+            return -1                           ' error: invalid argument
 
 
 pub set_ip(addr)
@@ -1234,7 +1251,7 @@ pri store_datagram(sck, rip, rp, len): s
 
 
 
-pri tcp_send(lmac, rmac, lip, rip, lp, rp, seqnr, acknr, flags, rwin) | ethii_t eh, ip_header_s ih, tcp_msg_s th
+pri tcp_send(lmac, rmac, lip, rip, lp, rp, seqnr, acknr, flags, rwin, ip_ttl=0) | ethii_t eh, ip_header_s ih, tcp_msg_s th
 ' Send a TCP segment with arbitrary parameters
 '   lmac:       local MAC address
 '   rmac:       remote MAC address
@@ -1252,7 +1269,7 @@ pri tcp_send(lmac, rmac, lip, rip, lp, rp, seqnr, acknr, flags, rwin) | ethii_t 
     tcp.reset()
     net.start_frame()
         ethii.new(lmac, rmac, ETYP_IPV4)
-        ip.new(ip.TCP, lip, rip)
+        ip.new(ip.TCP, lip, rip, 0, ip_ttl)
         tcp.set_source_port(lp)                 ' set up TCP header with called parameters
         tcp.set_dest_port(rp)
         tcp.set_seq_nr(seqnr)
@@ -1282,7 +1299,7 @@ pri tcp_send_socket(sck, flags, sl=0): s | ethii_t eh, ip_header_s ih, tcp_msg_s
 
     net.start_frame()
         ethii.new(@socket[sck].local_mac, @socket[sck].remote_mac, ETYP_IPV4)
-        ip.new(ip.TCP, socket[sck].local_ip, socket[sck].remote_ip)
+        ip.new(ip.TCP, socket[sck].local_ip, socket[sck].remote_ip, 0, socket[sck].ttl)
         ' set up TCP header with socket parameters
         tcp.set_source_port(socket[sck].local_port)
         tcp.set_dest_port(socket[sck].remote_port)
@@ -1322,7 +1339,8 @@ pri udp_send(sck) | ethii_t eh, ip_header_s ih, udp_msg_s uh, la
 
     net.start_frame()
         ethii.new(@socket[sck].local_mac, @socket[sck].remote_mac, ETYP_IPV4)
-        ip.new(socket[sck].protocol, socket[sck].local_ip, socket[sck].remote_ip)
+        ip.new(socket[sck].protocol, socket[sck].local_ip, socket[sck].remote_ip, 0, ...
+                socket[sck].ttl)
         udp.new(socket[sck].local_port, socket[sck].remote_port)
         xtxput(sck, la)
         udp.update_len_chksum(la)
