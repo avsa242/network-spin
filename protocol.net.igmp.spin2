@@ -4,7 +4,7 @@
     Description:    Internet Group Messaging Protocol v3
     Author:         Jesse Burt
     Started:        Aug 9, 2025
-    Updated:        Aug 10, 2025
+    Updated:        Aug 23, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -271,7 +271,7 @@ pub wr_header() | n, rec
                 _msg_len += IGMPV3_GRP_RECORD_SZ
 
 
-pub update_checksum() | tmp, ck
+pub update_checksum() | tmp, ck, r
 ' Update IGMP checksum field based on currently stored message type
 
     case _type                                  ' which message type is currently stored in RAM?
@@ -287,11 +287,13 @@ pub update_checksum() | tmp, ck
                     IGMPV3_REPORT_HDR_SZ+1, ...
                     0, ...
                     false)
-            ck := crc.inet_chksum(...
-                    @grp_record[0], ...
-                    IGMPV3_GRP_RECORD_SZ, ...
-                    ck, ...
-                    true)
+            repeat r from 0 to report_num_records()-1
+                ' fold each record into the checksum; only complement if it's the last one
+                ck := crc.inet_chksum(...
+                        @grp_record[r], ...
+                        IGMPV3_GRP_RECORD_SZ, ...
+                        ck, ...
+                        (r == report_num_records()-1) )
             set_report_checksum(ck)
 
             tmp := net[p_ndev].fifo_wr_ptr()    ' write checksum and restore write pointer after
