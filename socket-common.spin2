@@ -4,7 +4,7 @@
     Description:    Sockets shared/common code
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Aug 19, 2025
+    Updated:        Aug 23, 2025
     Copyright (c) 2025 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -12,11 +12,14 @@
 con
 
     ' limits
-    RINGBUFF_SZ     = 1024                      ' socket send/receive buffer size (power of 2)
-    MAX_DATAGRAMS   = 16                        ' max RX datagrams that can be queued (power of 2)
+    RINGBUFF_SZ             = 1024              ' socket send/receive buffer size (power of 2)
+    MAX_DATAGRAMS           = 16                ' max RX datagrams that can be queued (power of 2)
+    MAX_MC_GROUPS_SOCKET    = 4                 ' max multicast memberships
+    MAX_MC_SOURCES_SOCKET   = 64                ' max sources (IGMP RFC minimum is 64)
 
-    RB_MASK         = RINGBUFF_SZ-1
-    DG_MASK         = MAX_DATAGRAMS-1
+
+    RB_MASK                 = RINGBUFF_SZ-1
+    DG_MASK                 = MAX_DATAGRAMS-1
 
 
     ' socket definitions
@@ -61,6 +64,12 @@ con
         byte        head, ...
         byte        tail)
 
+    struct mc_state_s(...                       ' multicast group state
+        long        iface, ...
+        long        addr, ...
+        byte        filt_mode, ...
+        long        source[MAX_MC_SOURCES_SOCKET])
+
     struct socket_s(...
         long            local_ip, ...
         word            local_port, ...
@@ -79,7 +88,8 @@ con
         byte            push, ...
         byte            ttl, ...
         backlog_s       backlog, ...
-        dgram_ring_s    datagram)
+        dgram_ring_s    datagram, ...
+        mc_state_s      mc_group[MAX_MC_GROUPS_SOCKET])
 
 
    ' socket states

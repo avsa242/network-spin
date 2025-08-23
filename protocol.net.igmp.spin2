@@ -109,6 +109,19 @@ pub group_record_multicast_addr(r): a
     return swap_long(grp_record[r].mcast_addr)
 
 
+pub group_record_num(grp_addr): r
+' Get the index of the group address within the cache/array
+'   grp_addr:   group/multicast address
+'   Returns:
+'               index number on success
+'               -1 if not found
+    repeat MAX_GROUP_RECORDS with r
+        if ( swap_long(grp_record[r].mcast_addr) == grp_addr )
+            return r
+
+    return -1
+
+
 pub group_record_num_sources(r): l
 ' Get the number of source addresses in a report group record
 '   r:          group record number
@@ -202,6 +215,14 @@ pub set_message_type(t): s
 pub set_query_checksum(c)
 ' Set the membership query header's checksum
     query_hdr.checksum := swap_word(c)
+
+
+pub set_record_type(r, t)
+' Set or update the record type of a group record in RAM
+'   r:  record number (0..MAX_GROUP_RECORDS-1)
+'   t:  type (MODE_IS_INCLUDE, MODE_IS_EXCLUDE, CHANGE_TO_INCLUDE, CHANGE_TO_EXCLUDE,
+'                       ALLOW_NEW, BLOCK_OLD)
+    grp_record[r].type := t
 
 
 pub set_report_checksum(c)
