@@ -6,13 +6,19 @@
         * Send datagram
     Author:         Jesse Burt
     Started:        Aug 8, 2025
-    Updated:        Aug 9, 2025
-    Copyright (c) 2025 - See end of file for terms of use.
+    Updated:        Jan 12, 2026
+    Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
 {Spin2_v51}
 #include "net-common.spin2h"
-#include "core.con.click.spin2"
+'#include "core.con.click.spin2"                 ' uncomment if you use a MikroE Click module
+
+' choose a network driver (defaults to ENC28J60 if none specified)
+'#define NETIF_DRIVER "net.eth.encx24j600"
+#define NETIF_DRIVER "net.eth.enc28j60"
+#pragma exportdef(NETIF_DRIVER)
+
 '#define EXT_DBG
 '#pragma exportdef(EXT_DBG)
 
@@ -21,7 +27,14 @@ con
     _clkfreq    = 180_000_000
     _xtlfreq    = 20_000_000
 
-    CLICK_BASE  = 0
+    CLICK_BASE  = 0                             ' base I/O pin for MikroE Click module
+
+#ifndef MIKROE_CLICK
+    CS_PIN      = 24
+    SCK_PIN     = 25
+    MOSI_PIN    = 26
+    MISO_PIN    = 27
+#endif
 
 
 obj
@@ -90,7 +103,7 @@ pub main() | sck, s, t, len, rem_ip, rem_port, ch
 
 DAT
 {
-Copyright 2025 Jesse Burt
+Copyright 2026 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

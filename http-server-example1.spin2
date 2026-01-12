@@ -13,7 +13,15 @@
 
 {Spin2_v51}
 #include "net-common.spin2h"
+#include "core.con.click.spin2"                 ' uncomment if you use a MikroE Click module
 
+' choose a network driver (defaults to ENC28J60 if none specified)
+'#define NETIF_DRIVER "net.eth.encx24j600"
+#define NETIF_DRIVER "net.eth.enc28j60"
+#pragma exportdef(NETIF_DRIVER)
+
+#define EXT_DBG
+#pragma exportdef(EXT_DBG)
 
 con
 
@@ -29,12 +37,19 @@ con
     SD_DO       = 58
 
     ' ENC28J60
-    CLICK_BASE  = 0
+    CLICK_BASE  = 0                             ' base I/O pin for MikroE Click module
+#ifdef CLICK_BASE
     NET_CS      = CLICK_BASE+8
     NET_SCK     = CLICK_BASE+9
     NET_MOSI    = CLICK_BASE+11
     NET_MISO    = CLICK_BASE+10
-    NET_SPI_FREQ= 20_000_000
+#else
+    NET_CS      = 0
+    NET_SCK     = 1
+    NET_MOSI    = 2
+    NET_MISO    = 3
+#endif
+    NET_SPI_FREQ= 10_000_000
 
     ' LED for webpage control
     LED1        = 56

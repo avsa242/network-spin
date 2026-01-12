@@ -7,20 +7,27 @@
         * Multiple sockets
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Aug 23, 2025
-    Copyright (c) 2025 - See end of file for terms of use.
+    Updated:        Jan 12, 2026
+    Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
 
 {Spin2_v51}
 
-' Hardcode the (currently only supported) network driver here, for now
-#define NETIF_DRIVER "net.eth.enc28j60"
-#pragma exportdef(NETIF_DRIVER)
+#ifndef NETIF_DRIVER
+# warn "no network interface driver specified; defaulting to ENC28J60"
+# define NETIF_DRIVER "net.eth.enc28j60"
+# pragma exportdef(NETIF_DRIVER)
+#endif
 
-#define DBG_RX 34
-#define DBG_TX 36
-
+#ifdef EXT_DBG
+# ifndef DBG_RX
+#  define DBG_RX 34
+# endif
+# ifndef DBG_TX
+#  define DBG_TX 36
+# endif
+#endif
 
 #include "net-common.spin2h"
 #include "socket-common.spin2"
@@ -93,7 +100,7 @@ pub start(CS, SCK, MOSI, MISO, SPI_FREQ=10_000_000): s | st
 '   SCK:        SPI Clock
 '   MOSI:       Master-Out Slave-In
 '   MISO:       Master-In Slave-Out
-'   SPI_FREQ:   SPI bus frequency (20_000_000 max, default is 10_000_000)
+'   SPI_FREQ:   SPI bus frequency (default is 10_000_000)
 #ifdef EXT_DBG
     dbg.startrxtx(DBG_RX, DBG_TX, 0, 2_000_000)
     dbg.clear()
@@ -504,19 +511,23 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, ls, st, g
     igmp.init(@net)
     udp.init(@net)
     tcp.init(@net)
-    net.set_pkt_filter(0)
     net.preset_fdx()
     net.node_address(@_mac_local)
-
+    net.set_pkt_filter(net.PF_MY_UNICAST_ACCEPT | net.PF_BADCRC_REJECT)
     t := getct()
+
     repeat
         ' suspend processing if the network link is/goes down
         if ( (net.phy_link_state() == net.DOWN) or (ls == 0) )
             ls := _link_state := 0
-'            dbg.strln(@"net link DOWN")
+#ifdef EXT_DBG
+            dbg.strln(@"net link DOWN")
+#endif
             repeat
             until ( net.phy_link_state() == net.UP )
-'            dbg.strln(@"net link UP")
+#ifdef EXT_DBG
+            dbg.strln(@"net link UP")
+#endif
             arp_announce()
             ls := _link_state := 1
         ' task: check for commands sent by the user
@@ -577,7 +588,7 @@ pri arp_announce() | ethii_t eh, arp_msg_s ah
         arp.set_target_hw_addr()
         arp.set_sender_proto_addr( ip.my_ip() )
         arp.wr_arp_msg()
-    net.send_frame()
+    net.send_frame( net.fifo_wr_ptr() )
 
 
 pri close(sck): s | skn
@@ -691,7 +702,9 @@ pri iface_add_group(mc_addr): s | i, g
     i := iface_group_index(mc_addr)
     if ( i >= 0 )                               ' group exists: just increment its reference count
         mc_group[i].refcnt++
-        'dbg.printf(@" refcnt=%d\n\r", mc_group[i].refcnt)
+#ifdef EXT_DBG
+        dbg.printf(@" refcnt=%d\n\r", mc_group[i].refcnt)
+#endif
         return i
 
     repeat MAX_MC_GROUPS_IFACE with i
@@ -701,11 +714,13 @@ pri iface_add_group(mc_addr): s | i, g
             igmp.add_group_record(mc_group[i].filt_mode, mc_group[i].nr_sources, mc_group[i].grp_addr)
             mc_group[i].refcnt++
             mc_group[i].report_pending := 1     ' trigger the net loop to send an updated report
-            'dbg.printf(@" new grp: %s  filt_mode=%x  refcnt=%d  idx=%d\n\r", ...
-                'str.iptostr(mc_group[i].grp_addr), ...
-                'mc_group[i].filt_mode, ...
-                'mc_group[i].refcnt, ...
-                'i)
+#ifdef EXT_DBG
+            dbg.printf(@" new grp: %s  filt_mode=%x  refcnt=%d  idx=%d\n\r", ...
+                str.iptostr(mc_group[i].grp_addr), ...
+                mc_group[i].filt_mode, ...
+                mc_group[i].refcnt, ...
+                i)
+#endif
             return i
 
     return -1                                   ' error: interface group membership table full
@@ -768,7 +783,9 @@ pri iface_mcast_dec_ref(mc_addr): l | i, r
 pri igmp_membership_report() | ethii_t eh, ip_header_s ih
 ' Send IGMP membership report(s)
 '   NOTE: All membership records currently cached in the IGMP object will be reported
-    'dbg.strln(@"igmp_membership_report()")
+#ifdef EXT_DBG
+    dbg.strln(@"igmp_membership_report()")
+#endif
     ethii.set_header(@eh)
     ip.set_header(@ih)
     net.start_frame()
@@ -779,7 +796,7 @@ pri igmp_membership_report() | ethii_t eh, ip_header_s ih
         igmp.wr_header()
         igmp.update_checksum()
         ip.update_chksum( igmp.message_len() )
-    net.send_frame()
+    net.send_frame( net.fifo_wr_ptr() )
 
 
 pri open(p_setup): s | sck, lp, pro, rip, rp, sn
@@ -875,7 +892,7 @@ pri process_arp() | e, mf, arp_msg_s ah
                 arp.set_sender_hw_addr( net.my_mac() )
                 arp.set_opcode(arp.ARP_REPL)
                 arp.wr_arp_msg()
-            net.send_frame()
+            net.send_frame( net.fifo_wr_ptr() )
 
 
 pri process_ethii() | ethii_t hdr
@@ -912,7 +929,7 @@ pri process_icmp() | icmp_msg_s ich
                 icmp.wr_echo_data(@_icmp_echo_data)
                 ip.update_chksum(icmp.msg_len() + icmp.echo_data_len() )
                 icmp.update_chksum(@_icmp_echo_data)
-            net.send_frame()
+            net.send_frame( net.fifo_wr_ptr() )
 '            dbg.fgcolor(dbg.GREEN)
 '            dbg.strln(@"PING!")
 '            dbg.fgcolor(dbg.GREY)
@@ -1282,7 +1299,7 @@ pri resolve_ip(sck, rip): s | ethii_t eh, arp_msg_s ah
     net.start_frame()
         ethii.new(@socket[sck].local_mac, @_mac_bcast, ETYP_ARP)
         arp.who_has(socket[sck].local_ip, rip )
-    net.send_frame()
+    net.send_frame( net.fifo_wr_ptr() )
 
     return OK
 
@@ -1315,7 +1332,7 @@ pri send_icmp(t, c, ips) | icmp_msg_s ich, ip_header_s iph, tmp
         net.wr_block(@bad_dgram, 4+20+8)        ' append the original 'bad' datagram
         icmp.update_chksum(@bad_dgram, 4+20+8)
         ip.update_chksum(20+8+4+4)
-    net.send_frame()
+    net.send_frame( net.fifo_wr_ptr() )
 
 
 pri set_state(sck, new_state)
@@ -1336,10 +1353,16 @@ pri socket_add_group(sck, mc_addr): s | g
 '               index within socket's multicast group list on success
 '               negative numbers on failure
     ifnot ( ip.is_multicast_addr(mc_addr) )
+#ifdef EXT_DBG
+        dbg.printf(@"socket_add_group(): error, %s isn't a multicast address\n\r", ...
+                    str.iptostr(mc_addr))
+#endif
         return -1                               ' error: invalid multicast address
 
     if ( socket_is_member_of(sck, mc_addr) )    ' error: already subscribed to this group
-        'dbg.printf(@"sck %d already subscribed to %s\n\r", sck, str.iptostr(mc_addr))
+#ifdef EXT_DBG
+        dbg.printf(@"sck %d already subscribed to %s\n\r", sck, str.iptostr(mc_addr))
+#endif
         return -2
 
     repeat MAX_MC_GROUPS_SOCKET with g
@@ -1347,7 +1370,9 @@ pri socket_add_group(sck, mc_addr): s | g
             socket[sck].mc_group[g].addr := mc_addr
             socket[sck].mc_group[g].filt_mode := igmp.CHANGE_TO_EXCLUDE
             iface_add_group(mc_addr)            ' add it to the interface list, too
-            'dbg.printf(@"sck %d subscribed to %s\n\r", sck, str.iptostr(mc_addr))
+#ifdef EXT_DBG
+            dbg.printf(@"sck %d subscribed to %s\n\r", sck, str.iptostr(mc_addr))
+#endif
             return g
 
     return -3                                   ' error: socket's group membership table is full
@@ -1442,7 +1467,7 @@ pri tcp_send(lmac, rmac, lip, rip, lp, rp, seqnr, acknr, flags, rwin, ip_ttl=0) 
         tcp.wr_tcp_header()
         tcp.update_checksum(lip, rip)           ' update checksums
         ip.update_chksum( tcp.header_len() )    '
-    net.send_frame()
+    net.send_frame( net.fifo_wr_ptr() )
 
 
 pri tcp_send_socket(sck, flags, sl=0): s | ethii_t eh, ip_header_s ih, tcp_msg_s th, tsl
@@ -1483,7 +1508,7 @@ pri tcp_send_socket(sck, flags, sl=0): s | ethii_t eh, ip_header_s ih, tcp_msg_s
                                 @socket[sck].txbuff.buffer)
         ip.update_chksum(tsl)                   ' update IP checksum: total TCP segment length
         socket[sck].snd.nxt += sl
-    net.send_frame()
+    net.send_frame( net.fifo_wr_ptr() )
 
     return
 
@@ -1506,7 +1531,7 @@ pri udp_send(sck) | ethii_t eh, ip_header_s ih, udp_msg_s uh, la
         udp.update_len_chksum(la)
         udp.update_checksum(socket[sck].local_ip, socket[sck].remote_ip, la)
         ip.update_chksum( udp.dgram_len() )
-    net.send_frame()
+    net.send_frame( net.fifo_wr_ptr() )
 
 
 '--
@@ -1570,7 +1595,7 @@ pri state_str(st): p
 
 DAT
 {
-Copyright 2025 Jesse Burt
+Copyright 2026 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,
