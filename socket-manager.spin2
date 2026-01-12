@@ -542,7 +542,7 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, ls, st, g
         ' task: check for packets received on the network interface
         if ( net.pkt_cnt() )
             net.get_frame()
-            \process_ethii()                    ' parse incoming frames; trap lower-level errors
+            process_ethii()                     ' parse incoming frames; trap lower-level errors
         ' task: check for multicast group membership changes
         repeat MAX_MC_GROUPS_IFACE with g
             if ( mc_group[g].report_pending )
