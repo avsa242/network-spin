@@ -311,6 +311,7 @@ pub recvfrom(sck, p_dest, max_len, flags, ^sockaddr_s p_addr, addrlen=0): l
 '   addrlen:    currently unused
 
     ' check if there are any datagrams queued
+    l := 0
     if ( ( (socket[sck].datagram.head - socket[sck].datagram.tail) & DG_MASK) > 0 )
         bytemove(   [p_addr], ...
                     @socket[sck].datagram.descr[ socket[sck].datagram.tail ].remote, ...
