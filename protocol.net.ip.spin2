@@ -4,8 +4,8 @@
     Description:    Internet Protocol
     Author:         Jesse Burt
     Started:        Feb 7, 2022
-    Updated:        Aug 18, 2025
-    Copyright (c) 2025 - See end of file for terms of use.
+    Updated:        Jan 31, 2026
+    Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
 {Spin2_v51}
@@ -93,7 +93,6 @@ VAR
     ip_option_s option[MAX_OPTS]                ' max options (assuming 1-byte values)
 
 
-    long _my_ip
     word _ip_start
     byte _nr_options
 
@@ -225,11 +224,6 @@ PUB msg_ident(): i
 ' Get identification common to all fragments in a message
 '   Returns: word
     return swap_word(hdr.ident)
-
-
-PUB my_ip(): a
-' Get this node's IP address
-    return swap_long(_my_ip)
 
 
 PUB new(l4_proto, src_ip, dest_ip, cp=0, ttl=0) | tmp, ol
@@ -411,21 +405,6 @@ PUB set_msg_ident(id)
     hdr.ident := swap_word(id)
 
 
-PUB set_my_ip(o3, o2, o1, o0)
-' Set this node's IP address (stored in RAM)
-'   o3..o0: IP address octets, MSB to LSB (e.g. 192,168,1,10)
-    _my_ip.byte[0] := o3
-    _my_ip.byte[1] := o2
-    _my_ip.byte[2] := o1
-    _my_ip.byte[3] := o0
-
-
-PUB set_my_ip32(a)
-' Set this node's IP address, as a 32-bit number (little-endian/host/Propeller-native byte order)
-'   addr: IP address in 32bit form, MSB to LSB (e.g. for 192.168.1.10, $c0_a8_01_0a)
-    _my_ip := swap_long(a)                      ' convert IP address to network byte order
-
-
 PUB set_src_addr(a)
 ' Set source/originator of IP datagram
 '   a:  32-bit IP address (LE)
@@ -537,7 +516,7 @@ pub wr_options() | o
 
 DAT
 {
-Copyright 2025 Jesse Burt
+Copyright 2026 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,
