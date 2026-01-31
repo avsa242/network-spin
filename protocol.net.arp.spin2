@@ -4,7 +4,7 @@
     Description:    Address Resolution Protocol
     Author:         Jesse Burt
     Started:        Feb 27, 2022
-    Updated:        Jan 26, 2026
+    Updated:        Jan 31, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -62,13 +62,14 @@ PUB set_header(p_hdr)
 PUB cache_entry(hw_addr, proto_addr, ptype=PROTO_TYPE_IP): e | m
 ' Cache an entry in the ARP table
     { check for an existing entry with this protocol address first }
+    if ( is_multicast(proto_addr) )
+        return -11                              ' error: can't cache multicast addresses
     e := proto_addr_entry(proto_addr)
     if ( e >= 0 )
         { found an existing entry: update it with the new hardware address }
         bytemove(@entry[e].hw_addr, hw_addr, MACADDR_LEN)
         if ( hw_addr_valid(hw_addr) and entry[e].proto_addr <> 0 )
             entry[e].resolved := 1
-
     else
         { not found: create a new entry }
         repeat e from 0 to (ENTRIES-1)
@@ -131,8 +132,8 @@ pub hw_addr_of(ip): hw | e
 '   ip:         protocol (IPv4) address to resolve
 '   Returns:
 '           pointer to hardware (MAC) address associated with IPv4 address on success
-'           -1 on failure
-    if ( (ip >= $e0_00_00_00) and (ip <= $ef_ff_ff_ff) )
+'           0 on failure
+    if ( is_multicast(ip) )
         ' IP is a multicast address
         bytefill(@_macaddr_tmp, 0, MACADDR_LEN)
         _macaddr_tmp[0] := $01
@@ -148,7 +149,7 @@ pub hw_addr_of(ip): hw | e
         if ( e >= 0 )
             return @entry[e].hw_addr
 
-    return -1
+    return 0
 
 
 PUB hw_addr_len(): l
@@ -158,7 +159,9 @@ PUB hw_addr_len(): l
 
 
 pub hw_addr_valid(p_addr): f
-
+' Check if a hardware/MAC address is valid (non-zero)
+'   p_addr: pointer to MAC address
+'   Returns:    TRUE (-1) or FALSE (0)
     return bytecomp(p_addr, @_mac_zero, MACADDR_LEN) <> true
 
 
@@ -175,8 +178,17 @@ PUB hw_type(): t
     return swap_word(hdr.hw_t)
 
 
-pub is_resolved(paddr): f | e
+pub is_multicast(ip): f
+' Check if an IP address is a multicast address
+'   ip: IPv4 address
+'   Returns:    TRUE (-1) or FALSE (0)
+    return ( (ip >= $e0_00_00_00) and (ip <= $ef_ff_ff_ff) )
 
+
+pub is_resolved(paddr): f | e
+' Check if ARP has resolved an IP address
+'   paddr:  protocol/IP address
+'   Returns:    TRUE (-1) or FALSE (0)
     f := false
     e := proto_addr_entry(paddr)
     if ( (e >= 0) and entry[e].resolved )

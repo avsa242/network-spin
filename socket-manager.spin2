@@ -45,13 +45,6 @@ con
     MAX_MC_SOURCES_IFACE= 64
 
     ' structure definitions
-    struct iface_s(...
-        long        ipv4_addr[MAX_IP_PER_IFACE], ...
-        long        flags, ...
-        byte        mac_addr[MACADDR_LEN], ...
-        ipv6_addr_s ipv6_addr[MAX_IP6_PER_IFACE], ...
-        byte        link_state)
-
     struct service_s(...
         long p_signal, ...                      ' pointer to handler's mailbox to receive signals
         word port, ...
@@ -68,6 +61,14 @@ con
         long source[MAX_MC_SOURCES_IFACE], ...
         byte refcnt, ...
         byte report_pending)
+
+    struct iface_s(...
+        long        ipv4_addr[MAX_IP_PER_IFACE], ...
+        long        flags, ...
+        byte        mac_addr[MACADDR_LEN], ...
+        ipv6_addr_s ipv6_addr[MAX_IP6_PER_IFACE], ...
+        group_s     mc_group[MAX_MC_GROUPS_IFACE], ...
+        byte        link_state)
 
 
     ' messages to netloop
@@ -107,7 +108,6 @@ var
     service_s   service[MAX_SERVICES]           ' registered services/handlers
     socket_s    socket[MAX_SOCKETS]             ' socket structures
     netcmd_s    netcmd                          ' command interface to the network loop
-    group_s     mc_group[MAX_MC_GROUPS_IFACE]   ' interface multicast group membership list
 
     long        _cog
 
@@ -438,18 +438,11 @@ pub sendto(sck, p_src, len, addr, port): s
 
     socket[sck].remote_ip := addr
     socket[sck].remote_port := port
-    ifnot ( arp.hw_addr_valid(@socket[sck].remote_mac) )
-        if ( arp.hw_addr_of(socket[sck].remote_ip) < 0 )
-            ' IP/MAC address pair isn't cached; queue it for resolution
-            arp.cache_entry(@socket[sck].remote_mac, socket[sck].remote_ip, arp.PROTO_TYPE_IP)
-'            dbg.strln(@"sendto(): remote MAC unknown; queuing for resolution")
-            repeat                              ' wait for resolution
-            until arp.hw_addr_valid( arp.hw_addr_of(addr) )
-
-        bytemove(   @socket[sck].remote_mac, ...
-                    arp.hw_addr_of(addr), ...
-                    MACADDR_LEN)                ' copy the MAC address to the socket
-
+    ifnot ( arp.hw_addr_of(socket[sck].remote_ip) )
+        ' IP/MAC address pair isn't cached; queue it for resolution
+        arp.cache_entry(@_mac_zero, socket[sck].remote_ip, arp.PROTO_TYPE_IP)
+'        dbg.strln(@"sendto(): remote MAC unknown; queuing for resolution")
+        return -1
 '   dbg.printf(@"sendto(): remote is %s\n\r", str.mactostr(@socket[sck].remote_mac))
 
     udp.set_payload_checksum( crc.inet_chksum(p_src, len, 0, false) )
@@ -521,7 +514,7 @@ pub set_socket_mailbox(sck, p_mbox)
 
 
 var long _netloop_stack[NET_STACK_SZ], _slock
-pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, st, g
+pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, st, g, i
 ' Network processing loop
     st := net.startx(CS, SCK, MOSI, MISO, SPI_FREQ)
     ifnot ( st )                                ' network driver returned an error on startup
@@ -574,19 +567,21 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, st, g
             net.get_frame()
             process_ethii()                     ' parse incoming frames
         ' task: check for multicast group membership changes
-        repeat MAX_MC_GROUPS_IFACE with g
-            if ( mc_group[g].report_pending )
-                igmp_membership_report()
-                mc_group[g].report_pending := 0
+        repeat MAX_INTERFACES with i
+            repeat MAX_MC_GROUPS_IFACE with g
+                if ( interface[i].mc_group[g].report_pending )
+                    igmp_membership_report()
+                    interface[i].mc_group[g].report_pending := 0
         ' task: check the socket table for sockets with pending data to be transmitted
         repeat MAX_SOCKETS with s
             if ( tx_available(s) > 0 )
                 'dbg.printf(@"socket %d sendq=%d\n\r", s, tx_available(s) )
                 if ( socket[s].protocol == ip.UDP )
-                    ifnot ( arp.is_resolved(socket[s].remote_ip) )
-                        arp.cache_entry(@_mac_zero, socket[s].remote_ip)
-                    else
+                    if (    arp.is_resolved(socket[s].remote_ip) or ...
+                            arp.is_multicast(socket[s].remote_ip) )
                         udp_send(s)
+                    else
+                        arp.cache_entry(@_mac_zero, socket[s].remote_ip)
                 elseif ( socket[s].protocol == ip.TCP and (socket[s].state == ESTABLISHED) )
                     if ( socket[s].push )
                         tcp_send_socket(s, tcp.PSH|tcp.ACK, tx_available(s) )
@@ -729,49 +724,51 @@ pri find_listening_socket(port, proto): s
     return -1                                   ' no matching socket is listening
 
 
-pri iface_add_group(mc_addr): s | i, g
+pri iface_add_group(iface, mc_addr): s | i, g
 ' Add interface multicast group record
 '   mc_addr:    multicast group/address
     'dbg.printf(@"iface_add_group(%s)\n\r", str.iptostr(mc_addr) )
-    i := iface_group_index(mc_addr)
+    i := iface_group_index(iface, mc_addr)
     if ( i >= 0 )                               ' group exists: just increment its reference count
-        mc_group[i].refcnt++
+        interface[iface].mc_group[i].refcnt++
 #ifdef EXT_DBG
-        dbg.printf(@" refcnt=%d\n\r", mc_group[i].refcnt)
+        dbg.printf(@" refcnt=%d\n\r", interface[iface].mc_group[i].refcnt)
 #endif
         return i
 
     repeat MAX_MC_GROUPS_IFACE with i
-        ifnot ( mc_group[i].grp_addr )          ' new group membership
-            mc_group[i].grp_addr := mc_addr
-            mc_group[i].filt_mode := igmp.CHANGE_TO_EXCLUDE
-            igmp.add_group_record(mc_group[i].filt_mode, mc_group[i].nr_sources, mc_group[i].grp_addr)
-            mc_group[i].refcnt++
-            mc_group[i].report_pending := 1     ' trigger the net loop to send an updated report
+        ifnot ( interface[iface].mc_group[i].grp_addr )          ' new group membership
+            interface[iface].mc_group[i].grp_addr := mc_addr
+            interface[iface].mc_group[i].filt_mode := igmp.CHANGE_TO_EXCLUDE
+            igmp.add_group_record(  interface[iface].mc_group[i].filt_mode, ...
+                                    interface[iface].mc_group[i].nr_sources, ...
+                                    interface[iface].mc_group[i].grp_addr)
+            interface[iface].mc_group[i].refcnt++
+            interface[iface].mc_group[i].report_pending := 1     ' trigger the net loop to send an updated report
 #ifdef EXT_DBG
             dbg.printf(@" new grp: %s  filt_mode=%x  refcnt=%d  idx=%d\n\r", ...
-                str.iptostr(mc_group[i].grp_addr), ...
-                mc_group[i].filt_mode, ...
-                mc_group[i].refcnt, ...
-                i)
+                str.iptostr(interface[iface].mc_group[i].grp_addr), ...
+                            interface[iface].mc_group[i].filt_mode, ...
+                            interface[iface].mc_group[i].refcnt, ...
+                            i)
 #endif
             return i
 
     return -1                                   ' error: interface group membership table full
 
 
-pri iface_group_exists(mc_addr): e | i
+pri iface_group_exists(iface, mc_addr): e | i
 ' Check if a multicast group is recorded in RAM
 '   mc_addr:    multicast group/address
-    return ( iface_group_index(mc_addr) >= 0 )  ' valid index? return true, otherwise false
+    return ( iface_group_index(iface, mc_addr) >= 0 )  ' valid index? return true, otherwise false
 
 
-pri iface_group_index(mc_addr): i | g
+pri iface_group_index(iface, mc_addr): i | g
 ' Get index of multicast group within array
 '   mc_addr:    multicast address/group
     'dbg.printf(@"iface_group_index(%s)\n\r", str.iptostr(mc_addr) )
     repeat MAX_MC_GROUPS_IFACE with g
-        if ( mc_group[g].grp_addr == mc_addr )
+        if ( interface[iface].mc_group[g].grp_addr == mc_addr )
             'dbg.printf(@" mc_group[%d].grp_addr = %s\n\r", ...
             '    g, ...
             '    str.iptostr(mc_group[g].grp_addr) )
@@ -780,35 +777,37 @@ pri iface_group_index(mc_addr): i | g
     return -1
 
 
-pri iface_leave_group(mc_addr) | i
+pri iface_leave_group(iface, mc_addr) | i
 ' Leave a multicast group
 '   mc_addr:    multicast group/address
-    i := iface_group_index(mc_addr)
+    i := iface_group_index(iface, mc_addr)
     if ( i >= 0 )
-        mc_group[i].filt_mode := igmp.CHANGE_TO_INCLUDE
-        igmp.add_group_record(mc_group[i].filt_mode, mc_group[i].nr_sources, mc_group[i].grp_addr)
-        mc_group[i].refcnt := 0
-        mc_group[i].report_pending := 1     ' trigger the net loop to send an updated report
+        interface[iface].mc_group[i].filt_mode := igmp.CHANGE_TO_INCLUDE
+        igmp.add_group_record(  interface[iface].mc_group[i].filt_mode, ...
+                                interface[iface].mc_group[i].nr_sources, ...
+                                interface[iface].mc_group[i].grp_addr)
+        interface[iface].mc_group[i].refcnt := 0
+        interface[iface].mc_group[i].report_pending := 1     ' trigger the net loop to send an updated report
 
 
-pri iface_mcast_dec_ref(mc_addr): l | i, r
+pri iface_mcast_dec_ref(iface, mc_addr): l | i, r
 ' Decrease interface's reference count of a multicast group
 '   mc_addr:    multicast address
 '   Returns:
 '               true (-1) if this was the last membership to the group
 '               false (0) if there still exists at least one membership to the group
 '                       or if there are already no memberships
-    i := iface_group_index(mc_addr)
+    i := iface_group_index(iface, mc_addr)
     if ( i >= 0 )
-        l := mc_group[i].refcnt
-        mc_group[i].refcnt--
-        if ( (mc_group[i].refcnt == 0) and (l > 0) )
+        l := interface[iface].mc_group[i].refcnt
+        interface[iface].mc_group[i].refcnt--
+        if ( (interface[iface].mc_group[i].refcnt == 0) and (l > 0) )
             ' was this the last membership to the group?
-            mc_group[i].filt_mode := igmp.CHANGE_TO_INCLUDE
+            interface[iface].mc_group[i].filt_mode := igmp.CHANGE_TO_INCLUDE
             r := igmp.group_record_num(mc_addr)
             'dbg.printf(@"iface_mcast_dec_ref(): igmp group record num %d\n\r", r)
-            igmp.set_record_type(r, mc_group[i].filt_mode)
-            mc_group[i].report_pending := 1
+            igmp.set_record_type(r, interface[iface].mc_group[i].filt_mode)
+            interface[iface].mc_group[i].report_pending := 1
             return true
 
     return false
@@ -835,7 +834,7 @@ pri igmp_membership_report() | ethii_t eh, ip_header_s ih
     ethii.set_header(@eh)
     ip.set_header(@ih)
     net.start_frame()
-        ethii.new(net.my_mac(), arp.hw_addr_of(igmp.IGMPV3_MCAST_IP), ETYP_IPV4)
+        ethii.new(@interface.mac_addr, arp.hw_addr_of(igmp.IGMPV3_MCAST_IP), ETYP_IPV4)
         ip.new(L4_IGMP, swap_long(interface.ipv4_addr), igmp.IGMPV3_MCAST_IP, ip.CS6)
         igmp.set_message_type(igmp.MEMBER_REPORT_V3)
         igmp.set_report_flags(0)
@@ -951,9 +950,9 @@ pri process_arp() | e, mf, arp_msg_s ah
             ' was this a request? send out a reply
             net.start_frame()
                 ethii.reply()
-                ethii.set_src_addr( net.my_mac() )
+                ethii.set_src_addr( @interface.mac_addr )
                 arp.swap_sender_target()
-                arp.set_sender_hw_addr( net.my_mac() )
+                arp.set_sender_hw_addr( @interface.mac_addr )
                 arp.set_opcode(arp.ARP_REPL)
                 arp.wr_arp_msg()
             net.send_frame( net.fifo_wr_ptr() )
@@ -1081,7 +1080,7 @@ pri process_tcp(): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop
         ack := tcp.seq_nr()
         if ( tcp.flags() & tcp.FIN )
             ack++
-        tcp_send(   net.my_mac(), ethii.src_addr(), ...
+        tcp_send(   @interface.mac_addr, ethii.src_addr(), ...
                     swap_long(interface.ipv4_addr), ip.src_addr(), ...
                     tcp.dest_port(), tcp.source_port(), ...
                     tcp.ack_nr(), ack, ...
@@ -1107,7 +1106,7 @@ pri process_tcp(): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop
                         seq := 0
                         ack := tcp.seq_nr()+seg_len
                         flags := tcp.RST | tcp.ACK
-                    tcp_send(   net.my_mac(), ethii.src_addr(), ...
+                    tcp_send(   @interface.mac_addr, ethii.src_addr(), ...
                                 swap_long(interface.ipv4_addr), ip.src_addr(), ...
                                 tcp.dest_port(), tcp.source_port(), ...
                                 ack, seq, ...
@@ -1144,7 +1143,7 @@ pri process_tcp(): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop
                         return sck
                     else
                         ' backlog full - too many half-open connections; send reset
-                        tcp_send(   net.my_mac(), ethii.src_addr(), ...
+                        tcp_send(   @interface.mac_addr, ethii.src_addr(), ...
                                     swap_long(interface.ipv4_addr), ip.src_addr(), ...
                                     tcp.dest_port(), tcp.source_port(), ...
                                     tcp.seq_nr(), 0, ...
@@ -1433,7 +1432,7 @@ pri socket_add_group(sck, mc_addr): s | g
         ifnot ( socket[sck].mc_group[g].addr )  ' empty entry found - add the group address
             socket[sck].mc_group[g].addr := mc_addr
             socket[sck].mc_group[g].filt_mode := igmp.CHANGE_TO_EXCLUDE
-            iface_add_group(mc_addr)            ' add it to the interface list, too
+            iface_add_group(0, mc_addr)         ' add it to the interface list, too
 #ifdef EXT_DBG
             dbg.printf(@"sck %d subscribed to %s\n\r", sck, str.iptostr(mc_addr))
 #endif
@@ -1474,7 +1473,7 @@ pri socket_leave_group(sck, mc_addr): s | g, i
     g := socket_group_index(sck, mc_addr)
     if ( g >= 0 )
         socket[sck].mc_group[g]~                ' remove group record from the socket
-        iface_mcast_dec_ref(mc_addr)            ' decrease interface's reference count to group
+        iface_mcast_dec_ref(0, mc_addr)         ' decrease interface's reference count to group
         return g
 
     return -1                                   ' error: not a member of this group
@@ -1586,17 +1585,16 @@ pri udp_send(sck) | ethii_t eh, ip_header_s ih, udp_msg_s uh, la
     udp.set_header(@uh)
     la := tx_available(sck)
 
-    if ( arp.proto_addr_entry(socket[sck].remote_ip) >= 0 )
-        net.start_frame()
-            ethii.new(@interface.mac_addr, arp.hw_addr_of(socket[sck].remote_ip), ETYP_IPV4)
-            ip.new(socket[sck].protocol, socket[sck].local_ip, socket[sck].remote_ip, 0, ...
-                    socket[sck].ttl)
-            udp.new(socket[sck].local_port, socket[sck].remote_port)
-            xtxput(sck, la)
-            udp.update_len_chksum(la)
-            udp.update_checksum(socket[sck].local_ip, socket[sck].remote_ip, la)
-            ip.update_chksum( udp.dgram_len() )
-        net.send_frame( net.fifo_wr_ptr() )
+    net.start_frame()
+        ethii.new(@interface.mac_addr, arp.hw_addr_of(socket[sck].remote_ip), ETYP_IPV4)
+        ip.new(socket[sck].protocol, socket[sck].local_ip, socket[sck].remote_ip, 0, ...
+                socket[sck].ttl)
+        udp.new(socket[sck].local_port, socket[sck].remote_port)
+        xtxput(sck, la)
+        udp.update_len_chksum(la)
+        udp.update_checksum(socket[sck].local_ip, socket[sck].remote_ip, la)
+        ip.update_chksum( udp.dgram_len() )
+    net.send_frame( net.fifo_wr_ptr() )
 
 
 '--
