@@ -161,7 +161,7 @@ pub accept(ls): cs
     return cs
 
 
-pub bind(sck, lip, lp=0): s
+pub bind(sck, lip, lp=0): s | i
 ' Bind an address to a socket
 '   sck:        socket number
 '   lip:        local IP address (little-endian/Propeller byte order)
@@ -172,21 +172,25 @@ pub bind(sck, lip, lp=0): s
 #ifdef EXT_DBG
 '    dbg.str(@"bind(): ")
 #endif
-    ifnot ( socket[sck].local_ip )
-        socket[sck].local_ip := lip
-        ifnot ( lp )                            ' choose a random ephemeral port number if
-            lp := 49152+math.rndi(16383)        '   one wasn't specified
-        socket[sck].local_port := lp
+    ifnot ( socket[sck].local_ip )              ' make sure this socket isn't already bound
+        repeat MAX_INTERFACES with i            ' look for an interface with this IP
+            if ( swap_long(interface[i].ipv4_addr) == lip )
+                socket[sck].local_ip := lip
+                ifnot ( lp )                    ' choose a random ephemeral port number if
+                    lp := 49152+math.rndi(16383)'   one wasn't specified
+                socket[sck].local_port := lp
+                return OK
 #ifdef EXT_DBG
 '        dbg.printf( @"socket %d  ip: %s  mac: %s\n\r", ...
 '                    sck, ...
-'                    str.iptostr(socket[sck].local_ip), ...
-'                    str.mactostr(@socket[sck].local_mac) )
+'                    str.iptostr(interface.local_ip), ...
+'                    str.mactostr(@interface.mac_addr) )
 #endif
-        return OK
+'        dbg.strln(@"error: no such interface")
+        return -1
     else
 '        dbg.strln(@"error: address already in use")
-        return -1
+        return -2
 
 
 pub connect(sck, lp, pro, rip, rp): s
