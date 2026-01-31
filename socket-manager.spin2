@@ -174,13 +174,12 @@ pub bind(sck, lip, lp=0): s | i
 '    dbg.str(@"bind(): ")
 #endif
     ifnot ( socket[sck].local_ip )              ' make sure this socket isn't already bound
-        repeat MAX_INTERFACES with i            ' look for an interface with this IP
-            if ( swap_long(interface[i].ipv4_addr) == lip )
-                socket[sck].local_ip := lip
-                ifnot ( lp )                    ' choose a random ephemeral port number if
-                    lp := 49152+math.rndi(16383)'   one wasn't specified
-                socket[sck].local_port := lp
-                return OK
+        if ( lookup_iface(lip) >= 0 )
+            socket[sck].local_ip := lip
+            ifnot ( lp )                        ' choose a random ephemeral port number if
+                lp := 49152+math.rndi(16383)    '   one wasn't specified
+            socket[sck].local_port := lp
+            return OK
 #ifdef EXT_DBG
 '        dbg.printf( @"socket %d  ip: %s  mac: %s\n\r", ...
 '                    sck, ...
@@ -844,6 +843,24 @@ pri igmp_membership_report() | ethii_t eh, ip_header_s ih
         igmp.update_checksum()
         ip.update_chksum( igmp.message_len() )
     net.send_frame( net.fifo_wr_ptr() )
+
+
+pri lookup_iface(addr, addrlen=4): i | a
+' Look up interfaces by IP address
+'   addr:       IP address (value, if IPv4, reference/pointer if IPv6)
+'   addrlen:    length of address:  4: IPv4 (default), 16: IPv6
+    if ( addrlen == 4 )
+        repeat MAX_INTERFACES with i            ' look for an interface with this address (IPv4)
+            repeat MAX_IP_PER_IFACE with a
+                if ( swap_long(interface[i].ipv4_addr[a]) == addr )
+                    return i
+    elseif ( addrlen == 16 )
+        repeat MAX_INTERFACES with i            ' look for an interface with this address (IPv6)
+            repeat MAX_IP6_PER_IFACE with a
+                if ( bytecomp(@interface[i].ipv6_addr[a], addr, IPV6ADDR_LEN) )
+                    return i
+
+    return -1                                   ' error: no interface with that IP
 
 
 pri open(p_setup): s | sck, lp, pro, rip, rp, sn
