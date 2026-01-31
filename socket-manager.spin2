@@ -49,7 +49,8 @@ con
         long        ipv4_addr[MAX_IP_PER_IFACE], ...
         long        flags, ...
         byte        mac_addr[MACADDR_LEN], ...
-        ipv6_addr_s ipv6_addr[MAX_IP6_PER_IFACE])
+        ipv6_addr_s ipv6_addr[MAX_IP6_PER_IFACE], ...
+        byte        link_state)
 
     struct service_s(...
         long p_signal, ...                      ' pointer to handler's mailbox to receive signals
@@ -520,8 +521,8 @@ pub set_socket_mailbox(sck, p_mbox)
     socket[sck].p_signal := p_mbox
 
 
-var long _netloop_stack[NET_STACK_SZ], _slock, _link_state
-pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, ls, st, g
+var long _netloop_stack[NET_STACK_SZ], _slock
+pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, st, g
 ' Network processing loop
     st := net.startx(CS, SCK, MOSI, MISO, SPI_FREQ)
     ifnot ( st )                                ' network driver returned an error on startup
@@ -546,8 +547,8 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, ls, st, g
 
     repeat
         ' suspend processing if the network link is/goes down
-        if ( (net.phy_link_state() == net.DOWN) or (ls == 0) )
-            ls := _link_state := 0
+        if ( (net.phy_link_state() == net.DOWN) or (interface.link_state == 0) )
+            interface.link_state := 0
 #ifdef EXT_DBG
             dbg.strln(@"net link DOWN")
 #endif
@@ -557,7 +558,7 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, ls, st, g
             dbg.strln(@"net link UP")
 #endif
             arp_announce()
-            ls := _link_state := 1
+            interface.link_state := 1
         ' task: check for commands sent by the user
         case netcmd.command                     ' process commands to the network loop
             CMD_CONNECT:
