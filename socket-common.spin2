@@ -97,12 +97,6 @@ con
     CLOSING, LAST_ACK, TIME_WAIT, LISTENING
 
 
-    ' messages to netloop
-    CMD_CONNECT         = 1                     ' connect a socket
-    CMD_DISCONNECT      = 2                     ' disconnect a socket
-    CMD_PUSH            = 3                     ' deliver a TCP datagram immediately
-
-
     ' signals
     SIGNALS_MASK        = $ffff_ffff
     PUSH_RECEIVED       = 1 << 0                ' TCP segment received with PSH bit set

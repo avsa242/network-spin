@@ -7,7 +7,7 @@
         * Multiple sockets
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Jan 12, 2026
+    Updated:        Jan 31, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -36,12 +36,20 @@
 con
 
     ' limits
+    MAX_INTERFACES      = 1
+    MAX_IP_PER_IFACE    = 1
+    MAX_IP6_PER_IFACE   = 1
     MAX_SOCKETS         = 10
     MAX_SERVICES        = 10
     MAX_MC_GROUPS_IFACE = 4
     MAX_MC_SOURCES_IFACE= 64
-    ' error codes
-    OK                  = 0
+
+    ' structure definitions
+    struct iface_s(...
+        long        ipv4_addr[MAX_IP_PER_IFACE], ...
+        long        flags, ...
+        byte        mac_addr[MACADDR_LEN], ...
+        ipv6_addr_s ipv6_addr[MAX_IP6_PER_IFACE])
 
     struct service_s(...
         long p_signal, ...                      ' pointer to handler's mailbox to receive signals
@@ -61,6 +69,19 @@ con
         byte report_pending)
 
 
+    ' messages to netloop
+    CMD_CONNECT         = 1                     ' connect a socket
+    CMD_DISCONNECT      = 2                     ' disconnect a socket
+    CMD_PUSH            = 3                     ' deliver a TCP datagram immediately
+    CMD_SET_IF_FLAGS    = 4
+
+    ' interface flags
+    IF_PROMISCUOUS      = 1 << 0
+
+    ' error codes
+    OK                  = 0
+
+
 obj
 
     net:    NETIF_DRIVER
@@ -78,13 +99,10 @@ obj
     dbg:    "com.serial.terminal.ansi"
 #endif
 
-dat
-
-    _mac_local  byte 0[MACADDR_LEN]
-
 
 var
 
+    iface_s     interface[MAX_INTERFACES]       ' network interfaces
     service_s   service[MAX_SERVICES]           ' registered services/handlers
     socket_s    socket[MAX_SOCKETS]             ' socket structures
     netcmd_s    netcmd                          ' command interface to the network loop
@@ -143,12 +161,11 @@ pub accept(ls): cs
     return cs
 
 
-pub bind(sck, lip, lp=0, lmac=0): s
+pub bind(sck, lip, lp=0): s
 ' Bind an address to a socket
 '   sck:        socket number
 '   lip:        local IP address (little-endian/Propeller byte order)
 '   lp:         local port (optional; a random value will be selected if omitted)
-'   lmac:       local MAC address (optional; OUI MSB first)
 '   Returns:    0 on success
 '               negative numbers on failure
 
@@ -160,10 +177,6 @@ pub bind(sck, lip, lp=0, lmac=0): s
         ifnot ( lp )                            ' choose a random ephemeral port number if
             lp := 49152+math.rndi(16383)        '   one wasn't specified
         socket[sck].local_port := lp
-        if ( lmac )
-            bytemove(@socket[sck].local_mac, lmac, MACADDR_LEN)
-        else
-            bytemove(@socket[sck].local_mac, net.my_mac(), MACADDR_LEN)
 #ifdef EXT_DBG
 '        dbg.printf( @"socket %d  ip: %s  mac: %s\n\r", ...
 '                    sck, ...
@@ -477,14 +490,23 @@ pub setsockopt(sck, opt, val): s
             return -1                           ' error: invalid argument
 
 
-pub set_ip(addr)
+pub set_if_flags(iface, flags)
+' Set a network interface's operational flags
+    if ( iface < MAX_INTERFACES )
+        netcmd.parameter := @iface
+        netcmd.command := CMD_SET_IF_FLAGS
+
+
+pub set_ip(iface, addr)
 ' Set this node's IP address
-    ip.set_my_ip32(addr)
+    if ( iface < MAX_INTERFACES )
+        interface[iface].ipv4_addr := swap_long(addr)
 
 
-pub set_mac_addr(p_addr)
+pub set_mac_addr(iface, p_addr)
 ' Set the MAC address of the network device
-    bytemove(@_mac_local, p_addr, MACADDR_LEN)
+    if ( iface < MAX_INTERFACES )
+        bytemove(@interface[iface].mac_addr, p_addr, MACADDR_LEN)
 
 
 pub set_socket_mailbox(sck, p_mbox)
@@ -513,7 +535,8 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, ls, st, g
     udp.init(@net)
     tcp.init(@net)
     net.preset_fdx()
-    net.node_address(@_mac_local)
+
+    net.node_address(@interface.mac_addr)
     net.set_pkt_filter(net.PF_MY_UNICAST_ACCEPT | net.PF_BADCRC_REJECT)
     t := getct()
 
@@ -539,6 +562,9 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, ls, st, g
             CMD_DISCONNECT:
                 close(netcmd.parameter)
                 netcmd~
+            CMD_SET_IF_FLAGS:
+                iface_set_flags(netcmd.parameter)
+                netcmd~
         ' task: check for packets received on the network interface
         if ( net.pkt_cnt() )
             net.get_frame()
@@ -553,7 +579,10 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, ls, st, g
             if ( tx_available(s) > 0 )
                 'dbg.printf(@"socket %d sendq=%d\n\r", s, tx_available(s) )
                 if ( socket[s].protocol == ip.UDP )
-                    udp_send(s)
+                    ifnot ( arp.is_resolved(socket[s].remote_ip) )
+                        arp.cache_entry(@_mac_zero, socket[s].remote_ip)
+                    else
+                        udp_send(s)
                 elseif ( socket[s].protocol == ip.TCP and (socket[s].state == ESTABLISHED) )
                     if ( socket[s].push )
                         tcp_send_socket(s, tcp.PSH|tcp.ACK, tx_available(s) )
@@ -568,7 +597,7 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, ls, st, g
 '                            str.iptostr(arp.entry[e].proto_addr))
                 if ( getsec() > arp.entry[e].last_checked )
                     arp.entry[e].last_checked := getsec()
-                    resolve_ip(0, arp.entry[e].proto_addr)
+                    resolve_ip(arp.entry[e].proto_addr)
                     t := getct()
 
 
@@ -578,16 +607,16 @@ pri arp_announce() | ethii_t eh, arp_msg_s ah
     arp.set_header(@ah)
 
     net.start_frame()
-        ethii.set_src_addr( net.my_mac() )
+        ethii.set_src_addr(@interface.mac_addr)
         ethii.set_dest_addr( @_mac_bcast )
         ethii.set_ethertype( ETYP_ARP )
         ethii.wr_ethii_frame()
         arp.preset_ethii_ipv4()
         arp.set_opcode(arp.ARP_REQ)
-        arp.set_sender_hw_addr( net.my_mac() )
-        arp.set_target_proto_addr( ip.my_ip() )
+        arp.set_sender_hw_addr(@interface.mac_addr)
+        arp.set_target_proto_addr(swap_long(interface.ipv4_addr) )
         arp.set_target_hw_addr()
-        arp.set_sender_proto_addr( ip.my_ip() )
+        arp.set_sender_proto_addr(swap_long(interface.ipv4_addr) )
         arp.wr_arp_msg()
     net.send_frame( net.fifo_wr_ptr() )
 
@@ -781,6 +810,18 @@ pri iface_mcast_dec_ref(mc_addr): l | i, r
     return false
 
 
+pri iface_set_flags(p_if) | iface, flags
+' Set interface flags
+'   p_if:   pointer to parameters
+'           long[p_if][0]: interface
+'           long[p_if][1]: interface flags
+    iface := long[p_if][0]
+    flags := long[p_if][1]
+    if ( (iface > 0) and (iface < MAX_INTERFACES) )
+        if ( flags & IF_PROMISCUOUS )
+            net.set_pkt_filter(net.PF_PROMISCUOUS)
+
+
 pri igmp_membership_report() | ethii_t eh, ip_header_s ih
 ' Send IGMP membership report(s)
 '   NOTE: All membership records currently cached in the IGMP object will be reported
@@ -791,7 +832,7 @@ pri igmp_membership_report() | ethii_t eh, ip_header_s ih
     ip.set_header(@ih)
     net.start_frame()
         ethii.new(net.my_mac(), arp.hw_addr_of(igmp.IGMPV3_MCAST_IP), ETYP_IPV4)
-        ip.new(L4_IGMP, ip.my_ip(), igmp.IGMPV3_MCAST_IP, ip.CS6)
+        ip.new(L4_IGMP, swap_long(interface.ipv4_addr), igmp.IGMPV3_MCAST_IP, ip.CS6)
         igmp.set_message_type(igmp.MEMBER_REPORT_V3)
         igmp.set_report_flags(0)
         igmp.wr_header()
@@ -877,7 +918,7 @@ pri process_arp() | e, mf, arp_msg_s ah
             arp.cache_update_hw_addr( e, arp.sender_hw_addr() )
             mf := true
 
-    if ( arp.target_proto_addr() == ip.my_ip() )
+    if ( arp.target_proto_addr() == swap_long(interface.ipv4_addr) )
         ' are we the target of the message?
         ifnot ( mf )
             ' this sender hasn't been seen before; store it in the ARP table
@@ -1019,7 +1060,7 @@ pri process_tcp(): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop
         if ( tcp.flags() & tcp.FIN )
             ack++
         tcp_send(   net.my_mac(), ethii.src_addr(), ...
-                    ip.my_ip(), ip.src_addr(), ...
+                    swap_long(interface.ipv4_addr), ip.src_addr(), ...
                     tcp.dest_port(), tcp.source_port(), ...
                     tcp.ack_nr(), ack, ...
                     (tcp.RST | tcp.ACK), ...
@@ -1045,7 +1086,7 @@ pri process_tcp(): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop
                         ack := tcp.seq_nr()+seg_len
                         flags := tcp.RST | tcp.ACK
                     tcp_send(   net.my_mac(), ethii.src_addr(), ...
-                                ip.my_ip(), ip.src_addr(), ...
+                                swap_long(interface.ipv4_addr), ip.src_addr(), ...
                                 tcp.dest_port(), tcp.source_port(), ...
                                 ack, seq, ...
                                 flags, ...
@@ -1082,7 +1123,7 @@ pri process_tcp(): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop
                     else
                         ' backlog full - too many half-open connections; send reset
                         tcp_send(   net.my_mac(), ethii.src_addr(), ...
-                                    ip.my_ip(), ip.src_addr(), ...
+                                    swap_long(interface.ipv4_addr), ip.src_addr(), ...
                                     tcp.dest_port(), tcp.source_port(), ...
                                     tcp.seq_nr(), 0, ...
                                     tcp.RST | tcp.ACK, ...
@@ -1286,7 +1327,7 @@ pri process_udp(): s | udp_msg_s uh, skn, l
     return
 
 
-pri resolve_ip(sck, rip): s | ethii_t eh, arp_msg_s ah
+pri resolve_ip(rip): s | ethii_t eh, arp_msg_s ah
 ' Request resolution of an IP address to a MAC address
 '   sck:        socket number
 '   rip:        IP to resolve
@@ -1298,8 +1339,8 @@ pri resolve_ip(sck, rip): s | ethii_t eh, arp_msg_s ah
     arp.set_header(@ah)
 
     net.start_frame()
-        ethii.new(@socket[sck].local_mac, @_mac_bcast, ETYP_ARP)
-        arp.who_has(socket[sck].local_ip, rip )
+        ethii.new(@interface.mac_addr, @_mac_bcast, ETYP_ARP)
+        arp.who_has(swap_long(interface.ipv4_addr), rip)
     net.send_frame( net.fifo_wr_ptr() )
 
     return OK
@@ -1523,16 +1564,17 @@ pri udp_send(sck) | ethii_t eh, ip_header_s ih, udp_msg_s uh, la
     udp.set_header(@uh)
     la := tx_available(sck)
 
-    net.start_frame()
-        ethii.new(@socket[sck].local_mac, @socket[sck].remote_mac, ETYP_IPV4)
-        ip.new(socket[sck].protocol, socket[sck].local_ip, socket[sck].remote_ip, 0, ...
-                socket[sck].ttl)
-        udp.new(socket[sck].local_port, socket[sck].remote_port)
-        xtxput(sck, la)
-        udp.update_len_chksum(la)
-        udp.update_checksum(socket[sck].local_ip, socket[sck].remote_ip, la)
-        ip.update_chksum( udp.dgram_len() )
-    net.send_frame( net.fifo_wr_ptr() )
+    if ( arp.proto_addr_entry(socket[sck].remote_ip) >= 0 )
+        net.start_frame()
+            ethii.new(@interface.mac_addr, arp.hw_addr_of(socket[sck].remote_ip), ETYP_IPV4)
+            ip.new(socket[sck].protocol, socket[sck].local_ip, socket[sck].remote_ip, 0, ...
+                    socket[sck].ttl)
+            udp.new(socket[sck].local_port, socket[sck].remote_port)
+            xtxput(sck, la)
+            udp.update_len_chksum(la)
+            udp.update_checksum(socket[sck].local_ip, socket[sck].remote_ip, la)
+            ip.update_chksum( udp.dgram_len() )
+        net.send_frame( net.fifo_wr_ptr() )
 
 
 '--
