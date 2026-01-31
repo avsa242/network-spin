@@ -1,10 +1,27 @@
 # Socket manager operation
 --------------------------
 
-Sockets contain per-connection information stored in a structure:
+Structures:
+
+## Interfaces: per-network driver settings
+* MAC address
+* IPv4 address(es)
+* IPv6 address(es)
+* Operational flags (e.g., promiscuous mode)
+
+
+## Multicast groups: multicast memberships
+* Group address
+* Filter mode
+* Number of sources (as well as the sources themselves)
+* Reference count
+
+
+## Sockets: per-connection information
 * Local IP and MAC address and port (used in TCP and UDP sockets)
 * Remote IP and MAC address and port (TCP and UDP)
-* Transmit and receive ring-buffers containing application protocol/end-user data only and associated pointers (TCP and UDP) 
+* Transmit and receive ring-buffers containing application protocol/end-user data only and associated pointers (TCP and UDP)
+* UDP sockets use a datagram descriptor buffer: when datagrams are received on the socket, a descriptor is added that has the remote IP and port the datagram is from and the length
 * a pointer to an application protocol's "mailbox" to pass signals to it directly, e.g. to notify it of events like a connection state change or new data received (TCP and UDP)
 * send and receive sequence numbers and window (TCP only)
 * current and previous connection state (CLOSED, LISTENING, ESTABLISHED, etc) (TCP and some states UDP)
@@ -21,6 +38,7 @@ Sockets contain per-connection information stored in a structure:
 	* check command
 		* connect (must call bind() first)
 		* disconnect
+		* set interface flags
 * check for packets received on network interface, check ethertype
 	* ARP:
 		* update cache
@@ -77,7 +95,7 @@ Sockets contain per-connection information stored in a structure:
 						5. `TIME_WAIT` -> no change
 					* inc sequence number (rcv.nxt)
 					* send ACK
-
+* check for multicast group membership changes
 * check sockets for queued data to send
 * check ARP table for entries not marked 'resolved'
 	* send probes/requests to resolve (no more than one per second per entry)
@@ -85,8 +103,8 @@ Sockets contain per-connection information stored in a structure:
 
 ### User interface:
 
-* `set_ip()` set this node's IP address
-* `set_mac_addr()` set this node's MAC address
+* `set_ip()` set a network interface's IP address
+* `set_mac_addr()` set a network interface's MAC address
 * `new_socket()` check out a socket for subsequent operations (TCP, UDP)
 * `bind()` bind an address to a socket (TCP, UDP)
 * `register_service()` register an application as a handler for a service (TCP, UDP; function pointer, port, protocol)
@@ -101,6 +119,10 @@ Sockets contain per-connection information stored in a structure:
 * `sendto()` send data to a socket/remote host (UDP)
 * `recvfrom()` receive data from a socket/remote host (UDP)
 * `disconnect()` close a connection (TCP, UDP)
+* `send_command()` issue a command to the socket manager
+* `service_number()` Get index in the service table for matching service
+* `setsockopt()` Set socket options/flags
+* `set_if_flags()` Set network interface flags
 
 
 ### Setting up a server (TCP):
@@ -112,6 +134,10 @@ Sockets contain per-connection information stored in a structure:
 6. use `disconnect()` to close a socket
 
 _See http-server-example1.spin2 for an example_
+
+
+### Setting up a client (TCP):
+_todo_
 
 
 ### Setting up a server / receiving datagrams from a remote host (UDP):
