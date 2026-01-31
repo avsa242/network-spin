@@ -340,8 +340,7 @@ pub rd_option(^ip_option_s opt): t
 PUB reply(): p
 ' Set up/write IPv4 header as a reply to last received header
     set_hdr_chk(0)                         ' init header checksum to 0
-    set_dest_addr( src_addr() )
-    set_src_addr( my_ip() )
+    longswap(@hdr.dest_addr, @hdr.src_addr, 1)
     _ip_start := net[p_ndev].fifo_wr_ptr()
     wr_ip_header()
 
