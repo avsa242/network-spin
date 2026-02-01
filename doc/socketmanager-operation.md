@@ -21,7 +21,7 @@ Structures:
 * Local IP and MAC address and port (used in TCP and UDP sockets)
 * Remote IP and MAC address and port (TCP and UDP)
 * Transmit and receive ring-buffers containing application protocol/end-user data only and associated pointers (TCP and UDP)
-* UDP sockets use a datagram descriptor buffer: when datagrams are received on the socket, a descriptor is added that has the remote IP and port the datagram is from and the length
+* UDP sockets use a datagram descriptor buffer: when datagrams are received or sent on the socket, a descriptor is added that has the remote IP and port the datagram is from/to and the length
 * a pointer to an application protocol's "mailbox" to pass signals to it directly, e.g. to notify it of events like a connection state change or new data received (TCP and UDP)
 * send and receive sequence numbers and window (TCP only)
 * current and previous connection state (CLOSED, LISTENING, ESTABLISHED, etc) (TCP and some states UDP)

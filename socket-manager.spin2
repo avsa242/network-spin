@@ -7,7 +7,7 @@
         * Multiple sockets
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Jan 31, 2026
+    Updated:        Feb 1, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -318,7 +318,7 @@ pub recv(sck, p_dest, len=posx, flags=0): s
     return rxget(sck, p_dest, len)              ' copy data from the socket buffer
 
 
-pub recvfrom(sck, p_dest, max_len, flags, ^sockaddr_s p_addr, addrlen=0): l
+pub recvfrom(sck, p_dest, max_len, flags, ^sockaddr_s p_addr, addrlen=0): l | h, t
 ' Receive data from a UDP socket
 '   sck:        socket number
 '   p_dest:     pointer to destination to copy received data to
@@ -329,15 +329,18 @@ pub recvfrom(sck, p_dest, max_len, flags, ^sockaddr_s p_addr, addrlen=0): l
 
     ' check if there are any datagrams queued
     l := 0
-    if ( ( (socket[sck].datagram.head - socket[sck].datagram.tail) & DG_MASK) > 0 )
+    h := socket[sck].rxbuff.datagram.head       ' cache descriptor pointers
+    t := socket[sck].rxbuff.datagram.tail
+
+    if ( ( (h-t) & DG_MASK) > 0 )
         bytemove(   [p_addr], ...
-                    @socket[sck].datagram.descr[ socket[sck].datagram.tail ].remote, ...
+                    @socket[sck].rxbuff.datagram.descr[t].remote, ...
                     sizeof(sockaddr_s) )
         l := rxget( sck, ...
                     p_dest, ...
-                    socket[sck].datagram.descr[ socket[sck].datagram.tail ].len <# max_len)
-        socket[sck].datagram.descr[ socket[sck].datagram.tail ]~
-        socket[sck].datagram.tail := (socket[sck].datagram.tail + 1) & DG_MASK
+                    socket[sck].rxbuff.datagram.descr[t].len <# max_len)
+        socket[sck].rxbuff.datagram.descr[t]~
+        socket[sck].rxbuff.datagram.tail := (t + 1) & DG_MASK
 
 
 pub recvq(sck): a
@@ -445,8 +448,7 @@ pub sendto(sck, p_src, len, addr, port): s
         return -1
 '   dbg.printf(@"sendto(): remote is %s\n\r", str.mactostr(@socket[sck].remote_mac))
 
-    udp.set_payload_checksum( crc.inet_chksum(p_src, len, 0, false) )
-    s := txput(sck, p_src, len)                 ' copy data to the socket's buffer
+    s := send_datagram(sck, p_src, addr, port, len)
 '    dbg.printf(@"txput(): socket %d %d\n\r", sck, s)
 '    dbg.hexdump(@socket[sck].txbuff.buffer, 0, 3, len, 16 <# len)
     return
@@ -1330,7 +1332,7 @@ pri process_udp(): s | udp_msg_s uh, skn, l
 '            dbg.printf(@"sck %d port match\n\r", skn)
 #endif
             l := udp.payload_len()
-            store_datagram( skn, ...
+            recv_datagram(  skn, ...
                             ip.src_addr(), udp.src_port(), ...
                             l)
             if ( socket[skn].p_signal )         ' notify the service/protcol handler, if defined
@@ -1365,6 +1367,29 @@ pri resolve_ip(rip): s | ethii_t eh, arp_msg_s ah
     net.send_frame( net.fifo_wr_ptr() )
 
     return OK
+
+
+pri send_datagram(sck, p_src, rip, rp, len): s | h, t
+' Send a datagram
+'   sck:    socket number
+'   p_src:  datagram data (pointer to buffer)
+'   rip:    remote IP to send datagram to
+'   rp:     remote port
+'   len:    length of datagram
+    h := socket[sck].txbuff.datagram.head
+    t := socket[sck].txbuff.datagram.tail
+
+    if ( ( (t-h - 1) & DG_MASK) > 0 )           ' check for free descriptor
+        s := txput(sck, p_src, len)             ' (try to) copy the datagram to the socket buffer
+        if ( s > 0 )                            ' upon success, write the descriptor
+            socket[sck].txbuff.datagram.descr[h].remote.address := rip
+            socket[sck].txbuff.datagram.descr[h].remote.port := rp
+            socket[sck].txbuff.datagram.descr[h].len := len
+            socket[sck].txbuff.datagram.head := (h + 1) & DG_MASK
+            return
+
+    return -1                                   ' error: socket buffer or descriptor table full
+
 
 
 var byte bad_dgram[4+20+8]    ' icmp unused field + original ip header + first 8 bytes of layer 4
@@ -1479,21 +1504,23 @@ pri socket_leave_group(sck, mc_addr): s | g, i
     return -1                                   ' error: not a member of this group
 
 
-pri store_datagram(sck, rip, rp, len): s
-' Store a datagram in the socket and create a corresponding descriptor for it
+pri recv_datagram(sck, rip, rp, len): s | h, t
+' Receive a datagram into the socket and create a corresponding descriptor for it
 '   sck:    socket number
 '   rip:    sender IP
 '   rp:     sender port
 '   len:    datagram length
 
     ' check for space in the datagram descriptor queue
-    if ( ( (socket[sck].datagram.tail - socket[sck].datagram.head - 1) & DG_MASK) > 0 )
+    h := socket[sck].rxbuff.datagram.head
+    t := socket[sck].rxbuff.datagram.tail
+    if ( ( (t-h - 1) & DG_MASK) > 0 )
         s := xrxget(sck, len)
         if ( s > 0 )
-            socket[sck].datagram.descr[ socket[sck].datagram.head ].remote.address := rip
-            socket[sck].datagram.descr[ socket[sck].datagram.head ].remote.port := rp
-            socket[sck].datagram.descr[ socket[sck].datagram.head ].len := s
-            socket[sck].datagram.head := (socket[sck].datagram.head + 1) & DG_MASK
+            socket[sck].rxbuff.datagram.descr[h].remote.address := rip
+            socket[sck].rxbuff.datagram.descr[h].remote.port := rp
+            socket[sck].rxbuff.datagram.descr[h].len := s
+            socket[sck].rxbuff.datagram.head := (h + 1) & DG_MASK
             return
 
     return -1                                   ' error: socket buffer or descriptor table full
@@ -1576,25 +1603,45 @@ pri tcp_send_socket(sck, flags, sl=0): s | ethii_t eh, ip_header_s ih, tcp_msg_s
     return
 
 
-pri udp_send(sck) | ethii_t eh, ip_header_s ih, udp_msg_s uh, la
+pri udp_send(sck) | ethii_t eh, ip_header_s ih, udp_msg_s uh, h, t, len, rip, rp
 ' Send a UDP socket's pending data to its recipient
 '   sck:    socket number
+    h := socket[sck].txbuff.datagram.head       ' cache descriptor pointers
+    t := socket[sck].txbuff.datagram.tail
 
-    ethii.set_header(@eh)
-    ip.set_header(@ih)
-    udp.set_header(@uh)
-    la := tx_available(sck)
+    if ( ( (h-t) & DG_MASK) > 0 )
+        rip := socket[sck].txbuff.datagram.descr[t].remote.address
+        rp := socket[sck].txbuff.datagram.descr[t].remote.port
+        len := socket[sck].txbuff.datagram.descr[t].len
 
-    net.start_frame()
-        ethii.new(@interface.mac_addr, arp.hw_addr_of(socket[sck].remote_ip), ETYP_IPV4)
-        ip.new(socket[sck].protocol, socket[sck].local_ip, socket[sck].remote_ip, 0, ...
-                socket[sck].ttl)
-        udp.new(socket[sck].local_port, socket[sck].remote_port)
-        xtxput(sck, la)
-        udp.update_len_chksum(la)
-        udp.update_checksum(socket[sck].local_ip, socket[sck].remote_ip, la)
-        ip.update_chksum( udp.dgram_len() )
-    net.send_frame( net.fifo_wr_ptr() )
+        ethii.set_header(@eh)
+        ip.set_header(@ih)
+        udp.set_header(@uh)
+
+        net.start_frame()
+            ethii.new(  @interface.mac_addr, ...
+                        arp.hw_addr_of(rip), ...
+                        ETYP_IPV4)
+            ip.new( L4_UDP, ...                 ' UDP layer-4 protocol
+                    socket[sck].local_ip, ...   ' socket local IP
+                    rip, ...                    ' remote IP from descriptor
+                    0, ...                      ' codepoint CP0
+                    socket[sck].ttl)            ' socket time-to-live
+            udp.new(socket[sck].local_port, ... ' socket local port
+                    rp)                         ' remote port from descriptor
+            udp.set_payload_checksum( ...
+                    crc.inet_chksum(@socket[sck].txbuff.buffer+socket[sck].txbuff.tail, ...
+                                    len, ...
+                                    0, ...
+                                    false) )
+            xtxput(sck, len)                    ' write datagram data to the NIC
+            udp.update_len_chksum(len)
+            udp.update_checksum(socket[sck].local_ip, rip, len)
+            ip.update_chksum( udp.dgram_len() )
+        net.send_frame( net.fifo_wr_ptr() )
+
+        socket[sck].txbuff.datagram.descr[t]~   ' clear descriptor
+        socket[sck].txbuff.datagram.tail := (t+1) & DG_MASK
 
 
 '--
