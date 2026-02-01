@@ -429,28 +429,20 @@ pub sendto(sck, p_src, len, addr, port): s
 '   port:       remote port
 '   Returns:    number of bytes sent on success
 '               -1 on failure
-'   NOTE: This method blocks
-'    dbg.printf(@"send(%d, %08x, %d)\n\r", sck, p_src, len)
+#ifdef EXT_DBG
+    dbg.printf(@"sendto(%d, %08x, %d, %s, %d)\n\r", sck, p_src, len, str.iptostr(addr), port)
+#endif
     s := 0
+    if ( (sck < 0) or (sck >= MAX_SOCKETS) )
+        return -1                               ' error: invalid argument (invalid socket number)
     ifnot ( addr or port )
         return -1                               ' error: invalid argument (bad remote socket)
 
-    if ( socket[sck].state <> CLOSED )
-        if ( (addr <> socket[sck].remote_ip) or (port <> socket[sck].remote_port) )
-            return -1                           ' error: socket already in use
-
-    socket[sck].remote_ip := addr
-    socket[sck].remote_port := port
-    ifnot ( arp.hw_addr_of(socket[sck].remote_ip) )
-        ' IP/MAC address pair isn't cached; queue it for resolution
-        arp.cache_entry(@_mac_zero, socket[sck].remote_ip, arp.PROTO_TYPE_IP)
-'        dbg.strln(@"sendto(): remote MAC unknown; queuing for resolution")
-        return -1
-'   dbg.printf(@"sendto(): remote is %s\n\r", str.mactostr(@socket[sck].remote_mac))
-
     s := send_datagram(sck, p_src, addr, port, len)
-'    dbg.printf(@"txput(): socket %d %d\n\r", sck, s)
+#ifdef EXT_DBG
+    dbg.printf(@"send_datagram(): socket %d %d\n\r", sck, s)
 '    dbg.hexdump(@socket[sck].txbuff.buffer, 0, 3, len, 16 <# len)
+#endif
     return
 
 
@@ -579,11 +571,7 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, st, g, i
             if ( tx_available(s) > 0 )
                 'dbg.printf(@"socket %d sendq=%d\n\r", s, tx_available(s) )
                 if ( socket[s].protocol == ip.UDP )
-                    if (    arp.is_resolved(socket[s].remote_ip) or ...
-                            arp.is_multicast(socket[s].remote_ip) )
-                        udp_send(s)
-                    else
-                        arp.cache_entry(@_mac_zero, socket[s].remote_ip)
+                    udp_send(s)
                 elseif ( socket[s].protocol == ip.TCP and (socket[s].state == ESTABLISHED) )
                     if ( socket[s].push )
                         tcp_send_socket(s, tcp.PSH|tcp.ACK, tx_available(s) )
@@ -1603,14 +1591,23 @@ pri tcp_send_socket(sck, flags, sl=0): s | ethii_t eh, ip_header_s ih, tcp_msg_s
     return
 
 
-pri udp_send(sck) | ethii_t eh, ip_header_s ih, udp_msg_s uh, h, t, len, rip, rp
+pri udp_send(sck): s | ethii_t eh, ip_header_s ih, udp_msg_s uh, h, t, len, rip, rp
 ' Send a UDP socket's pending data to its recipient
 '   sck:    socket number
     h := socket[sck].txbuff.datagram.head       ' cache descriptor pointers
     t := socket[sck].txbuff.datagram.tail
+    rip := socket[sck].txbuff.datagram.descr[t].remote.address
+#ifdef EXT_DBG
+    dbg.printf(@"udp_send(%d): rip=%s\n\r", sck, str.iptostr(rip) )
+#endif
+    ifnot ( arp.hw_addr_of(rip) )               ' if the remote's MAC address isn't known,
+        arp.cache_entry(@_mac_zero, rip)        '   queue it for resolution by ARP
+#ifdef EXT_DBG
+        dbg.strln(@"udp_send(): caching entry in ARP")
+#endif
+        return -1                               '   and return
 
     if ( ( (h-t) & DG_MASK) > 0 )
-        rip := socket[sck].txbuff.datagram.descr[t].remote.address
         rp := socket[sck].txbuff.datagram.descr[t].remote.port
         len := socket[sck].txbuff.datagram.descr[t].len
 

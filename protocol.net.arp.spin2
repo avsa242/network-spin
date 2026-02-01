@@ -4,7 +4,7 @@
     Description:    Address Resolution Protocol
     Author:         Jesse Burt
     Started:        Feb 27, 2022
-    Updated:        Jan 31, 2026
+    Updated:        Feb 1, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -145,8 +145,7 @@ pub hw_addr_of(ip): hw | e
         return @_macaddr_tmp
     else
         ' IP is a unicast address
-        e := proto_addr_entry(ip)
-        if ( e >= 0 )
+        if ( is_resolved(ip) )
             return @entry[e].hw_addr
 
     return 0
