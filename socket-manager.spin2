@@ -52,7 +52,7 @@ con
 
     struct netcmd_s(...
         long command, ...
-        long parameter)
+        long parameter[3])
 
     struct group_s(...
         long grp_addr, ...
@@ -193,11 +193,9 @@ pub bind(sck, lip, lp=0): s | i
         return -2
 
 
-pub connect(sck, lp, pro, rip, rp): s
+pub connect(sck, rip, rp): s
 ' Connect a socket to a remote host
 '   sck:    socket number
-'   lp:     local port
-'   pro:    layer-4 protocol (L4_UDP, L4_TCP)
 '   rip:    remote IP
 '   rp:     remote port
 '   Returns:
@@ -205,17 +203,20 @@ pub connect(sck, lp, pro, rip, rp): s
 '       -1 on failure
 
     s := 0
-    if ( (pro == L4_TCP) and ip.is_multicast_addr(rip) )
+    if ( (socket[sck].protocol == L4_TCP) and ip.is_multicast_addr(rip) )
         return -1                               ' error: TCP is unicast only
 
-    netcmd.parameter := @sck
+    longmove(@netcmd.parameter[0], @sck, 3)
+
+    dbg.printf(@"connect() %x %x %x\n\r", netcmd.parameter[0], netcmd.parameter[1], netcmd.parameter[2])
+
     netcmd.command := CMD_CONNECT
 
 
 pub disconnect(sck)
 ' Disconnect a socket
 '   sck:    socket number
-    netcmd.parameter := sck
+    netcmd.parameter[0] := sck
     netcmd.command := CMD_DISCONNECT
 
 
@@ -484,7 +485,7 @@ pub setsockopt(sck, opt, val): s
 pub set_if_flags(iface, flags)
 ' Set a network interface's operational flags
     if ( iface < MAX_INTERFACES )
-        netcmd.parameter := @iface
+        longmove(@netcmd.parameter[0], @iface, 2)
         netcmd.command := CMD_SET_IF_FLAGS
 
 
@@ -548,13 +549,13 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, st, g, i
         ' task: check for commands sent by the user
         case netcmd.command                     ' process commands to the network loop
             CMD_CONNECT:
-                open(netcmd.parameter)
+                open(netcmd.parameter[0], netcmd.parameter[1], netcmd.parameter[2])
                 netcmd~
             CMD_DISCONNECT:
-                close(netcmd.parameter)
+                close(netcmd.parameter[0])
                 netcmd~
             CMD_SET_IF_FLAGS:
-                iface_set_flags(netcmd.parameter)
+                iface_set_flags(netcmd.parameter[0], netcmd.parameter[1])
                 netcmd~
         ' task: check for packets received on the network interface
         if ( net.pkt_cnt() )
@@ -803,13 +804,10 @@ pri iface_mcast_dec_ref(iface, mc_addr): l | i, r
     return false
 
 
-pri iface_set_flags(p_if) | iface, flags
+pri iface_set_flags(iface, flags)
 ' Set interface flags
-'   p_if:   pointer to parameters
-'           long[p_if][0]: interface
-'           long[p_if][1]: interface flags
-    iface := long[p_if][0]
-    flags := long[p_if][1]
+'   iface:  interface
+'   flags:  flags to set
     if ( (iface > 0) and (iface < MAX_INTERFACES) )
         if ( flags & IF_PROMISCUOUS )
             net.set_pkt_filter(net.PF_PROMISCUOUS)
@@ -852,49 +850,36 @@ pri lookup_iface(addr, addrlen=4): i | a
     return -1                                   ' error: no interface with that IP
 
 
-pri open(p_setup): s | sck, lp, pro, rip, rp, sn
-' Connect a socket
-'   p_setup:    pointer to 5-long socket setup array
-'    dbg.str(@"open(): ")
-    sck := long[p_setup][0]                     ' socket number
-    lp := long[p_setup][1]                      ' local port
-    pro := long[p_setup][2]                     ' layer-4 protocol
-    rip := long[p_setup][3]                     ' remote IP
-    rp := long[p_setup][4]                      ' remote port
+pri open(sck, rip, rp): s
+' Connect a socket to a remote host
+'   sck:    socket number
+'   rip:    remote IP
+'   rp:     remote port
 
+'    dbg.str(@"open(): ")
     if ( socket[sck].state == CLOSED )
         ifnot ( socket[sck].local_ip )
-'            dbg.strln(@"error: socket not bound to ip")
+#ifdef EXT_DBG
+            dbg.strln(@"open() error: socket not bound to ip")
+#endif
             return -1                           ' error: socket not bound to an interface/IP
 
-        if ( lp < 0 )                           ' pick a random local port if one wasn't specified
-            lp := 49152+math.rndi(16383)
+        if ( socket[sck].local_port < 0 )       ' pick a random local port if one wasn't specified
+            socket[sck].local_port := 49152+math.rndi(16383)
 
-        socket[sck].local_port := lp
-        ifnot ( arp.hw_addr_valid(@socket[sck].remote_mac) )
-            ' if the remote IP's MAC address isn't known (=00:00:00:00:00:00),
-            '   check the ARP resolution table for it
-            if ( arp.is_resolved(rip) )
-                ' if there's an entry for this IP and it's fully resolved, use it
-                bytemove(@socket[sck].remote_mac, arp.hw_addr_of(rip), MACADDR_LEN)
-            else
-                ' ARP doesn't know it yet; add the IP (with zero MAC) to the table so it will
-                '   (hopefully) get resolved
-                arp.cache_entry(@socket[sck].remote_mac, rip, arp.PROTO_TYPE_IP)
-'                dbg.strln(@"mac address unknown")
-                return -1
-        else
-            bytemove(@socket[sck].remote_mac, arp.hw_addr_of(rip), MACADDR_LEN)
-'        dbg.printf(@"remote mac is %s\n\r", str.mactostr(@socket[sck].remote_mac) )
-
-        socket[sck].remote_ip := rip
+        socket[sck].remote_ip := rip            ' fill in remote socket
         socket[sck].remote_port := rp
-        socket[sck].protocol := pro
-        if ( pro == ip.UDP )
-            ' UDP is stateless, so if we've gotten this far, consider the connection established
-            socket[sck].state := ESTABLISHED
-        socket[sck].prev_state := CLOSED
-
+#ifdef EXT_DBG
+        dbg.printf(@"open() rip=%s rp=%d\n\r", str.iptostr(rip), rp)
+#endif
+        if ( socket[sck].protocol == ip.TCP )
+            socket[sck].snd.una := socket[sck].snd.iss := math.rndi(posx)
+            socket[sck].snd.nxt := socket[sck].snd.iss+1
+            socket[sck].rcv.wnd := rx_bytes_free(sck)
+        if ( socket[sck].protocol == ip.UDP )
+            ' UDP is stateless, so if we've gotten this far,
+            '   consider the connection established
+            set_state(sck, ESTABLISHED)
 '        dbg.printf( @"local: %s:%d  ", ...
 '                    str.iptostr(socket[sck].local_ip), socket[sck].local_port)
 '        dbg.printf( @"remote: %s:%d ", ...
@@ -1514,7 +1499,7 @@ pri recv_datagram(sck, rip, rp, len): s | h, t
     return -1                                   ' error: socket buffer or descriptor table full
 
 
-pri tcp_send(lmac, rmac, lip, rip, lp, rp, seqnr, acknr, flags, rwin, ip_ttl=0) | ethii_t eh, ip_header_s ih, tcp_msg_s th
+pri tcp_send(lmac, rmac, lip, rip, lp, rp, seqnr, acknr, flags, rwin, ip_ttl=0): s | ethii_t eh, ip_header_s ih, tcp_msg_s th
 ' Send a TCP segment with arbitrary parameters
 '   lmac:       local MAC address
 '   rmac:       remote MAC address
@@ -1526,6 +1511,16 @@ pri tcp_send(lmac, rmac, lip, rip, lp, rp, seqnr, acknr, flags, rwin, ip_ttl=0) 
 '   acknr:      ACK number
 '   flags:      control flags
 '   rwin:       receive window
+#ifdef EXT_DBG
+    dbg.strln(@"tcp_send()")
+#endif
+    ifnot ( arp.hw_addr_of(rip) )               ' if the remote's MAC address isn't known,
+        arp.cache_entry(@_mac_zero, rip)        '   queue it for resolution by ARP
+#ifdef EXT_DBG
+        dbg.printf(@"tcp_send(): caching entry %s in ARP\n\r", str.iptostr(rip) )
+#endif
+        return -1                               '   and return
+
     ethii.set_header(@eh)
     ip.set_header(@ih)
     tcp.set_header(@th)                         ' use local struct for the TCP header
@@ -1553,7 +1548,15 @@ pri tcp_send_socket(sck, flags, sl=0): s | ethii_t eh, ip_header_s ih, tcp_msg_s
 '   sck:    socket number
 '   flags:  TCP segment flags
 '   sl:     segment length (optional; default=0)
-    'dbg.printf(@"tcp_send_socket(%08x, %08b, %d)\n\r", [sck], flags, sl)
+#ifdef EXT_DBG
+    dbg.printf(@"tcp_send_socket(%08x, %08b, %d)\n\r", [sck], flags, sl)
+#endif
+    ifnot ( arp.hw_addr_of(socket[sck].remote_ip) )' if the remote's MAC address isn't known,
+        arp.cache_entry(@_mac_zero, socket[sck].remote_ip)        '   queue it for resolution by ARP
+#ifdef EXT_DBG
+        dbg.strln(@"tcp_send_socket(): caching entry in ARP")
+#endif
+        return -1                               '   and return
 
     ' set up local structures for use in building the frame
     ethii.set_header(@eh)
@@ -1561,7 +1564,7 @@ pri tcp_send_socket(sck, flags, sl=0): s | ethii_t eh, ip_header_s ih, tcp_msg_s
     tcp.set_header(@th)
 
     net.start_frame()
-        ethii.new(@socket[sck].local_mac, @socket[sck].remote_mac, ETYP_IPV4)
+        ethii.new(@interface.mac_addr, arp.hw_addr_of(socket[sck].remote_ip), ETYP_IPV4)
         ip.new(ip.TCP, socket[sck].local_ip, socket[sck].remote_ip, 0, socket[sck].ttl)
         ' set up TCP header with socket parameters
         tcp.set_source_port(socket[sck].local_port)
