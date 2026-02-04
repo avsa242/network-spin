@@ -7,7 +7,7 @@
         * Multiple sockets
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Feb 1, 2026
+    Updated:        Feb 4, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -208,8 +208,9 @@ pub connect(sck, rip, rp): s
 
     longmove(@netcmd.parameter[0], @sck, 3)
 
+#ifdef EXT_DBG
     dbg.printf(@"connect() %x %x %x\n\r", netcmd.parameter[0], netcmd.parameter[1], netcmd.parameter[2])
-
+#endif
     netcmd.command := CMD_CONNECT
 
 
@@ -226,9 +227,10 @@ pub new_socket(proto=0): p | s
 '   Returns:    socket number on success
 '               negative numbers on failure
     repeat MAX_SOCKETS with s
-        if ( socket[s].state == CLOSED )
+        if ( socket[s].state == UNUSED )
             'dbg.printf(@"socket %d available, ", s)
             socket[s].protocol := proto
+            set_state(s, CLOSED)
             return s
 
 '    dbg.strln(@"error: no free sockets")
@@ -307,7 +309,7 @@ pub recv(sck, p_dest, len=posx, flags=0): s
                     dbg.strln(@"error: connection closing")
 #endif
                     return -1                       ' error: socket not connected
-            CLOSED:
+            CLOSED, UNUSED:
 #ifdef EXT_DBG
                 dbg.strln(@"error: connection doesn't exist")
 #endif
@@ -381,7 +383,7 @@ pub send(sck, p_src, len, flags=0): s
 '    dbg.printf(@"send(%d, %08x, %d)\n\r", sck, p_src, len)
     s := 0
     case socket[sck].state
-        CLOSED:
+        CLOSED, UNUSED:
 '            dbg.strln(@"error: socket does not exist")
             return -1                           ' error: connection does not exist
         LISTENING:
@@ -666,8 +668,8 @@ pri close(sck): s | skn
 
 pri delete_tcb(sck)
 ' Delete the transmission control block
-    if ( socket[sck].state <> CLOSED )
-        set_state(sck, CLOSED)                  ' signal to app
+    if ( socket[sck].state <> UNUSED )
+        set_state(sck, UNUSED)                  ' signal to app
         socket[sck]~
 
 
@@ -1068,7 +1070,7 @@ pri process_tcp(): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop
     if ( (sck < 0) or (sck >= MAX_SOCKETS) )
         'dbg.strln(@"no socket yet")
         case socket[s].state'xxx verify
-            CLOSED:
+            UNUSED, CLOSED:
                 'dbg.strln(@" CLOSED")
                 if ( tcp.flags() & tcp.RST )
                     return -1

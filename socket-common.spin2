@@ -4,7 +4,7 @@
     Description:    Sockets shared/common code
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Feb 1, 2026
+    Updated:        Feb 4, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -93,7 +93,7 @@ con
 
 
    ' socket states
-    #0, CLOSED, SYN_SENT, SYN_RECEIVED, ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, ...
+    #0, UNUSED, CLOSED, SYN_SENT, SYN_RECEIVED, ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, ...
     CLOSING, LAST_ACK, TIME_WAIT, LISTENING
 
 
