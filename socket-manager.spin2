@@ -7,7 +7,7 @@
         * Multiple sockets
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Feb 4, 2026
+    Updated:        Feb 5, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -79,6 +79,7 @@ con
 
     ' interface flags
     IF_PROMISCUOUS      = 1 << 0
+    IF_MULTICAST_EN     = 1 << 1
 
     ' error codes
     OK                  = 0
@@ -484,10 +485,21 @@ pub setsockopt(sck, opt, val): s
             return -1                           ' error: invalid argument
 
 
-pub set_if_flags(iface, flags)
+pub set_if_flags(iface, flags, md=0)
 ' Set a network interface's operational flags
-    if ( iface < MAX_INTERFACES )
-        longmove(@netcmd.parameter[0], @iface, 2)
+'   iface:  interface #
+'   flags:  flags to set
+'   md:     set mode (optional)
+'           0:  set only these flags (default)
+'           1:  add flags (bitwise OR) to existing flags
+
+    if ( (iface >= 0) and (iface < MAX_INTERFACES) )
+        netcmd.parameter[0] := iface
+        if ( md )
+            netcmd.parameter[1] |= iface        ' add flag(s)
+        else
+            netcmd.parameter[1] := iface        ' set only this flag (default)
+
         netcmd.command := CMD_SET_IF_FLAGS
 
 
@@ -810,7 +822,7 @@ pri iface_set_flags(iface, flags)
 ' Set interface flags
 '   iface:  interface
 '   flags:  flags to set
-    if ( (iface > 0) and (iface < MAX_INTERFACES) )
+    if ( (iface >= 0) and (iface < MAX_INTERFACES) )
         if ( flags & IF_PROMISCUOUS )
             net.set_pkt_filter(net.PF_PROMISCUOUS)
 
