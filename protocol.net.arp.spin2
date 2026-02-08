@@ -4,7 +4,7 @@
     Description:    Address Resolution Protocol
     Author:         Jesse Burt
     Started:        Feb 27, 2022
-    Updated:        Feb 1, 2026
+    Updated:        Feb 8, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -127,7 +127,7 @@ PUB entry_is_used(e): f
 
 
 var byte _macaddr_tmp[MACADDR_LEN]
-pub hw_addr_of(ip): hw | e
+pub hw_addr_of(ip): hw
 ' Read an entry from the cache by IP address
 '   ip:         protocol (IPv4) address to resolve
 '   Returns:
@@ -146,7 +146,7 @@ pub hw_addr_of(ip): hw | e
     else
         ' IP is a unicast address
         if ( is_resolved(ip) )
-            return @entry[e].hw_addr
+            return @entry[proto_addr_entry(ip)].hw_addr
 
     return 0
 
