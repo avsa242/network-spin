@@ -4,14 +4,14 @@
     Description:    Ethernet II protocol
     Author:         Jesse Burt
     Started:        Mar 1, 2022
-    Updated:        Jul 8, 2025
-    Copyright (c) 2025 - See end of file for terms of use.
+    Updated:        Feb 14, 2026
+    Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
 {Spin2_v51}
 
 #ifndef NET_COMMON
-#include "net-common.spin2h"
+# include "net-common.spin2h"
 #endif
 
 CON
@@ -29,109 +29,122 @@ VAR
 
     long p_ndev                                 ' network driver object pointer
 
-    ^ethii_t hdr
-
 
 PUB init(optr)
 ' Set pointer to network device object
+'   (must be set in order to read from or write to network device FIFO)
     p_ndev := optr
 
 
-PUB set_header(p_hdr)
-
-    [hdr] := p_hdr
-
-
-PUB dest_addr(): a
-' Get destination address of ethernet frame
-'   hdr:        ethernet-II structure
+PUB dest_addr(^ethii_t eh): a
+' Get destination address of ethernet header
+'   eh:         pointer to ethernet-II structure
 '   Returns:    pointer to 6-byte MAC address
-    return @hdr.dest
+    return @eh.dest
 
 
-PUB ethertype(): t
-' Get ethertype of ethernet frame
-'   hdr:        ethernet-II structure
+PUB ethertype(^ethii_t eh): t
+' Get ethertype of ethernet header
+'   eh:         pointer to ethernet-II structure
 '   Returns:    word (little-endian)
-    return hdr.ethertype
+    return eh.ethertype
 
 
-PUB new(src, dest, ether_t)
-' Start new ethernet-II frame
-'   hdr:        ethernet-II structure
+PUB new(^ethii_t eh, src, dest, ether_t, wrf=1, p_dest=0)
+' Start new ethernet-II header
+'   eh:         pointer to ethernet-II structure
 '   src:        source MAC address (pointer)
 '   dest:       destination MAC address (pointer)
 '   ether_t:    ethertype (little-endian)
-    bytemove(@hdr.dest, dest, MACADDR_LEN)
-    bytemove(@hdr.src, src, MACADDR_LEN)
-    hdr.ethertype := ether_t
+    bytemove(@eh.dest, dest, MACADDR_LEN)
+    bytemove(@eh.src, src, MACADDR_LEN)
+    eh.ethertype := ether_t
 
-    wr_ethii_frame()
+    if ( wrf == 1 )
+        wr_ethii_frame(@eh)
+    elseif ( wrf == 2 )
+        wr_ethii_frame_to(@eh, p_dest)
 
 
-PUB reply(): p
-' Set up/write Ethernet II frame as a reply to last received frame
-'   hdr:        ethernet-II structure
+PUB reply(^ethii_t eh, wrf=1, p_dest=0): p
+' Set up/write Ethernet II header as a reply to last received header
+'   eh:         pointer to ethernet-II structure
+'   wrf:        write header data
+'               0: don't write
+'               1: write directly to network device FIFO
+'               2: write to RAM
+'   p_dest:     where to write ethernet-II frame (if wrf == 2)
 '   Returns:    network device FIFO write pointer after writing ethernet-II data
 
     ' swap the dest & source addresses
-    bytemove(@hdr.dest, @hdr.src, MACADDR_LEN)
-    bytemove(@hdr.src, net[p_ndev].my_mac(), MACADDR_LEN)
+    bytemove(@eh.dest, @eh.src, MACADDR_LEN)
+    bytemove(@eh.src, net[p_ndev].my_mac(), MACADDR_LEN)
 
     ' write the ethernet-II data
-    return wr_ethii_frame()
+    if ( wrf == 1 )
+        return wr_ethii_frame(@eh)
+    elseif ( wrf == 2 )
+        return wr_ethii_frame_to(@eh, p_dest)
 
 
-PUB src_addr(): addr
-' Get source address of ethernet frame
-'   hdr:        ethernet-II structure
+PUB src_addr(^ethii_t eh): a
+' Get source address of ethernet header
+'   eh:         pointer to ethernet-II structure
 '   Returns:    pointer to 6-byte MAC address
-    return @hdr.src
+    return @eh.src
 
 
-PUB set_dest_addr(p_addr)
-' Set destination address of ethernet frame
-'   hdr:    ethernet-II structure
+PUB set_dest_addr(^ethii_t eh, p_addr)
+' Set destination address of ethernet header
+'   eh:     pointer to ethernet-II structure
 '   p_addr: destination MAC address (pointer)
-    bytemove(@hdr.dest, p_addr, MACADDR_LEN)
+    bytemove(@eh.dest, p_addr, MACADDR_LEN)
 
 
-PUB set_ethertype(t)
-' Set ethertype of ethernet frame
-'   hdr:    ethernet-II structure
+PUB set_ethertype(^ethii_t eh, t)
+' Set ethertype of ethernet header
+'   eh:     pointer to ethernet-II structure
 '   t:      ethertype (little-endian word)
-    hdr.ethertype := t
+    eh.ethertype := t
 
 
-PUB set_src_addr(p_addr)
-' Set source address of ethernet frame
-'   hdr:    ethernet-II structure
+PUB set_src_addr(^ethii_t eh, p_addr)
+' Set source address of ethernet header
+'   eh:     pointer to ethernet-II structure
 '   p_addr: source MAC address (pointer)
-    bytemove(@hdr.src, p_addr, MACADDR_LEN)
+    bytemove(@eh.src, p_addr, MACADDR_LEN)
 
 
-PUB rd_ethii_frame(): p
-' Read ethernet-II frame
-'   hdr:    ethernet-II structure
-'   Returns: network device FIFO write pointer after reading
-    net[p_ndev].rd_block(@hdr, ETH_FRM_SZ)
+PUB rd_ethii_frame(^ethii_t eh): p
+' Read ethernet-II header
+'   eh:         pointer to ethernet-II structure
+'   Returns:    network device FIFO write pointer after reading
+    net[p_ndev].rd_block(@eh, ETH_FRM_SZ)
     return net[p_ndev].fifo_wr_ptr()
 
 
-PUB wr_ethii_frame(): p
-' Write ethernet-II frame
-'   hdr:        ethernet-II structure
+PUB wr_ethii_frame(^ethii_t eh): p
+' Write ethernet-II header directly to network device FIFO
+'   eh:         pointer to ethernet-II structure
 '   Returns:    network device FIFO write pointer after writing
-    net[p_ndev].wr_block(@hdr.dest, MACADDR_LEN)
-    net[p_ndev].wr_block(@hdr.src, MACADDR_LEN)
-    net[p_ndev].wr_block(@hdr.ethertype, 2)
+    net[p_ndev].wr_block(@eh.dest, MACADDR_LEN)
+    net[p_ndev].wr_block(@eh.src, MACADDR_LEN)
+    net[p_ndev].wr_block(@eh.ethertype, 2)
 
     return net[p_ndev].fifo_wr_ptr()
+
+
+pub wr_ethii_frame_to(^ethii_t eh, p_dest): p
+' Write ethernet-II frame
+'   eh:         pointer to ethernet-II structure
+'   p_dest:     RAM location to write ethernet-II header to
+'   Returns:    network device FIFO write pointer after writing
+    bytemove(p_dest, @eh, ETH_FRM_SZ)
 
 
 DAT
 {
-Copyright 2025 Jesse Burt
+Copyright 2026 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

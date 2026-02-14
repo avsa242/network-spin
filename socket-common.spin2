@@ -4,7 +4,7 @@
     Description:    Sockets shared/common code
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Feb 4, 2026
+    Updated:        Feb 14, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -78,6 +78,8 @@ con
         long            remote_ip, ...
         word            remote_port, ...
         byte            remote_mac[6], ...
+        long            local_timestamp, ...    ' our timestamp
+        long            remote_timestamp, ...   ' most recent timestamp received (TCP only)
         long            p_signal, ...           ' pointer to signalling "mailbox"
         snd_s           snd, ...
         rcv_s           rcv, ...

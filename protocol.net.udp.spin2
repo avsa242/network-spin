@@ -4,8 +4,8 @@
     Description:    Universal Datagram Protocol
     Author:         Jesse Burt
     Started:        Feb 28, 2022
-    Updated:        Aug 11, 2025
-    Copyright (c) 2025 - See end of file for terms of use.
+    Updated:        Feb 14, 2026
+    Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
 {Spin2_v51}
@@ -175,6 +175,30 @@ pub update_checksum(lip, rip, len=0): ck | tmp, pck
     net[p_ndev].fifo_set_wr_ptr(tmp)
 
 
+pub wr_checksum_to(p_dest, lip, rip, len=0, p_pld=0): ck | tmp
+' Calculate and write UDP checksum
+'   p_dest:     location to write checksum (pointer)
+'   lip:        local IP
+'   rip:        remote IP
+'   len:        length of payload data (optional; default is 0)
+'   p_pld:      payload data (pointer; optional; ignored if len == 0)
+'   Returns:    checksum in network byte order
+
+    set_chksum(0)                               ' init checksum field to 0
+
+    ' calc pseudo-header checksum seeded by the payload data checksum
+    ' then feed that into the UDP header checksum
+    ck := 0
+    if ( len )
+        ck := crc.inet_chksum(p_pld, len, 0, false)
+    ck := pseudo_header_cksum(lip, rip, UDP_MSG_SZ+len, ck, false)
+    ck := crc.inet_chksum(@hdr, UDP_MSG_SZ, ck, true)
+
+    ' write/return the checksum
+    ck := swap_word(ck)                         ' swap to network byte order
+    word[p_dest] := ck
+
+
 PUB update_len_chksum(len) | tmp, c
 ' Update the UDP header length and checksum
 '   len:    datagram length
@@ -194,9 +218,15 @@ PUB wr_udp_header(): ptr
     return net[p_ndev].fifo_wr_ptr()
 
 
+PUB wr_udp_header_to(p_dest): ptr
+' Write/assemble UDP header
+'   Returns: length of assembled header, in bytes
+    bytemove(p_dest, @hdr, sizeof(hdr))
+
+
 DAT
 {
-Copyright 2025 Jesse Burt
+Copyright 2026 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

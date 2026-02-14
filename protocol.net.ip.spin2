@@ -4,7 +4,7 @@
     Description:    Internet Protocol
     Author:         Jesse Burt
     Started:        Feb 7, 2022
-    Updated:        Jan 31, 2026
+    Updated:        Feb 14, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -380,7 +380,8 @@ PUB set_flags(f)
 
 PUB set_frag_offset(offs)
 ' Set offset in overall message of this fragment
-    hdr.flags_frag_h |= (offs.byte[1] & $1f) | offs.byte[0]
+    hdr.flags_frag_h |= (offs.byte[1] & $1f)
+    hdr.frag_l := offs.byte[0]
 
 
 PUB set_hdr_chk(ck)
@@ -467,6 +468,23 @@ PUB update_chksum(len): ck | p_tmp, ihl
     net[p_ndev].fifo_set_wr_ptr(p_tmp)          ' restore pointer pos
 
 
+PUB wr_chksum_to(p_dest): ck | p_tmp, ihl
+' Update IP header with checksum
+'   len: length of datagram (layer-4 and datagram only; don't include the 20-byte IP header)
+    ' update IP header with specified length and calculate checksum;
+    '   NOTE: the checksum should encompass the IP header _only_, _not_ the layer-4 protocol
+    '   and the payload, if they exist
+    ihl := hdr_len()-IP_HDR_SZ
+    if ( _nr_options > 0 )                      ' update the IP header checksum
+        ck := crc.inet_chksum(@hdr, IP_HDR_SZ, 0, false )
+        ck := crc.inet_chksum(@option[0], 4, ck)
+    else
+        ck := crc.inet_chksum(@hdr, hdr_len() )
+
+    ck := swap_word(ck)
+    word[p_dest] := ck
+
+
 PUB version(): v
 ' Get IP version
 '   Returns: byte
@@ -493,6 +511,11 @@ PUB wr_ip_header(): p
     net[p_ndev].wr_block(@hdr.dest_addr, 4)
 
     return net[p_ndev].fifo_wr_ptr()
+
+
+pub wr_ip_header_to(p_dest): p
+
+    bytemove(p_dest, @hdr, IP_HDR_SZ)
 
 
 pub wr_option(t, len, p_vals): l
