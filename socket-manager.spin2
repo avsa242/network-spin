@@ -7,7 +7,7 @@
         * Multiple sockets
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Feb 5, 2026
+    Updated:        Feb 23, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -20,15 +20,6 @@
 # pragma exportdef(NETIF_DRIVER)
 #endif
 
-#ifdef EXT_DBG
-# ifndef DBG_RX
-#  define DBG_RX 34
-# endif
-# ifndef DBG_TX
-#  define DBG_TX 36
-# endif
-#endif
-
 #include "net-common.spin2h"
 #include "socket-common.spin2"
 
@@ -39,17 +30,12 @@ con
     MAX_INTERFACES      = 1
     MAX_IP_PER_IFACE    = 1
     MAX_IP6_PER_IFACE   = 1
-    MAX_SOCKETS         = 10
-    MAX_SERVICES        = 10
-    MAX_MC_GROUPS_IFACE = 4
+    MAX_SOCKETS         = 2                     ' must be at least 1 (or 2 for a server)
+    MAX_MC_GROUPS_IFACE = 1
     MAX_MC_SOURCES_IFACE= 64
+    FRAME_HEADROOM_SZ   = 128                   ' 128 should cover any type of frame
 
     ' structure definitions
-    struct service_s(...
-        long p_signal, ...                      ' pointer to handler's mailbox to receive signals
-        word port, ...
-        byte proto)
-
     struct netcmd_s(...
         long command, ...
         long parameter[3])
@@ -70,6 +56,45 @@ con
         group_s     mc_group[MAX_MC_GROUPS_IFACE], ...
         byte        link_state)
 
+    PKTBUFF_CNT     = 8
+    PKTBUFF_MASK    = PKTBUFF_CNT-1
+    struct pktbuff_s(...
+        long p_data, ...
+        long p_end, ...
+        long len, ...
+        byte layer_written, ...
+        byte buffer[FRAME_HEADROOM_SZ+RINGBUFF_SZ])
+
+    ARP_REQSQ_SZ     = 4
+    ARP_REQSQ_MASK   = ARP_REQSQ_SZ-1
+    struct arp_requestq_ent_s(...
+        long ip_addr, ...
+        long last_try, ...
+        long pbuf, ...
+        byte type)
+
+    struct arp_requestq_s(...
+        long head, ...
+        long tail, ...
+        arp_requestq_ent_s  entry[ARP_REQSQ_SZ])
+
+    ARP_REPLQ_SZ    = 4
+    ARP_REPLQ_MASK  = ARP_REPLQ_SZ-1
+    struct arp_replyq_ent_s(...
+        long pbuf)
+    struct arp_replyq_s(...
+        long head, ...
+        long tail, ...
+        arp_replyq_ent_s    entry[ARP_REPLQ_SZ])
+
+
+    MAX_TCP_TX_PENDING  = 4
+    MAX_TCP_TX_PEND_MASK= MAX_TCP_TX_PENDING-1
+    struct tcp_tx_pend_s(...
+        byte head, ...
+        byte tail, ...
+        byte index[MAX_TCP_TX_PENDING])
+
 
     ' messages to netloop
     CMD_CONNECT         = 1                     ' connect a socket
@@ -80,6 +105,12 @@ con
     ' interface flags
     IF_PROMISCUOUS      = 1 << 0
     IF_MULTICAST_EN     = 1 << 1
+
+
+    ' socket options
+    #1, IP_TTL, IP_MULTICAST_IF, IP_MULTICAST_TTL, IP_ADD_MEMBERSHIP, IP_DROP_MEMBERSHIP, ...
+    IP_ADD_SOURCE_MEMBERSHIP, IP_DROP_SOURCE_MEMBERSHIP, IP_BLOCK_SOURCE
+
 
     ' error codes
     OK                  = 0
@@ -98,22 +129,25 @@ obj
     str:    "string"
     math:   "math.int"
     crc:    "math.crc"
-#ifdef EXT_DBG
-    dbg:    "com.serial.terminal.ansi"
-#endif
+    netstr: "net-util"
 
 
 var
 
-    iface_s     interface[MAX_INTERFACES]       ' network interfaces
-    service_s   service[MAX_SERVICES]           ' registered services/handlers
-    socket_s    socket[MAX_SOCKETS]             ' socket structures
-    netcmd_s    netcmd                          ' command interface to the network loop
+    iface_s         interface[MAX_INTERFACES]   ' network interfaces
+    socket_s        socket[MAX_SOCKETS]         ' socket structures
+    netcmd_s        netcmd                      ' command interface to the network stack cog
+    arp_requestq_s  arp_request_q               ' ARP resolution queue
+    arp_replyq_s    arp_reply_q                 ' ARP reply queue
+    pktbuff_s       pktbuff[PKTBUFF_CNT]        ' transmit packet buffer queue
+    tcp_tx_pend_s   tcp_tx_pend                 ' pending TCP transmission queue
 
-    long        _cog
+    long            _cog
+    long            _timestamp_base
+    long            pb_head, pb_tail
 
 
-con NET_STACK_SZ    = 250
+con NET_STACK_SZ    = 400
 pub start(CS, SCK, MOSI, MISO, SPI_FREQ=10_000_000): s | st
 ' Start the network device driver and the network processing loop
 '   CS:         SPI Chip Select
@@ -121,19 +155,14 @@ pub start(CS, SCK, MOSI, MISO, SPI_FREQ=10_000_000): s | st
 '   MOSI:       Master-Out Slave-In
 '   MISO:       Master-In Slave-Out
 '   SPI_FREQ:   SPI bus frequency (default is 10_000_000)
-#ifdef EXT_DBG
-    dbg.startrxtx(DBG_RX, DBG_TX, 0, 2_000_000)
-    dbg.clear()
-    dbg.strln(@"dbg started")
-#endif
-    cogspin(NEWCOG, cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ), @_netloop_stack)+1
+    cogspin(NEWCOG, cog_stack(CS, SCK, MOSI, MISO, SPI_FREQ), @_netstack_stk)+1
 
     ' wait up to one second for the network driver signal it's started
-    st := getct()
+    st := getms()
     repeat
         if ( _cog )
             return _cog
-    until ( abs(getct()-st) > clkfreq )
+    until ( (getms()-st) > 1_000 )
 
     return false
 
@@ -141,25 +170,27 @@ pub start(CS, SCK, MOSI, MISO, SPI_FREQ=10_000_000): s | st
 pub accept(ls): cs
 ' Accept a new connection from a listening socket
 '   ls:         listening socket number
-'   Returns:    socket number of new connection
+'   Returns:    socket number of new connection on success
+'               -1 if the given socket isn't a valid listening socket
+'               -2 if there are no incoming connections pending yet
     if ( socket[ls].state <> LISTENING )
-        'dbg.printf(@"error: socket %d isn't in LISTENING state\n\r", ls)
+        DEBUG("accept(): error: socket ", udec_(ls), " isn't in LISTENING state")
         return -1                               ' error: socket isn't a listening socket
     cs := socket[ls].backlog.head
 
-'    dbg.printf(@" cs=%d\n\r", cs)
     if ( cs < 0 )
-'        dbg.strln(@" no connections waiting")
-        return -1                               ' no connections waiting
+        return -2                               ' no connections waiting
+
     socket[ls].backlog.head := socket[cs].backlog.pnext
     socket[ls].backlog.pending--                ' decrement listener's pending connections 
     if ( socket[ls].backlog.head < 0 )
         socket[ls].backlog.tail := -1
-'    dbg.printf(@" head=%d  backlog=%d  tail=%d  cs=%d\n\r", ...
-'                socket[ls].backlog.head, ...
-'                socket[ls].backlog.pending, ...
-'                socket[ls].backlog.tail, ...
-'                cs)
+{
+    DEBUG(  "head=", udec_(socket[ls].backlog.head), ...
+            " backlog=", udec_(socket[ls].backlog.pending), ...
+            " tail=", udec_(socket[ls].backlog.tail), ...
+            " cs=", udec_(cs) )
+}
     return cs
 
 
@@ -171,37 +202,38 @@ pub bind(sck, lip, lp=0): s | i
 '   Returns:    0 on success
 '               negative numbers on failure
 
-#ifdef EXT_DBG
-'    dbg.str(@"bind(): ")
-#endif
+    DEBUG("bind(): ")
     ifnot ( socket[sck].local_ip )              ' make sure this socket isn't already bound
         if ( lookup_iface(lip) >= 0 )
             socket[sck].local_ip := lip
             ifnot ( lp )                        ' choose a random ephemeral port number if
                 lp := 49152+math.rndi(16383)    '   one wasn't specified
             socket[sck].local_port := lp
+            DEBUG(  "socket ", udec_(sck), ...
+                    "ip: ", zstr_(str.iptostr(socket[sck].local_ip)), ...
+                    "mac: ", zstr_(str.mactostr( arp.hw_addr_of(socket[sck].local_ip) ) ) )
             return OK
-#ifdef EXT_DBG
-'        dbg.printf( @"socket %d  ip: %s  mac: %s\n\r", ...
-'                    sck, ...
-'                    str.iptostr(interface.local_ip), ...
-'                    str.mactostr(@interface.mac_addr) )
-#endif
-'        dbg.strln(@"error: no such interface")
+        DEBUG(" error: no such interface")
         return -1
     else
-'        dbg.strln(@"error: address already in use")
+        DEBUG(" error: address already in use")
         return -2
 
 
-pub connect(sck, rip, rp): s
+pub connect(sck, rip, rp): s | st, tmo
 ' Connect a socket to a remote host
 '   sck:    socket number
 '   rip:    remote IP
 '   rp:     remote port
 '   Returns:
-'       0 on success (i.e., no errors in the method call syntax)
-'       -1 on failure
+'       0 on success
+'       -1 on failure (invalid argument)
+'       -2 on failure (connection timed out)
+
+'   NOTE: This method will block until the connection succeeds or the timeout (30sec) is reached,
+'       whichever is first.
+'       For non-blocking behavior, set the SOCK_NONBLOCK option on your socket. Then (optionally),
+'       poll() can be used to wait for a specific connection state.
 
     s := 0
     if ( (socket[sck].protocol == L4_TCP) and ip.is_multicast_addr(rip) )
@@ -209,10 +241,20 @@ pub connect(sck, rip, rp): s
 
     longmove(@netcmd.parameter[0], @sck, 3)
 
-#ifdef EXT_DBG
-    dbg.printf(@"connect() %x %x %x\n\r", netcmd.parameter[0], netcmd.parameter[1], netcmd.parameter[2])
-#endif
+    DEBUG(  "connect(", udec_(netcmd.parameter[0]), zstr_(str.iptostr(netcmd.parameter[1]) ), udec_(netcmd.parameter[2]), ")")
     netcmd.command := CMD_CONNECT
+
+    if ( socket[sck].options & SOCK_NONBLOCK )
+        return 0                                ' socket is non-blocking type; return success now
+
+    st := getms()
+    tmo := 30_000
+    repeat                                      ' wait for connection to succeed (up to 30sec)
+        if ( socket[sck].state == ESTABLISHED )
+            return 0                            ' connection established
+    until ( (getms() - st) > tmo )
+
+    return -2                                   ' error: timeout connecting
 
 
 pub disconnect(sck)
@@ -222,59 +264,64 @@ pub disconnect(sck)
     netcmd.command := CMD_DISCONNECT
 
 
-pub new_socket(proto=0): p | s
-' Find a free socket
+pub poll(sck, st, tmo=30_000): s | tst
+' Wait for a socket to reach a specific state
+'   sck:    socket number
+'   st:     socket state
+'   tmo:    timeout in milliseconds (optional; default is 30_000, or 30 seconds)
+'   Returns:    0 if socket's state reaches that specified
+'               -1 on timeout
+    tst := getms()
+    repeat
+        if ( socket[sck].state == st )          ' state matches
+            return 0
+    while ( (getms() - tst) < tmo )             ' loop until timeout reached
+
+    return -1                                   ' error: timeout
+
+
+pub new_socket(proto=0): p | sck
+' Find/allocate a free socket
 '   proto:      layer-4 protocol (optional; L4_UDP, L4_TCP)
 '   Returns:    socket number on success
 '               negative numbers on failure
-    repeat MAX_SOCKETS with s
-        if ( socket[s].state == UNUSED )
-            'dbg.printf(@"socket %d available, ", s)
-            socket[s].protocol := proto
-            set_state(s, CLOSED)
-            return s
 
-'    dbg.strln(@"error: no free sockets")
+    DEBUG("new_socket()")
+    repeat MAX_SOCKETS with sck
+        if ( socket[sck].state == UNUSED )
+            DEBUG("socket ", udec_(sck), " available ")
+            socket[sck].protocol := proto
+            set_state(sck, CLOSED)
+            return sck
+
+    DEBUG(" error: no free sockets")
     return -1
 
 
-pub listen(port, bl=5): s | svn, skn
+pub listen(port, bl=5): s | svn, sck
 ' Set up a socket to listen on a port
-'   port:       port to listen (a protocol handler must have been previously registered with this port)
+'   port:       port to listen
 '   bl:         pending connection backlog queue depth (default is 5 if unspecified)
 '   Returns:    socket number on success
 '               negative numbers on failure
-    repeat MAX_SERVICES with svn                ' look for a registered handler for this port
-        if ( service[svn].port == port )
-            ' found matching service
-#ifdef EXT_DBG
-            dbg.printf(@"found service %d registered on port %d (%s)\n\r", ...
-                svn, port, prostr(service[svn].proto) )
-#endif
-            repeat MAX_SOCKETS with skn
-                if ( socket[skn].local_ip and ...
-                    (socket[skn].state == CLOSED) and ...
-                    (socket[skn].protocol == service[svn].proto) )
-                    socket[skn].state := LISTENING
-                    socket[skn].local_port := port
-                    socket[skn].p_signal := service[svn].p_signal
-                    socket[skn].rcv.wnd := RINGBUFF_SZ
-                    socket[skn].snd.wnd := 0
-                    socket[skn].snd.wl1 := 0
-                    socket[skn].rcv.nxt := 0
-                    socket[skn].backlog.max_depth := bl
-                    socket[skn].backlog.pending := 0
-                    socket[skn].backlog.head := -1
-                    socket[skn].backlog.tail := -1
-                    return skn
-#ifdef EXT_DBG
-            dbg.strln(@"error: no sockets available")
-#endif
-            return -1
-#ifdef EXT_DBG
-    dbg.printf(@"error: no service registered with port %d\n\r", port)
-#endif
-    return -2                                   ' no service assigned to this port, protocol pair
+    DEBUG("listen()")
+
+    repeat MAX_SOCKETS with sck
+        if ( socket[sck].local_ip and (socket[sck].state == CLOSED) )
+            socket[sck].state := LISTENING
+            socket[sck].local_port := port
+            socket[sck].rcv.wnd := rx_bytes_free(sck)
+            socket[sck].snd.wnd := 0
+            socket[sck].snd.wl1 := 0
+            socket[sck].rcv.nxt := 0
+            socket[sck].backlog.max_depth := bl
+            socket[sck].backlog.pending := 0
+            socket[sck].backlog.head := -1
+            socket[sck].backlog.tail := -1
+            return sck
+
+    DEBUG(" error: no sockets available")
+    return -1
 
 
 pub recv(sck, p_dest, len=posx, flags=0): s
@@ -286,7 +333,7 @@ pub recv(sck, p_dest, len=posx, flags=0): s
 
 '   Returns:    number of bytes received on success
 '               -1 on failure
-'    dbg.strln(@"recv()")
+    DEBUG("recv(): ")
 
     if ( len <= 0 )
         return -2                               ' error: bad length
@@ -296,29 +343,19 @@ pub recv(sck, p_dest, len=posx, flags=0): s
     if ( socket[sck].protocol == L4_TCP )
         case socket[sck].state
             ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2:
-#ifdef EXT_DBG
-                dbg.strln(@"connected")
-#endif
+                DEBUG("connected")
             LISTENING, SYN_SENT, SYN_RECEIVED:      ' queue for processing in ESTABLISHED state
-#ifdef EXT_DBG
-                dbg.strln(@"not yet connected; queue")
-#endif
+                DEBUG("not yet connected; queue")
                 return OK
             CLOSE_WAIT:                             ' deliver remaining text
                 ifnot ( rx_available(sck) )         '   otherwise, error: connection closing
-#ifdef EXT_DBG
-                    dbg.strln(@"error: connection closing")
-#endif
+                    DEBUG("error: connection closing")
                     return -1                       ' error: socket not connected
             CLOSED, UNUSED:
-#ifdef EXT_DBG
-                dbg.strln(@"error: connection doesn't exist")
-#endif
+                DEBUG("error: connection doesn't exist")
                 return -1                           ' error: connection doesn't exist
             CLOSING, LAST_ACK, TIME_WAIT:           ' error: connection closing
-#ifdef EXT_DBG
-                dbg.strln(@"error: connection closing")
-#endif
+                DEBUG("error: connection closing")
     return rxget(sck, p_dest, len)              ' copy data from the socket buffer
 
 
@@ -328,7 +365,7 @@ pub recvfrom(sck, p_dest, max_len, flags, ^sockaddr_s p_addr, addrlen=0): l | h,
 '   p_dest:     pointer to destination to copy received data to
 '   max_len:    maximum length of data to receive
 '   flags:      currently unused
-'   p_addr:     pointer to sockaddr_s structure (.address, .port) to copy remote IP and port to
+'   p_addr:     socket address structure to copy address and port of the datagram sender to
 '   addrlen:    currently unused
 
     ' check if there are any datagrams queued
@@ -352,26 +389,6 @@ pub recvq(sck): a
     return rx_available(sck)
 
 
-pub register_service(port, proto, p_mbox=0): s
-' Register an application protocol as a handler for a service
-'   port:       listening port of service
-'   proto:      layer-4 protcol (L4_TCP, L4_UDP)
-'   p_mbox:     pointer to protocol's message mailbox interface
-'    dbg.str(@"register_service(): ")
-    repeat MAX_SERVICES with s
-        ifnot ( service[s].port )
-            service[s].port := port
-            service[s].proto := proto
-            if ( p_mbox )
-                service[s].p_signal := p_mbox
-#ifdef EXT_DBG
-            dbg.printf(@"assigned port %d to service slot %d\n\r", port, s)
-#endif
-            return s
-
-    return -1                                   ' error: no more services available
-
-
 pub send(sck, p_src, len, flags=0): s
 ' Send data to a socket
 '   sck:        socket number
@@ -381,108 +398,88 @@ pub send(sck, p_src, len, flags=0): s
 
 '   Returns:    number of bytes sent on success
 '               -1 on failure
-'    dbg.printf(@"send(%d, %08x, %d)\n\r", sck, p_src, len)
+
+    DEBUG("send(", udec_(sck), uhex_(p_src), udec_(len), uhex_(flags) )
     s := 0
     case socket[sck].state
         CLOSED, UNUSED:
-'            dbg.strln(@"error: socket does not exist")
+            DEBUG(" error: socket does not exist")
             return -1                           ' error: connection does not exist
         LISTENING:
-'            dbg.strln(@"error: remote socket not specified")
+            DEBUG(" error: remote socket not specified")
             return -1                           ' error: remote socket not specified
         FIN_WAIT_1, FIN_WAIT_2, CLOSING, LAST_ACK, TIME_WAIT:
-'            dbg.strln(@"error: socket closing")
+            DEBUG(" error: socket closing")
             return -1                           ' error: connection closing
         SYN_SENT, SYN_RECEIVED, ESTABLISHED, CLOSE_WAIT:
-'            dbg.strln(@"socket connected")
+            DEBUG(" socket connected")
             if ( len <= 0 )
                 return -1                       ' error: bad length
 
     s := txput(sck, p_src, len)                 ' copy data to the socket's buffer
     if ( flags )
-        socket[sck].push := 1
-'    dbg.printf(@"txput(): %d\n\r", s)
-'    dbg.hexdump(@socket[sck].txbuff.buffer, 0, 3, len, 16 <# len)
+        socket[sck].push_data := 1
+    if ( enqueue_tcp_tx(sck) < 0 )
+        return -1                               ' error: pending TCP transmission queue full
+
     return
 
 
-pub send_command(ncmd, parm)
-' Send a command to the network loop
-'   ncmd:
-'       CMD_DISCONNECT (1): disconnect a socket (set sck to the address of the socket)
-'       other values ignored
-'   parm:   pointer to parameter(s)
-    if ( ncmd == CMD_DISCONNECT )
-'        dbg.printf(@"disconnect socket @%d\n\r", parm)
-        netcmd.parameter := parm
-    netcmd.command := ncmd
-
-
 pub sendq(sck): a
-' Get the number of bytes queued in a socket's receive buffer
+' Get the number of bytes queued in a socket's transmit buffer
     return tx_available(sck)
 
 
-pub sendto(sck, p_src, len, addr, port): s
-' Send data to a UDP socket
+pub sendto(sck, p_src, len, flags, addr, port, al=4): s
+' Send data to a remote host
 '   sck:        socket number
 '   p_src:      pointer to data to send
 '   len:        length of data to send
 '   flags:      send flags (currently unused)
 '   addr:       remote address
 '   port:       remote port
+'   al:         address length (currently unused)
 '   Returns:    number of bytes sent on success
 '               -1 on failure
-#ifdef EXT_DBG
-    dbg.printf(@"sendto(%d, %08x, %d, %s, %d)\n\r", sck, p_src, len, str.iptostr(addr), port)
-#endif
+
+    DEBUG("sendto(", udec_(sck), uhex_(p_src), udec_(len), zstr_(str.iptostr(addr)), udec_(port), ")" )
     s := 0
     if ( (sck < 0) or (sck >= MAX_SOCKETS) )
         return -1                               ' error: invalid argument (invalid socket number)
     ifnot ( addr or port )
         return -1                               ' error: invalid argument (bad remote socket)
 
-    s := send_datagram(sck, p_src, addr, port, len)
-#ifdef EXT_DBG
-    dbg.printf(@"send_datagram(): socket %d %d\n\r", sck, s)
-'    dbg.hexdump(@socket[sck].txbuff.buffer, 0, 3, len, 16 <# len)
-#endif
-    return
+    if ( socket[sck].protocol == ip.UDP )
+        ' allow re-assigning the socket's remote IP if the address in this call differs
+        socket[sck].remote_ip := addr
+
+        ' queue the datagram
+        if ( tx_datagrams_free(sck) > 0 )       ' check for free descriptor
+            s := txput(sck, p_src, len)         ' (try to) copy the datagram to the socket buffer
+            if ( s > 0 )                        ' upon success, write the descriptor
+                tx_queue_datagram(sck, addr, port, len)
+                DEBUG(" OK")
+                return
+            DEBUG(" error: socket buffer or descriptor table full")
+        return -1                               ' error: socket buffer or descriptor table full
 
 
-pub service_number(port, proto): s
-' Get index in the service table for matching service
-'   port:       port number to match
-'   proto:      layer-4 protocol to match
-'   Returns:    service index on success
-'               negative numbers if there's no matching service
-    s := -1
-    repeat MAX_SERVICES with s
-        if ( (port == service[s].port) and (proto == service[s].proto) )
-            return s
 
-
-con
-
-    ' socket options
-    #1, IP_TTL, IP_MULTICAST_IF, IP_MULTICAST_TTL, IP_ADD_MEMBERSHIP, IP_DROP_MEMBERSHIP, ...
-    IP_ADD_SOURCE_MEMBERSHIP, IP_DROP_SOURCE_MEMBERSHIP, IP_BLOCK_SOURCE
-
-
-pub setsockopt(sck, opt, val): s
-' Set socket options
-'   sck:    socket number
-'   opt:    option
-'   val:    value
-    case opt
-        IP_TTL, IP_MULTICAST_TTL:               ' IP time to live (0..255)
-            socket[sck].ttl := val
-        IP_ADD_MEMBERSHIP:                      ' add multicast group membership
-            socket_add_group(sck, val)
-        IP_DROP_MEMBERSHIP:                     ' drop multicast group membership
-            socket_leave_group(sck, val)
-        other:
-            return -1                           ' error: invalid argument
+pub set_if_addr(iface, ma, ipa, al=IPV4ADDR_LEN)'todo: this needs to be written to support multiple IP addresses
+' Set an interface's addresses
+'   iface:  interface #
+'   ma:     MAC address (pointer)
+'   ipa:    IP address
+'               for IPv4 addresses, the address (Propeller byte order)
+'               for IPv6 addresses, a pointer to the address
+'   al:     address len
+'               for IPv4 addresses, 4 (default)
+'               for IPv6 addresses, 16
+    if ( iface < MAX_INTERFACES )
+        bytemove(@interface[iface].mac_addr, ma, MACADDR_LEN)
+        if ( al == IPV4ADDR_LEN )
+            interface[iface].ipv4_addr := ipa
+            arp.cache_entry(ma, interface[iface].ipv4_addr)
 
 
 pub set_if_flags(iface, flags, md=0)
@@ -503,18 +500,6 @@ pub set_if_flags(iface, flags, md=0)
         netcmd.command := CMD_SET_IF_FLAGS
 
 
-pub set_ip(iface, addr)
-' Set this node's IP address
-    if ( iface < MAX_INTERFACES )
-        interface[iface].ipv4_addr := swap_long(addr)
-
-
-pub set_mac_addr(iface, p_addr)
-' Set the MAC address of the network device
-    if ( iface < MAX_INTERFACES )
-        bytemove(@interface[iface].mac_addr, p_addr, MACADDR_LEN)
-
-
 pub set_socket_mailbox(sck, p_mbox)
 ' Set a socket's signal mailbox pointer
 '   sck:    socket number
@@ -522,11 +507,37 @@ pub set_socket_mailbox(sck, p_mbox)
     socket[sck].p_signal := p_mbox
 
 
-var long _netloop_stack[NET_STACK_SZ], _slock
-pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, st, g, i
-' Network processing loop
-    st := net.startx(CS, SCK, MOSI, MISO, SPI_FREQ)
+pub setsockopt(sck, opt, val): s
+' Set socket options
+'   sck:    socket number
+'   opt:    option
+'   val:    value
+    case opt
+        IP_TTL, IP_MULTICAST_TTL:               ' IP time to live (0..255)
+            socket[sck].ttl := val
+        other:
+            return -1                           ' error: invalid argument
+
+
+pub stack_command(ncmd, parm)
+' Send a command to the network stack cog
+'   ncmd:
+'       CMD_DISCONNECT (1): disconnect a socket (set sck to the address of the socket)
+'       other values ignored
+'   parm:   pointer to parameter(s)
+    if ( ncmd == CMD_DISCONNECT )
+        netcmd.parameter := parm
+    netcmd.command := ncmd
+
+
+' -- Stack-side functions
+
+var long _netstack_stk[NET_STACK_SZ], _slock
+pri cog_stack(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, SPI_FREQ) | st, s, tl, ul, pbuf, l, rip, sck
+' Network stack main processing loop
+    st := net.startx(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, SPI_FREQ)
     ifnot ( st )                                ' network driver returned an error on startup
+        DEBUG("error: network driver failed to start - halting")
         cogstop( cogid() )
 
     _cog := cogid()                             ' signal that we've started successfully
@@ -544,21 +555,16 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, st, g, i
 
     net.node_address(@interface.mac_addr)
     net.set_pkt_filter(net.PF_MY_UNICAST_ACCEPT | net.PF_BADCRC_REJECT)
-    t := getct()
-
+    _timestamp_base := swap_long(math.rnd(posx))' randomize local timestamp (TCP only) 'xxx
     repeat
         ' suspend processing if the network link is/goes down
         if ( (net.phy_link_state() == net.DOWN) or (interface.link_state == 0) )
             interface.link_state := 0
-#ifdef EXT_DBG
-            dbg.strln(@"net link DOWN")
-#endif
+            DEBUG("net link DOWN")
             repeat
             until ( net.phy_link_state() == net.UP )
-#ifdef EXT_DBG
-            dbg.strln(@"net link UP")
-#endif
-            arp_announce()
+            DEBUG("net link UP")
+            arp_announce()  'xxx rewrite this such that it queues a task for ARP
             interface.link_state := 1
         ' task: check for commands sent by the user
         case netcmd.command                     ' process commands to the network loop
@@ -574,74 +580,155 @@ pri cog_netloop(CS, SCK, MOSI, MISO, SPI_FREQ) | t, s, e, st, g, i
         ' task: check for packets received on the network interface
         if ( net.pkt_cnt() )
             net.get_frame()
-            process_ethii()                     ' parse incoming frames
-        ' task: check for multicast group membership changes
-        repeat MAX_INTERFACES with i
-            repeat MAX_MC_GROUPS_IFACE with g
-                if ( interface[i].mc_group[g].report_pending )
-                    igmp_membership_report()
-                    interface[i].mc_group[g].report_pending := 0
-        ' task: check the socket table for sockets with pending data to be transmitted
-        repeat MAX_SOCKETS with s
-            if ( tx_available(s) > 0 )
-                'dbg.printf(@"socket %d sendq=%d\n\r", s, tx_available(s) )
-                if ( socket[s].protocol == ip.UDP )
-                    udp_send(s)
-                elseif ( socket[s].protocol == ip.TCP and (socket[s].state == ESTABLISHED) )
-                    if ( socket[s].push )
-                        tcp_send_socket(s, tcp.PSH|tcp.ACK, tx_available(s) )
-                        socket[s].push := 0
-        ' task: check the ARP table for protocol addresses that aren't resolved
-        repeat arp.ENTRIES with e 
-            if ( arp.entry[e].proto_t and not arp.entry[e].resolved )
-                ' if ARP has an entry for a protocol address but it isn't marked as resolved,
-                '   try to probe for it to get it resolved
-'                dbg.printf( @"ARP entry %d (%s) not resolved\n\r", ...
-'                            e, ...
-'                            str.iptostr(arp.entry[e].proto_addr))
-                if ( getsec() > arp.entry[e].last_checked )
-                    arp.entry[e].last_checked := getsec()
-                    resolve_ip(arp.entry[e].proto_addr)
-                    t := getct()
+            receive_ethii()                     ' parse incoming frames
+        ' TX tasks
+        flush_arp_ready()                       ' packet buffers with resolved layer-2 addresses
+        flush_tcp_control()                     ' TCP control packets
+        flush_tcp_data()                        ' TCP sockets with data
+        flush_arp_requests()                    ' ARP resolution requests
+        flush_udp()                             ' UDP datagrams
+        flush_arp_replies()                     ' replies to ARP requests
 
 
-pri arp_announce() | ethii_t eh, arp_msg_s ah
+pub flush_arp_replies()
+' Send pending ARP replies to the network device
+    if ( (arp_reply_q.head-arp_reply_q.tail) & ARP_REPLQ_MASK )
+        send_pbuf( arp_reply_q.entry[arp_reply_q.tail] )
+        arp_reply_q.tail := (arp_reply_q.tail + 1) & ARP_REPLQ_MASK
+
+
+pri flush_arp_ready() | pbuf, rip
+' Send any pbufs that ARP has resolved layer-2 addresses for
+    if ( arp_requests_queued() )
+        DEBUG("flush_arp_ready() queued")
+        pbuf := arp_request_q.entry[arp_request_q.tail].pbuf
+        rip := arp_request_q.entry[arp_request_q.tail].ip_addr
+        if ( arp.hw_addr_of(rip) )
+            DEBUG(zstr_(str.iptostr(rip)), " is resolved")
+            ' only if the destination MAC is known do we finally encapsulate the packet
+            '   in Ethernet-II and write the frame to the NIC
+            if ( pktbuff[pbuf].layer_written == 3 )
+                write_ethii(pbuf, ...
+                            arp.hw_addr_of(rip), ...
+                            @interface[0].mac_addr, ...
+                            ETYP_IPV4)
+            elseif ( pktbuff[pbuf].layer_written == 2 )
+'            pb_head := (pb_head + 1) & PKTBUFF_MASK
+            send_pbuf(pbuf)                     ' write pbuf and de-queue it
+            arp_request_q.tail := (arp_request_q.tail + 1) & ARP_REQSQ_MASK
+
+
+pri flush_arp_requests() | pbuf, rip
+' Send pending ARP requests
+    if ( arp_requests_queued() )
+        pbuf := arp_request_q.entry[arp_request_q.tail].pbuf
+        rip := arp_request_q.entry[arp_request_q.tail].ip_addr
+
+        ifnot ( arp.hw_addr_of( rip ) )
+            ' throttle ARP resolution requests to one per second per IP address
+            if ( arp_request_q.entry[arp_request_q.tail].type == 1 )
+                send_pbuf(pbuf)
+                arp_request_q.tail := (arp_request_q.tail + 1) & ARP_REQSQ_MASK
+            else
+                if ( (getms()-arp_request_q.entry[arp_request_q.tail].last_try) > 1_000 )
+                    arp_request_q.entry[arp_request_q.tail].last_try := getms()
+                    pbuf := pbuf_allocate()
+                    if ( pbuf >= 0 )
+                        write_arp(pbuf, arp.ARP_REQ, 0, rip)
+                        write_ethii(pbuf, ...
+                                    @_mac_bcast, ...
+                                    @interface[0].mac_addr, ...
+                                    ETYP_ARP)
+                        pb_head := (pb_head + 1) & PKTBUFF_MASK
+                        send_pbuf(pbuf)
+
+
+pri flush_tcp_control()
+
+
+pri flush_tcp_data() | sck, pbuf, tl, flags
+
+    ' task: check for pending TCP transmissions
+    if ( pending_tcp_tx() )                 ' signal from send()
+        'xxx this just sends everything, but it should segmentize
+        sck := next_pending_tcp_sck()
+        DEBUG("pending_tcp_tx ", udec(sck) )
+        pbuf := pbuf_allocate()
+        if ( pbuf >= 0 )
+            flags := tcp.ACK
+            if ( socket[sck].push_data )
+                flags |= tcp.PSH
+            tl := write_tcp_socket(pbuf, sck, flags, tx_available(sck) )
+            write_ipv4_socket(pbuf, sck, tl)
+            dequeue_tcp_tx()
+            socket[sck].tx_pending := false
+            pb_head := (pb_head + 1) & PKTBUFF_MASK
+
+
+pri flush_udp() | sck, pbuf, ul
+
+    ' task: check for pending UDP transmissions
+    repeat MAX_SOCKETS with sck
+        if ( socket[sck].protocol == L4_UDP )
+            if ( tx_datagrams_available(sck) > 0 )
+                ' try to send the datagram
+                pbuf := pbuf_allocate()
+                if ( pbuf >= 0 )
+                    ul := write_udp_socket(pbuf, sck)
+                    write_ipv4(pbuf, socket[sck].local_ip, socket[sck].remote_ip, ip.UDP, ul)
+                    pb_head := (pb_head + 1) & PKTBUFF_MASK
+                socket[sck].txbuff.datagram.tail := (socket[sck].txbuff.datagram.tail+1) & DG_MASK
+
+
+pri arp_announce() | pbuf
 ' Send a gratuitous ARP announcement
-    ethii.set_header(@eh)
-    arp.set_header(@ah)
-
-    net.start_frame()
-        ethii.set_src_addr(@interface.mac_addr)
-        ethii.set_dest_addr( @_mac_bcast )
-        ethii.set_ethertype( ETYP_ARP )
-        ethii.wr_ethii_frame()
-        arp.preset_ethii_ipv4()
-        arp.set_opcode(arp.ARP_REQ)
-        arp.set_sender_hw_addr(@interface.mac_addr)
-        arp.set_target_proto_addr(swap_long(interface.ipv4_addr) )
-        arp.set_target_hw_addr()
-        arp.set_sender_proto_addr(swap_long(interface.ipv4_addr) )
-        arp.wr_arp_msg()
-    net.send_frame( net.fifo_wr_ptr() )
+    DEBUG("arp_announce()")
+    pbuf := pbuf_allocate()
+    if ( pbuf >= 0 )
+        write_arp(pbuf, arp.ARP_REQ, 0, interface.ipv4_addr)
+        write_ethii(pbuf, @_mac_bcast, @interface.mac_addr, ETYP_ARP)
+        pb_head := (pb_head + 1) & PKTBUFF_MASK
+        arp_request_q.entry[arp_request_q.head].type := 1
+        arp_request_q.head := (arp_request_q.head + 1) & ARP_REQSQ_MASK
 
 
-pri close(sck): s | skn
+pri arp_queue_ip(pbuf, ipaddr): s
+' Queue an IP address for ARP resolution
+    DEBUG("arp_queue_ip(", udec(pbuf), " ip=", zstr_(str.iptostr(ipaddr) ), ")")
+    if ( ( (arp_request_q.tail - arp_request_q.head - 1) & ARP_REQSQ_MASK) > 0 )
+        arp_request_q.entry[arp_request_q.head].pbuf := pbuf
+        arp_request_q.entry[arp_request_q.head].ip_addr := ipaddr
+        arp_request_q.head := (arp_request_q.head + 1) & ARP_REQSQ_MASK
+        return 0
+
+    DEBUG(" error: arp queue full")
+    return -1
+
+
+pri arp_requests_queued(): q
+' Get the number of ARP resolution requests queued
+    q := ( (arp_request_q.head - arp_request_q.tail) & ARP_REQSQ_MASK )
+    if ( q )
+        DEBUG("arp_requests_queued(): ", udec_(q))
+
+
+pri close(sck): s | skn, tl, pbuf
 ' Close a socket
 '   sck:        socket number
 '   Returns:    0 on success
 '               negative numbers on failure
-'    dbg.strln(@"close()")
+    DEBUG("close()")
 
     if ( (sck < 0) or (sck >= MAX_SOCKETS) )
-'        dbg.printf(@"error: invalid socket %d\n\r", sck)
+        DEBUG(" error: invalid socket ", udec_(sck))
         return -1                               ' error: invalid socket
 
     if ( socket[sck].state == CLOSED )
-'        dbg.printf(@" error: socket %d already closed", sck)
+        DEBUG(" error: socket ", udec_(sck), " already closed")
         return -1                               ' error: socket already closed
 
     if ( socket[sck].protocol == L4_UDP )
-'        dbg.strln(@" UDP socket closed")
+        DEBUG(" closing UDP socket")
         delete_tcb(sck)
         return OK
     elseif ( socket[sck].protocol == L4_TCP )
@@ -654,25 +741,37 @@ pri close(sck): s | skn
                 'xxx send, recv should return 'error: closing'
                 return -1
             SYN_RECEIVED:
-                tcp_send_socket(sck, tcp.FIN | tcp.ACK)
-                set_state(sck, FIN_WAIT_1)
+                pbuf := pbuf_allocate()
+                if ( pbuf >= 0 )
+                    tl := write_tcp_socket(pbuf, sck, tcp.FIN | tcp.ACK)
+                    write_ipv4_socket(pbuf, sck, tl)
+                    pb_head := (pb_head + 1) & PKTBUFF_MASK
+                    set_state(sck, FIN_WAIT_1)
                 'xxx what about pending send data? should queue and transition to ESTABLISHED
                 return OK
             ESTABLISHED:
-'                dbg.strln(@"socket established; closing")
-                tcp_send_socket(sck, tcp.FIN | tcp.ACK)
-                socket[sck].snd.nxt++
-                set_state(sck, FIN_WAIT_1)
-                'xxx should put this off until send queue has been sent
+                DEBUG(" socket established; closing")
+                pbuf := pbuf_allocate()
+                if ( pbuf >= 0 )
+                    tl := write_tcp_socket(pbuf, sck, tcp.FIN | tcp.ACK)
+                    write_ipv4_socket(pbuf, sck, tl)
+                    pb_head := (pb_head + 1) & PKTBUFF_MASK
+                    socket[sck].snd.nxt++
+                    set_state(sck, FIN_WAIT_1)
+                    'xxx should put this off until send queue has been sent
                 return OK
             FIN_WAIT_1, FIN_WAIT_2:
                 return -1                       ' error: connection closing
                 ' return OK                     ' ok (ignored; already closing)
             CLOSE_WAIT:
-'                dbg.strln(@"in CLOSE_WAIT; closing")
-                tcp_send_socket(sck, tcp.FIN | tcp.ACK)
-                socket[sck].snd.nxt++
-                set_state(sck, LAST_ACK)
+                DEBUG(" in CLOSE_WAIT; closing")
+                pbuf := pbuf_allocate()
+                if ( pbuf >= 0 )
+                    tl := write_tcp_socket(pbuf, sck, tcp.FIN | tcp.ACK)
+                    write_ipv4_socket(pbuf, sck, tl)
+                    pb_head := (pb_head + 1) & PKTBUFF_MASK
+                    socket[sck].snd.nxt++
+                    set_state(sck, LAST_ACK)
                 return OK
             CLOSING, LAST_ACK, TIME_WAIT:
                 return -1                       ' error: connection closing
@@ -685,137 +784,77 @@ pri delete_tcb(sck)
         socket[sck]~
 
 
+pri dequeue_tcp_tx(): s
+' Get the ID of the next socket with a TCP transmission queued
+    DEBUG("dequeue_tcp_tx():")
+
+    if ( ( (tcp_tx_pend.head-tcp_tx_pend.tail) & MAX_TCP_TX_PEND_MASK) > 0 )
+        s := tcp_tx_pend.index[tcp_tx_pend.tail]
+        DEBUG(" dequeue socket ", udec_(s) )
+        tcp_tx_pend.tail := (tcp_tx_pend.tail + 1) & MAX_TCP_TX_PEND_MASK
+        return s
+
+    return -1
+
+
 pri enqueue(ls, ns)
 ' Enqueue a connection in a listening socket's backlog
 '   ls:     listening socket
 '   ns:     new socket
-    'dbg.printf(@"enqueue(%d, %d)", ls, ns)
+    DEBUG("enqueue(", udec_(ls), udec_(ns), ")")
     if ( socket[ls].state <> LISTENING )
-'        dbg.printf(@"error: socket %d isn't in LISTENING state\n\r", ls)
+        DEBUG(" error: socket ", udec_(ls), " isn't in LISTENING state")
         return -1
     if ( ls == ns )
-'        dbg.printf(@"error: listening socket %d == new socket %d\n\r", ls, ns)
+        DEBUG(" error: listening socket ", udec_(ls), " == new socket ", udec_(ns) )
         return -1
     socket[ns].backlog.pnext := -1
     if ( socket[ls].backlog.head < 0 )          ' empty queue
         socket[ls].backlog.head := ns
         socket[ls].backlog.tail := ns
-'        dbg.printf(@" first new connection, head=%d tail=%d\n\r", socket[ls].backlog.head, socket[ls].backlog.tail)
+        DEBUG(  " first new connection, head=", udec_(socket[ls].backlog.head), " tail=", udec_(socket[ls].backlog.tail) )
     else                                        ' connection(s) queued
         if ( socket[ls].backlog.tail < 0 )
-'            dbg.printf(@" error: socket[%d].tail=%d\n\r", ls, socket[ls].backlog.tail)
+            DEBUG(" error: socket[", udec_(ls), "].tail=", udec_(socket[ls].backlog.tail) )
             return -1                           ' error
         ' link the listening socket's previous tail pointer to the new socket
         '   and update the tail pointer
         socket[ socket[ls].backlog.tail ].backlog.pnext := ns
         socket[ls].backlog.tail := ns  '
-'        dbg.printf(@" new connection, sck[%d].next=%d head=%d tail=%d\n\r", ...
-'                    socket[ls].backlog.tail, ...
-'                    socket[ socket[ls].backlog.tail ].backlog.pnext, ...
-'                    socket[ls].backlog.head, ...
-'                    socket[ls].backlog.tail)
+{
+        DEBUG(  " new connection, sck[", udec_(socket[ls].backlog.tail), ...
+                "].next=", socket[ socket[ls].backlog.tail ].backlog.pnext, ...
+                " head=", udec_(socket[ls].backlog.head), ...
+                " tail=", udec_(socket[ls].backlog.tail) )
+}
+
+pri enqueue_tcp_tx(sck): s
+' Enqueue a TCP transmission
+    DEBUG("enqueue_tcp_tx(", udec_(sck), "): ", udec_( ( (tcp_tx_pend.tail - tcp_tx_pend.head - 1) & MAX_TCP_TX_PEND_MASK) ), " slots free")
+
+    if ( ( (tcp_tx_pend.tail - tcp_tx_pend.head - 1) & MAX_TCP_TX_PEND_MASK) > 0 )
+        tcp_tx_pend.index[tcp_tx_pend.head] := sck
+        tcp_tx_pend.head := (tcp_tx_pend.head + 1) & MAX_TCP_TX_PEND_MASK
+        socket[sck].tx_pending := true
+        return 0
+
+    return -1
 
 
 pri find_listening_socket(port, proto): s
 ' Find a socket that's listening on a port and protocol
 '   port:   local port
 '   proto:  layer-4 protocol (L4_UDP, L4_TCP)
+    DEBUG("find_listening_socket(", udec_(port), udec_(proto), ")")
     repeat MAX_SOCKETS with s
         if (socket[s].local_port == port and ...
             socket[s].protocol == proto and ...
             socket[s].state == LISTENING)
+            DEBUG(" matching socket ", udec_(s) )
             return s
 
+    DEBUG(" error: no matching listening socket")
     return -1                                   ' no matching socket is listening
-
-
-pri iface_add_group(iface, mc_addr): s | i, g
-' Add interface multicast group record
-'   mc_addr:    multicast group/address
-    'dbg.printf(@"iface_add_group(%s)\n\r", str.iptostr(mc_addr) )
-    i := iface_group_index(iface, mc_addr)
-    if ( i >= 0 )                               ' group exists: just increment its reference count
-        interface[iface].mc_group[i].refcnt++
-#ifdef EXT_DBG
-        dbg.printf(@" refcnt=%d\n\r", interface[iface].mc_group[i].refcnt)
-#endif
-        return i
-
-    repeat MAX_MC_GROUPS_IFACE with i
-        ifnot ( interface[iface].mc_group[i].grp_addr )          ' new group membership
-            interface[iface].mc_group[i].grp_addr := mc_addr
-            interface[iface].mc_group[i].filt_mode := igmp.CHANGE_TO_EXCLUDE
-            igmp.add_group_record(  interface[iface].mc_group[i].filt_mode, ...
-                                    interface[iface].mc_group[i].nr_sources, ...
-                                    interface[iface].mc_group[i].grp_addr)
-            interface[iface].mc_group[i].refcnt++
-            interface[iface].mc_group[i].report_pending := 1     ' trigger the net loop to send an updated report
-#ifdef EXT_DBG
-            dbg.printf(@" new grp: %s  filt_mode=%x  refcnt=%d  idx=%d\n\r", ...
-                str.iptostr(interface[iface].mc_group[i].grp_addr), ...
-                            interface[iface].mc_group[i].filt_mode, ...
-                            interface[iface].mc_group[i].refcnt, ...
-                            i)
-#endif
-            return i
-
-    return -1                                   ' error: interface group membership table full
-
-
-pri iface_group_exists(iface, mc_addr): e | i
-' Check if a multicast group is recorded in RAM
-'   mc_addr:    multicast group/address
-    return ( iface_group_index(iface, mc_addr) >= 0 )  ' valid index? return true, otherwise false
-
-
-pri iface_group_index(iface, mc_addr): i | g
-' Get index of multicast group within array
-'   mc_addr:    multicast address/group
-    'dbg.printf(@"iface_group_index(%s)\n\r", str.iptostr(mc_addr) )
-    repeat MAX_MC_GROUPS_IFACE with g
-        if ( interface[iface].mc_group[g].grp_addr == mc_addr )
-            'dbg.printf(@" mc_group[%d].grp_addr = %s\n\r", ...
-            '    g, ...
-            '    str.iptostr(mc_group[g].grp_addr) )
-            return g
-
-    return -1
-
-
-pri iface_leave_group(iface, mc_addr) | i
-' Leave a multicast group
-'   mc_addr:    multicast group/address
-    i := iface_group_index(iface, mc_addr)
-    if ( i >= 0 )
-        interface[iface].mc_group[i].filt_mode := igmp.CHANGE_TO_INCLUDE
-        igmp.add_group_record(  interface[iface].mc_group[i].filt_mode, ...
-                                interface[iface].mc_group[i].nr_sources, ...
-                                interface[iface].mc_group[i].grp_addr)
-        interface[iface].mc_group[i].refcnt := 0
-        interface[iface].mc_group[i].report_pending := 1     ' trigger the net loop to send an updated report
-
-
-pri iface_mcast_dec_ref(iface, mc_addr): l | i, r
-' Decrease interface's reference count of a multicast group
-'   mc_addr:    multicast address
-'   Returns:
-'               true (-1) if this was the last membership to the group
-'               false (0) if there still exists at least one membership to the group
-'                       or if there are already no memberships
-    i := iface_group_index(iface, mc_addr)
-    if ( i >= 0 )
-        l := interface[iface].mc_group[i].refcnt
-        interface[iface].mc_group[i].refcnt--
-        if ( (interface[iface].mc_group[i].refcnt == 0) and (l > 0) )
-            ' was this the last membership to the group?
-            interface[iface].mc_group[i].filt_mode := igmp.CHANGE_TO_INCLUDE
-            r := igmp.group_record_num(mc_addr)
-            'dbg.printf(@"iface_mcast_dec_ref(): igmp group record num %d\n\r", r)
-            igmp.set_record_type(r, interface[iface].mc_group[i].filt_mode)
-            interface[iface].mc_group[i].report_pending := 1
-            return true
-
-    return false
 
 
 pri iface_set_flags(iface, flags)
@@ -827,33 +866,16 @@ pri iface_set_flags(iface, flags)
             net.set_pkt_filter(net.PF_PROMISCUOUS)
 
 
-pri igmp_membership_report() | ethii_t eh, ip_header_s ih
-' Send IGMP membership report(s)
-'   NOTE: All membership records currently cached in the IGMP object will be reported
-#ifdef EXT_DBG
-    dbg.strln(@"igmp_membership_report()")
-#endif
-    ethii.set_header(@eh)
-    ip.set_header(@ih)
-    net.start_frame()
-        ethii.new(@interface.mac_addr, arp.hw_addr_of(igmp.IGMPV3_MCAST_IP), ETYP_IPV4)
-        ip.new(L4_IGMP, swap_long(interface.ipv4_addr), igmp.IGMPV3_MCAST_IP, ip.CS6)
-        igmp.set_message_type(igmp.MEMBER_REPORT_V3)
-        igmp.set_report_flags(0)
-        igmp.wr_header()
-        igmp.update_checksum()
-        ip.update_chksum( igmp.message_len() )
-    net.send_frame( net.fifo_wr_ptr() )
-
-
 pri lookup_iface(addr, addrlen=4): i | a
 ' Look up interfaces by IP address
 '   addr:       IP address (value, if IPv4, reference/pointer if IPv6)
 '   addrlen:    length of address:  4: IPv4 (default), 16: IPv6
+'   Returns:    interface number/index on success
+'               -1 if no matching interface exists
     if ( addrlen == 4 )
         repeat MAX_INTERFACES with i            ' look for an interface with this address (IPv4)
             repeat MAX_IP_PER_IFACE with a
-                if ( swap_long(interface[i].ipv4_addr[a]) == addr )
+                if ( interface[i].ipv4_addr[a] == addr )
                     return i
     elseif ( addrlen == 16 )
         repeat MAX_INTERFACES with i            ' look for an interface with this address (IPv6)
@@ -864,18 +886,21 @@ pri lookup_iface(addr, addrlen=4): i | a
     return -1                                   ' error: no interface with that IP
 
 
-pri open(sck, rip, rp): s
+pri next_pending_tcp_sck(): s
+' Get index of oldest pending TCP segment
+    return tcp_tx_pend.index[tcp_tx_pend.tail]
+
+
+pri open(sck, rip, rp): s | tl, pbuf
 ' Connect a socket to a remote host
 '   sck:    socket number
 '   rip:    remote IP
 '   rp:     remote port
 
-'    dbg.str(@"open(): ")
+    DEBUG("open():")
     if ( socket[sck].state == CLOSED )
         ifnot ( socket[sck].local_ip )
-#ifdef EXT_DBG
-            dbg.strln(@"open() error: socket not bound to ip")
-#endif
+            DEBUG(" error: socket not bound to ip")
             return -1                           ' error: socket not bound to an interface/IP
 
         if ( socket[sck].local_port < 0 )       ' pick a random local port if one wasn't specified
@@ -883,285 +908,435 @@ pri open(sck, rip, rp): s
 
         socket[sck].remote_ip := rip            ' fill in remote socket
         socket[sck].remote_port := rp
-#ifdef EXT_DBG
-        dbg.printf(@"open() rip=%s rp=%d\n\r", str.iptostr(rip), rp)
-#endif
+        DEBUG(" lip=", zstr_(str.iptostr(socket[sck].local_ip)), " rip=", zstr_(str.iptostr(rip)), " rp=", udec_(rp) )
         if ( socket[sck].protocol == ip.TCP )
-            socket[sck].snd.una := socket[sck].snd.iss := math.rndi(posx)
-            socket[sck].snd.nxt := socket[sck].snd.iss+1
-            socket[sck].rcv.wnd := rx_bytes_free(sck)
-        if ( socket[sck].protocol == ip.UDP )
+            if ( tcp_tx_pending_free() )
+                socket[sck].snd.una := socket[sck].snd.iss := math.rndi(posx)
+                socket[sck].snd.nxt := socket[sck].snd.iss
+                socket[sck].rcv.wnd := rx_bytes_free(sck)
+                socket[sck].tsval := _timestamp_base
+                socket[sck].tsecr := 0
+                pbuf := pbuf_allocate()
+                if ( pbuf >= 0 )
+                    tl := write_tcp_socket(pbuf, sck, tcp.SYN) 
+                    write_ipv4(pbuf, socket[sck].local_ip, socket[sck].remote_ip, ip.TCP, tl)
+                    socket[sck].state := SYN_SENT
+                    pb_head := (pb_head + 1) & PKTBUFF_MASK
+                    socket[sck].snd.nxt := socket[sck].snd.iss+1
+                    return OK
+                else
+                    return -1                   ' error: no pbufs free
+            else
+                return -1                       ' error: descriptor TX queue full
+        elseif ( socket[sck].protocol == ip.UDP )
             ' UDP is stateless, so if we've gotten this far,
             '   consider the connection established
             set_state(sck, ESTABLISHED)
-'        dbg.printf( @"local: %s:%d  ", ...
-'                    str.iptostr(socket[sck].local_ip), socket[sck].local_port)
-'        dbg.printf( @"remote: %s:%d ", ...
-'                    str.iptostr(socket[sck].remote_ip ), socket[sck].remote_port)
-'        if ( socket[sck].protocol == ip.UDP )
-'            dbg.strln(@"(UDP)")
-'        elseif ( socket[sck].protocol == ip.TCP )
-'            dbg.strln(@"(TCP)")
-        return OK
+            return OK
 
-'    dbg.strln(@" error: already connected")
-    return -1                                   ' error: socket already connected
+    DEBUG(" error: already connected")
+    return -2                                   ' error: socket already connected
 
 
-pri process_arp() | e, mf, arp_msg_s ah
+pri pbuf_allocate(): p
+' Allocate a packet buffer
+'   Returns:    pbuf index on success
+'               -1 on failure
+    DEBUG("pbuf_allocate() ", udec(pb_head), udec(pb_tail) )
+    if ( pbuf_free() )
+        return pb_head
+    else
+        DEBUG("pbuf_allocate(): error: no pbufs free")
+        return -1
+
+
+pri pbuf_free(): p
+' Get the number of free packet buffers
+    DEBUG("pbuf_free() h=", udec_(pb_head), " t=", udec_(pb_tail) )
+    return ( ( (pb_tail - pb_head - 1) & PKTBUFF_MASK) )
+
+
+pri pbuf_next(): p
+' Get the index of the next packet buffer queued for transmission
+'   Returns:    packet buffer index on success
+'               -1 if there are no packet buffers queued
+'    DEBUG("pbuf_next() ", udec(pb_head), udec(pb_tail) )
+
+    if ( pbuf_queued() )
+        return pb_tail
+    else
+        return -1                               ' error: no packet buffers queued
+
+
+pri pbuf_queued(): p
+' Get the number of pktbuffs queued
+'    DEBUG("pbuf_queued() ", udec(pb_head), udec(pb_tail) )
+
+    return ( ( pb_head-pb_tail ) & PKTBUFF_MASK )
+
+
+pri pending_tcp_tx(): s
+' Get total count of currently pending TCP segments
+    return ( (tcp_tx_pend.head-tcp_tx_pend.tail) & MAX_TCP_TX_PEND_MASK)
+
+
+pri receive_arp(^ethii_t eh): s | e, mf, arp_msg_s ah
 ' Process received ARP messages
-
-    ' don't use a new ethernet-ii structure; use the data from the one that brought us here
-    arp.set_header(@ah)
-
-    arp.clear()
-    arp.rd_arp_msg()                            ' read message
+'   eh: ethernet-II header (pointer to structure)
+    DEBUG("receive_arp")
+    ah~
+    arp.rd_arp_msg(@ah)                            ' read message
 
     ' reference RFC 826, 'Packet Reception'
     ' compare protocol type and sender protocol address (IP) to entries we've cached
     mf := false
     repeat arp.ENTRIES with e
-        if (    (arp.proto_type() == arp.cached_proto_type(e) ) and ...
-                (arp.sender_proto_addr() == arp.cached_proto_addr(e) ) )
+        if (    (arp.proto_type(@ah) == arp.cached_proto_type(e) ) and ...
+                (arp.sender_proto_addr(@ah) == arp.cached_proto_addr(e) ) )
             ' the message matches an existing entry; update it with the sender MAC address
             '   in case it's different
-            arp.cache_update_hw_addr( e, arp.sender_hw_addr() )
+            arp.cache_update_hw_addr( e, arp.sender_hw_addr(@ah) )
             mf := true
-
-    if ( arp.target_proto_addr() == swap_long(interface.ipv4_addr) )
+    if ( arp.target_proto_addr(@ah) == interface.ipv4_addr )
         ' are we the target of the message?
         ifnot ( mf )
             ' this sender hasn't been seen before; store it in the ARP table
-            e := arp.cache_entry(arp.sender_hw_addr(), arp.sender_proto_addr(), arp.proto_type() )
+            e := arp.cache_entry(   arp.sender_hw_addr(@ah), ...
+                                    arp.sender_proto_addr(@ah), ...
+                                    arp.proto_type(@ah) )
             if ( e < 0 )
                 return -1                       ' error: ARP table full
-        if ( arp.opcode() == arp.ARP_REQ )
+        if ( arp.opcode(@ah) == arp.ARP_REQ )
             ' was this a request? send out a reply
-            net.start_frame()
-                ethii.reply()
-                ethii.set_src_addr( @interface.mac_addr )
-                arp.swap_sender_target()
-                arp.set_sender_hw_addr( @interface.mac_addr )
-                arp.set_opcode(arp.ARP_REPL)
-                arp.wr_arp_msg()
-            net.send_frame( net.fifo_wr_ptr() )
+            arp_reply(@ah)
 
 
-pri process_ethii() | ethii_t hdr
+pri arp_reply(^arp_msg_s ah) | pbuf
+' Write an ARP reply message
+    pbuf := pbuf_allocate()
+    if ( pbuf >= 0 )
+        write_arp(pbuf, arp.ARP_REPL, arp.sender_hw_addr(@ah), arp.sender_proto_addr(@ah) )
+        write_ethii(pbuf, arp.sender_hw_addr(@ah), @interface[0].mac_addr, ETYP_ARP)
+        arp_reply_q.entry[arp_reply_q.head] := pbuf
+        pb_head := (pb_head + 1) & PKTBUFF_MASK
+        arp_reply_q.head := (arp_reply_q.head + 1) & ARP_REPLQ_MASK
+
+
+pri receive_ethii(): s | ethii_t eh
 ' Process received Ethernet-II headers
-    ethii.set_header(@hdr)
-    ethii.rd_ethii_frame()                      ' read in the Ethernet-II header
+    eh~
+    ethii.rd_ethii_frame(@eh)                      ' read in the Ethernet-II header
+    DEBUG("receive_ethii() ethertype=", uhex_(ethii.ethertype(@eh) ) )
 
-    case ethii.ethertype()
-        ETYP_ARP:
-            process_arp()
+    case ethii.ethertype(@eh)
+        ETYP_ARP:   
+            receive_arp(@eh)
         ETYP_IPV4:
-            process_ipv4()
+            receive_ipv4(@eh)
 
 
 var byte _icmp_echo_data[48]
-pri process_icmp() | icmp_msg_s ich
+pri receive_icmp() | icmp_msg_s ich
 ' Process received ICMP headers
-    icmp.set_header(@ich)
-    icmp.rd_icmp_msg()
+    DEBUG("receive_icmp()")
+    icmp.rd_icmp_msg(@ich)
 
-    case_fast icmp.msg_type()
+    case_fast icmp.msg_type(@ich)
         icmp.DEST_UNREACH:                      ' destination unreachable
-'            dbg.str(@"destination unreachable: ")
-            if ( icmp.code() == icmp.PORT_UNREACH )
-'                dbg.strln(@"port")
+            DEBUG("destination unreachable: ")
+            'todo: these need to be forwarded to the application or the socket somehow so they know
+            ' there was a problem
+            if ( icmp.code(@ich) == icmp.PORT_UNREACH )
+                DEBUG(" port")
+            elseif ( icmp.code(@ich) == icmp.DEST_UNREACH )
+                DEBUG(" host")
                 return
         icmp.ECHO_REQ:                          ' echo request (ping)
-            icmp.rd_echo_data(@_icmp_echo_data, ip.payload_length() - icmp.ICMP_MSG_SZ)
-            ' form the reply; include the echo data received in the request
-            net.start_frame()
-                ethii.reply()
-                ip.reply()
-                icmp.echo_reply()
-                icmp.wr_echo_data(@_icmp_echo_data)
-                ip.update_chksum(icmp.msg_len() + icmp.echo_data_len() )
-                icmp.update_chksum(@_icmp_echo_data)
-            net.send_frame( net.fifo_wr_ptr() )
-'            dbg.fgcolor(dbg.GREEN)
-'            dbg.strln(@"PING!")
-'            dbg.fgcolor(dbg.GREY)
+            'todo
 
 
-pri process_ipv4() | ip_header_s ih, sn
+pri receive_ipv4(^ethii_t eh) | ipv4_hdr_s ih, sck
 ' Process received IPv4 headers
-#ifdef EXT_DBG
-'    dbg.strln(@"process_ipv4()")
-#endif
-    ip.set_header(@ih)
-    ip.rd_ip_header()
-#ifdef EXT_DBG
-    ifnot ( ip.is_multicast_addr(ip.dest_addr() ) )
-'        dbg.printf(@"src %s  ", str.iptostr(ip.src_addr()))
-'        dbg.printf(@"dest %s  ", str.iptostr(ip.dest_addr()))
-'        dbg.printf(@"proto %0x\n\r", ip.layer4_proto())
-#endif
+    DEBUG("receive_ipv4()")
+    ih~
+    ip.rd_ip_header(@ih)
+    DEBUG(  "src: ", zstr_(str.iptostr(ip.src_addr(@ih) ) ), " dest: ", zstr_(str.iptostr(ip.dest_addr(@ih) ) ), " proto: ", uhex_(ip.layer4_proto(@ih) ) )
 
-    repeat MAX_SOCKETS with sn
-        if ( (ip.dest_addr() == socket[sn].local_ip) )
-            case ip.layer4_proto()
+    ' add this host to the ARP cache - saves us having to look it up later
+    ifnot ( arp.hw_addr_of(ip.src_addr(@ih) ) )
+        arp.cache_entry(ethii.src_addr(@eh), ip.src_addr(@ih) )
+
+    repeat MAX_SOCKETS with sck
+        if ( (ip.dest_addr(@ih) == socket[sck].local_ip) )
+            case ip.layer4_proto(@ih)
                 L4_ICMP:
-                    process_icmp()
+                    receive_icmp()
                     return
                 L4_UDP:
-                    process_udp()
+                    receive_udp(@ih)
                     return
                 L4_TCP:
-                    process_tcp()
+                    receive_tcp(@ih)
                     return
-        elseif ( ip.is_multicast_addr(ip.dest_addr() ) )
-            if ( ip.layer4_proto() == L4_UDP )
-                process_udp()
+        elseif ( ip.is_multicast_addr(ip.dest_addr(@ih) ) )
+            if ( ip.layer4_proto(@ih) == L4_UDP )
+                receive_udp(@ih)
                 return
 
 
-pri process_tcp(): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop_nr, reset, s, sck
-' Process incoming TCP segment
-    tcp.set_header(@th)
-    tcp.rd_tcp_header()
-    'dbg.strln(@"process_tcp()")
-'    dbg.printf(@" sp: %d  dp: %d seq:  %d  ack: %d  hlen: %d  win: %d  ck: %04x\n\r", ...
-'        tcp.source_port(), tcp.dest_port(), tcp.seq_nr(), tcp.ack_nr(), tcp.header_len(), ...
-'        tcp.window(), tcp.chksum() )
+pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop_nr, reset, ls, s, sck, tl, pbuf
+' Process incoming TCP segment (reference TCP RFC 9293, s. 3.10.7 "Segment arrives")
+    th~
+    tcp.rd_tcp_header(@th)
+    if ( tcp.header_len(@th) > 20 )'todo: move this into tcp.rd_tcp_header()
+        tcp.rd_tcp_opts(@th)
 
-    ' look for a matching socket
-    ' repeat for all sockets:
-    '   1. check if the destination port matches a socket's local port
-    '   2. check if the source address and port match the socket's remote ip/port. quit/proceed if yes
-    ' if no connected/synchronized sockets match, look for listening sockets
+    DEBUG(  "receive_tcp() sp: ", udec_(tcp.source_port(@th) ), " dp: ", udec_(tcp.dest_port(@th) ), " seq: ", udec_(tcp.seq_nr(@th) ), " ack: ", udec_(tcp.ack_nr(@th) ), " hlen: ", udec_(tcp.header_len(@th) ), " win: ", udec_(tcp.window(@th) ) )
+
+    ' the criteria being checked depend on the current state of the socket, so first
+    '   look for a matching one (pre-3.10.7.1)
 
     reset := true                               ' assume there's no matching socket, initially
     sck := -1
+
     ' first, look for a socket that's at least half-open
     repeat MAX_SOCKETS with s
-        if ( tcp.dest_port() == socket[s].local_port )
-            if (    (ip.src_addr() == socket[s].remote_ip) and ...
-                    (tcp.source_port() == socket[s].remote_port) )
+        if ( tcp.dest_port(@th) == socket[s].local_port )
+            if ((ip.src_addr(@ih) == socket[s].remote_ip) and ...
+                (tcp.source_port(@th) == socket[s].remote_port) )
+                ' found a matching socket
                 reset := false
                 sck := s                        ' make this our working socket
-                s := find_listening_socket(socket[s].local_port, L4_TCP)
-                if ( s < 0 )
-'                    dbg.printf(@"error: existing socket %d, but no matching listening socket\n\r", ...
-'                                sck)
-                    return -1
-                'dbg.printf(@"socket %d is in state %s\n\r", sck, state_str(socket[sck].state))
+                socket[sck].tsval := _timestamp_base + getms()
+                socket[sck].tsecr := tcp.timestamp_val()
+                DEBUG("matching socket ", udec_(sck), " is in state ", zstr_(netstr.state_str(socket[sck].state) ) )
                 quit
 
     ' if that fails, look for a socket that's listening on that port
     if ( reset )
-        repeat MAX_SOCKETS with s
-            if ( (tcp.dest_port() == socket[s].local_port) and (tcp.flags & tcp.SYN) )
-                ' found a listener and the remote is trying to initiate a connection
-                'dbg.printf(@"found listener on port %d - ", socket[s].local_port)
-                if ( socket[s].state == LISTENING )
-                    'dbg.strln(@"is listening")
-                    reset := false
-                    quit
-        'dbg.newline()
-    
-    ' if that fails too, there's no process running here to handle that connection; reset it
-    if ( reset )                                ' refuse connection if the socket doesn't exist
-        'dbg.strln(@"no such process")
-        ack := tcp.seq_nr()
-        if ( tcp.flags() & tcp.FIN )
-            ack++
-        tcp_send(   @interface.mac_addr, ethii.src_addr(), ...
-                    swap_long(interface.ipv4_addr), ip.src_addr(), ...
-                    tcp.dest_port(), tcp.source_port(), ...
-                    tcp.ack_nr(), ack, ...
-                    (tcp.RST | tcp.ACK), ...
-                    0 )
-        return OK
-
-    seg_len := ( ip.dgram_len() - ip.IP_HDR_SZ - tcp.header_len() )
-
-    if ( (sck < 0) or (sck >= MAX_SOCKETS) )
-        'dbg.strln(@"no socket yet")
-        case socket[s].state'xxx verify
-            UNUSED, CLOSED:
-                'dbg.strln(@" CLOSED")
-                if ( tcp.flags() & tcp.RST )
-                    return -1
-                else
-                    if ( tcp.flags() & tcp.ACK )
-                        seq := tcp.ack_nr()
-                        ack := 0
-                        flags := tcp.RST
-                    else
-                        seq := 0
-                        ack := tcp.seq_nr()+seg_len
-                        flags := tcp.RST | tcp.ACK
-                    tcp_send(   @interface.mac_addr, ethii.src_addr(), ...
-                                swap_long(interface.ipv4_addr), ip.src_addr(), ...
-                                tcp.dest_port(), tcp.source_port(), ...
-                                ack, seq, ...
-                                flags, ...
-                                0 )
-                return -1
-            LISTENING:'xxx
-                'dbg.strln(@" LISTENING")
-                if ( tcp.flags() & tcp.SYN )
-                    'dbg.printf(@"  SYN socket %d", s)
-                    ' check the listening socket's "half-open" connection backlog for room
-                    if ( socket[s].backlog.pending < socket[s].backlog.max_depth )
-                        sck := new_socket()
-                        if ( sck < 0 )
-'                            dbg.strln(@"error: no sockets available")
-                            return -1           ' error: no sockets available; drop
-                        ' copy the listening socket and incoming packet into the new socket
-                        socket[sck].protocol := L4_TCP
-                        socket[sck].rcv.nxt := tcp.seq_nr()+1
-                        socket[sck].rcv.irs := tcp.seq_nr()
-                        socket[sck].rcv.wnd := socket[s].rcv.wnd
-                        socket[sck].snd.iss := socket[sck].snd.nxt := math.rndi(posx)
-                        socket[sck].local_ip := socket[s].local_ip
-                        bytemove(@socket[sck].local_mac, @socket[s].local_mac, MACADDR_LEN)
-                        socket[sck].local_port := socket[s].local_port
-                        socket[sck].remote_ip := ip.src_addr()
-                        socket[sck].remote_port := tcp.source_port()
-                        bytemove(@socket[sck].remote_mac, ethii.src_addr(), MACADDR_LEN)
-                        tcp_send_socket(sck, tcp.SYN|tcp.ACK)
+        ls := find_listening_socket(tcp.dest_port(@th), L4_TCP)
+        if ( ls >= 0 )
+            reset := false
+            DEBUG(" LISTENING")
+            if ( tcp.flags(@th) & tcp.RST ) ' invalid; ignore
+                return 0
+            if ( tcp.flags(@th) & tcp.ACK ) ' bad; send reset in reply
+                'seq=seg.ack, ctl=rst'xxx
+                return 0
+            if ( tcp.flags(@th) & tcp.SYN )
+                DEBUG("  SYN socket ", udec_(ls) )
+                ' check the listening socket's "half-open" connection backlog for room
+                if ( socket[ls].backlog.pending < socket[ls].backlog.max_depth )
+                    sck := new_socket()
+                    if ( sck < 0 )
+                        pbuf := pbuf_allocate()'xxx this block doesn't seem to work; no TCP is
+                        if ( pbuf >= 0 )        ' written; instead IPv4 with unknown data
+                            tl := write_tcp(pbuf, ...
+                                            interface.ipv4_addr, ...
+                                            ip.src_addr(@ih), ...
+                                            tcp.dest_port(@th), ...
+                                            tcp.source_port(@th), ...
+                                            tcp.seq_nr(@th), ...
+                                            0, ...
+                                            tcp.RST | tcp.ACK)
+                            write_ipv4( pbuf, ...
+                                        interface.ipv4_addr, ...
+                                        ip.src_addr(@ih), ...
+                                        ip.TCP, ...
+                                        tl)
+                            pb_head := (pb_head + 1) & PKTBUFF_MASK
+                        return -1           ' error: no sockets available; drop
+                    ' copy the listening socket and incoming packet into the new socket
+                    socket[sck].protocol := L4_TCP
+                    socket[sck].rcv.nxt := tcp.seq_nr(@th)+1
+                    socket[sck].rcv.irs := tcp.seq_nr(@th)
+                    socket[sck].rcv.wnd := socket[ls].rcv.wnd
+                    socket[sck].snd.iss := socket[sck].snd.nxt := math.rndi(posx)
+                    socket[sck].local_ip := socket[ls].local_ip
+                    socket[sck].local_port := socket[ls].local_port
+                    socket[sck].remote_ip := ip.src_addr(@ih)
+                    socket[sck].remote_port := tcp.source_port(@th)
+                    socket[sck].tsval := _timestamp_base + getms()
+                    socket[sck].tsecr := tcp.timestamp_val()
+                    pbuf := pbuf_allocate()
+                    if ( pbuf >= 0 )
+                        tl := write_tcp_socket(pbuf, sck, tcp.SYN | tcp.ACK)
+                        write_ipv4( pbuf, ...
+                                    socket[sck].local_ip, ...
+                                    ip.src_addr(@ih), ...
+                                    ip.TCP, ...
+                                    tl)
+                        pb_head := (pb_head + 1) & PKTBUFF_MASK
                         socket[sck].snd.una := socket[sck].snd.iss
                         socket[sck].snd.nxt := socket[sck].snd.iss+1
-                        socket[sck].p_signal := socket[s].p_signal
+                        socket[sck].p_signal := socket[ls].p_signal
                         set_state(sck, SYN_RECEIVED)
                         return sck
-                    else
-                        ' backlog full - too many half-open connections; send reset
-                        tcp_send(   @interface.mac_addr, ethii.src_addr(), ...
-                                    swap_long(interface.ipv4_addr), ip.src_addr(), ...
-                                    tcp.dest_port(), tcp.source_port(), ...
-                                    tcp.seq_nr(), 0, ...
-                                    tcp.RST | tcp.ACK, ...
-                                    0 )
+                else
+                    ' backlog full - too many half-open connections; send reset
+                    DEBUG("error: TCP backlog full")
+                    pbuf := pbuf_allocate()
+                    if ( pbuf >= 0 )
+                        tl := write_tcp( pbuf, ...
+                                        interface.ipv4_addr, ...
+                                        ip.src_addr(@ih), ...
+                                        tcp.dest_port(@th), ...
+                                        tcp.source_port(@th), ...
+                                        tcp.seq_nr(@th), ...
+                                        0, ...
+                                        tcp.RST | tcp.ACK)
+                        write_ipv4( pbuf, ...
+                                    interface.ipv4_addr, ...
+                                    ip.src_addr(@ih), ...
+                                    ip.TCP, ...
+                                    tl)
+                        pb_head := (pb_head + 1) & PKTBUFF_MASK
+                    return
 
+    seg_len := ( ip.dgram_len(@ih) - ip.IP_HDR_SZ - tcp.header_len(@th) )
+
+    if ( reset )
+        DEBUG("no matching socket")        ' 3.10.7.1 (TCB does not exist)
+        if ( tcp.flags(@th) & tcp.RST )
+            return 0
+        else
+            if ( tcp.flags(@th) & tcp.ACK ) ' ACK bit is on
+                seq := tcp.ack_nr(@th)      ' echo back the sender's ACK #
+                ack := 0
+                flags := tcp.RST
+            else                            ' ACK bit is off
+                seq := 0
+                ack := tcp.seq_nr(@th)+seg_len
+                flags := tcp.RST | tcp.ACK
+
+            pbuf := pbuf_allocate()
+            if ( pbuf >= 0 )
+                tl := write_tcp(pbuf, ...
+                                interface.ipv4_addr, ...    'xxx find matching interface
+                                ip.src_addr(@ih), ...
+                                tcp.dest_port(@th), ...
+                                tcp.source_port(@th), ...
+                                seq, ...
+                                ack, ...
+                                flags, ...
+                                tcp.timest_ptr(), ...
+                                0)
+                write_ipv4(  pbuf, ...
+                            interface.ipv4_addr, ...    'xxx same
+                            ip.src_addr(@ih), ...
+                            ip.TCP, ...
+                            tl)
+                pb_head := (pb_head + 1) & PKTBUFF_MASK
+            return 0
+    else
+        ' found a matching fully-specified socket or a listening socket
+        DEBUG(" using socket ", udec(ls), udec(s), udec(sck) )
+        case socket[sck].state
+            SYN_SENT:                           ' 3.10.7.3
+                if ( tcp.flags(@th) & tcp.ACK )
+                    if ( (tcp.ack_nr(@th) <= socket[sck].snd.iss) or ...
+                        (tcp.ack_nr(@th) > socket[sck].snd.nxt) )
+                        DEBUG(  "SYN_SENT bad ACK: ", udec_(tcp.ack_nr(@th) ), " is =< snd.iss=", udec_(socket[sck].snd.iss), " or > snd.nxt=", udec_(socket[sck].snd.nxt) )
+                        ifnot ( tcp.flags(@th) & tcp.RST )
+                            'send reset
+                            'seq=seg.ack, ctl=RST
+                            pbuf := pbuf_allocate()
+                            if ( pbuf >= 0 )
+                                tl := write_tcp_socket(pbuf, sck, tcp.RST)
+                                write_ipv4( pbuf, ...
+                                            interface.ipv4_addr, ...
+                                            ip.src_addr(@ih), ...
+                                            ip.TCP, ...
+                                            tl)
+                                pb_head := (pb_head + 1) & PKTBUFF_MASK
+                            return 0            ' bad ACK; drop
+                    if ( (tcp.ack_nr(@th) > socket[sck].snd.una) and ...
+                        (tcp.ack_nr(@th) <= socket[sck].snd.nxt) )
+                        ' ACK number is acceptable
+                        ' xxx could check ack == snd.nxt instead of <= if we don't want to support
+                        '   sending data on SYN segments
+                if ( tcp.flags(@th) & tcp.RST )
+                    'xxx possible blind reset attack vector here; see RFC 5961
+                    ' signal to user: error: connection reset
+                    set_state(sck, CLOSED)
+                    return
+                if ( tcp.flags(@th) & tcp.SYN )
+                    DEBUG("SYN_SENT: rcv SYN|ACK")
+                    socket[sck].rcv.nxt := tcp.seq_nr(@th)+1
+                    socket[sck].rcv.irs := tcp.seq_nr(@th)
+                    socket[sck].snd.una := tcp.ack_nr(@th)
+                    if ( socket[sck].snd.una > socket[sck].snd.iss )    ' = our SYN has been ACKed
+                        'seq=snd.nxt
+                        'ack=rcv.nxt
+                        'ctl=ACK
+                        set_state(sck, ESTABLISHED)
+                        pbuf := pbuf_allocate()
+                        if ( pbuf >= 0 )
+                            tl := write_tcp_socket(pbuf, sck, tcp.ACK)
+                            write_ipv4( pbuf, ...
+                                        socket[sck].local_ip, ...
+                                        socket[sck].remote_ip, ...
+                                        ip.TCP, ...
+                                        tl)
+                            pb_head := (pb_head + 1) & PKTBUFF_MASK
+                        return
+                    else                        ' simultaneous open?
+                        set_state(sck, SYN_RECEIVED)
+                        'seq=iss
+                        'ack=rcv.nxt
+                        'ctl=SYN,ACK
+                        'snd.wnd := seg.wnd
+                        'snd.wl1 := seg.seq
+                        'snd.wl2 := seg.ack
+                        return
+
+    ' if we got here, the socket's state must be one of:
+    ' SYN_RECEIVED, ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT
     seg_accept := true
+    seq := tcp.seq_nr(@th)
+    ack := tcp.ack_nr(@th)
     ' check the sequence number
-    if ( (socket[sck].rcv.wnd == 0) and (seg_len > 0) )
-        ' segment contains text but receive window is closed
-        seg_accept := false
-    ifnot ( (tcp.seq_nr() >= socket[sck].rcv.nxt) and (tcp.seq_nr() < (socket[sck].rcv.nxt+socket[sck].rcv.wnd) ) or ...
-            ( (tcp.seq_nr()+seg_len-1) >= socket[sck].rcv.nxt) and ...
-            (tcp.seq_nr()+seg_len-1) < (socket[sck].rcv.nxt+socket[sck].rcv.wnd) )
-        'dbg.strln(@"seq_nr outside rcv window")
-        seg_accept := false                     ' sequence number outside the rcv window
+    DEBUG(  " rcv.nxt=", udec_(socket[sck].rcv.nxt), " seg.seq=", udec_(tcp.seq_nr(@th) ), " rcv.wnd=", udec_(socket[sck].rcv.wnd), " rcv.nxt+rcv.wnd=", udec_(socket[sck].rcv.nxt+socket[sck].rcv.wnd) )
+
+    ' 1
+    ifnot ( seq == socket[sck].rcv.nxt )        ' not necessarily a failure; dig deeper:
+        ' 2
+        ifnot ( socket[sck].rcv.nxt +<= seq +< (socket[sck].rcv.nxt+socket[sck].rcv.wnd) )
+            DEBUG(" ERR rcv.nxt =< seg.seq < rcv.nxt+rcv.wnd")
+            seg_accept := false
+        ' 3
+        if ( (seg_len > 0) and (socket[sck].rcv.wnd == 0) )
+            ' segment contains text but receive window is closed
+            DEBUG(" ERR rcv.wnd closed")
+            seg_accept := false
+        ' 4
+        ifnot ( (socket[sck].rcv.nxt +<= seq +< socket[sck].rcv.nxt+socket[sck].rcv.wnd) or ...
+                (socket[sck].rcv.nxt +<= (seq+seg_len-1) +< socket[sck].rcv.nxt+socket[sck].rcv.wnd) )
+            DEBUG(" ERR seq_nr outside rcv window")
+            seg_accept := false                 ' sequence number outside the rcv window
+
     ifnot ( seg_accept )                        ' ACK unacceptable segment
-        ifnot ( tcp.flags() & tcp.RST )         '   unless the RST flag is set
-            tcp_send_socket(sck, tcp.ACK)
-            'dbg.strln(@" check seq nr ret")
+        ifnot ( tcp.flags(@th) & tcp.RST )      '   unless the RST flag is set
+            pbuf := pbuf_allocate()
+            if ( pbuf >= 0 )
+                tl := write_tcp_socket(pbuf, sck, tcp.ACK)
+                write_ipv4( pbuf, ...
+                            socket[sck].local_ip, ...
+                            socket[sck].remote_ip, ...
+                            ip.TCP, ...
+                            tl)
+                pb_head := (pb_head + 1) & PKTBUFF_MASK
+                DEBUG(" check seq nr ret")
         return OK
 
     ' check the reset flag
-    if ( tcp.flags() & tcp.RST )
+    DEBUG(" checking RST")
+    if ( tcp.flags(@th) & tcp.RST )
         case socket[sck].state
             SYN_RECEIVED:
                 if ( socket[sck].prev_state == LISTENING )
                     set_state(sck, LISTENING)
-                    'dbg.strln(@" connection reset")
+                    DEBUG(" connection reset")
                     return OK
                 elseif ( socket[sck].prev_state == SYN_SENT )
                     set_state(sck, CLOSED)
@@ -1177,59 +1352,78 @@ pri process_tcp(): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop
                 return -1
 
     ' check the SYN bit
-    if ( tcp.flags() & tcp.SYN )
+    if ( tcp.flags(@th) & tcp.SYN )
+        DEBUG(" SYN is set")
         case socket[sck].state
             SYN_RECEIVED:
                 if ( socket[sck].prev_state == LISTENING )
                     delete_tcb(sck)
-                    'dbg.strln(@"dup syn received")
+                    DEBUG(" dup syn received")
                     return OK
             ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT:
-                tcp_send_socket(sck, tcp.ACK)
+                DEBUG(" state is >= ESTABLISHED")
+                pbuf := pbuf_allocate()
+                if ( pbuf >= 0 )
+                    tl := write_tcp_socket(pbuf, sck, tcp.ACK)
+                    write_ipv4( pbuf, ...
+                                socket[sck].local_ip, ...
+                                socket[sck].remote_ip, ...
+                                ip.TCP, ...
+                                tl)
+                    pb_head := (pb_head + 1) & PKTBUFF_MASK
                 return OK
 
     ' check the ACK field
-    ifnot ( tcp.flags() & tcp.ACK )
+    ifnot ( tcp.flags(@th) & tcp.ACK )
+        DEBUG(" no ACK bit")
         return OK
 
     ' segment contains an ACK: the loop below checks that the sequence number received is
     '   "in-window." If it's not, how it's handled depends on the socket's current
     '   connection state. The connection could be reset, or the segment silently dropped, etc.
+    DEBUG(" seg has ACK bit")
     repeat
         case socket[sck].state
             SYN_RECEIVED:
-                'dbg.strln(@" SYN_RECEIVED")
-                if ( (tcp.ack_nr() > socket[sck].snd.una) and (tcp.ack_nr() <= socket[sck].snd.nxt) )
+                DEBUG(" SYN_RECEIVED")
+                if ( (tcp.ack_nr(@th) > socket[sck].snd.una) and (tcp.ack_nr(@th) <= socket[sck].snd.nxt) )
+                    ls := find_listening_socket(tcp.dest_port(@th), L4_TCP)
+                    if ( ls < 0 )   'xxx this shouldn't happen
+                        DEBUG(" error: no listening socket")
+                        return
                     set_state(sck, ESTABLISHED)
-                    socket[s].backlog.pending++
-                    'dbg.printf(@"socket[%d].backlog=%d\n\r", s, socket[s].backlog)
-                    enqueue(s, sck)
-                    socket[sck].snd.wnd := tcp.window()
-                    socket[sck].snd.wl1 := tcp.seq_nr()
-                    socket[sck].snd.wl2 := tcp.ack_nr()
-                if ( tcp.ack_nr() > socket[sck].snd.nxt )
+                    socket[ls].backlog.pending++
+                    DEBUG(" socket[", udec_(ls), "].backlog=", udec_(socket[ls].backlog.pending) )
+                    enqueue(ls, sck)
+                    socket[sck].snd.wnd := tcp.window(@th)
+                    socket[sck].snd.wl1 := tcp.seq_nr(@th)
+                    socket[sck].snd.wl2 := tcp.ack_nr(@th)
+                if ( tcp.ack_nr(@th) > socket[sck].snd.nxt )
                     ' ACK to future (not yet sent) segment
+                    DEBUG(" ACK to future segment")
                     return OK                   ' drop segment
-                    'tcp_send_socket(sck, tcp.ACK)  ' send challenge ACK (xxx rate limit this)
+                    'write_tcp_socket(sck, tcp.ACK)  ' send challenge ACK (xxx rate limit this)
             ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, CLOSING, LAST_ACK:
-                if ( (tcp.ack_nr() > socket[sck].snd.una) and (tcp.ack_nr() <= socket[sck].snd.nxt) )
-                    socket[sck].snd.una := tcp.ack_nr()
-                if ( tcp.ack_nr() < socket[sck].snd.una )
+                DEBUG(" state is >= ESTABLISHED")
+                if ( (ack > socket[sck].snd.una) and (ack <= socket[sck].snd.nxt) )
+                    socket[sck].snd.una := ack
+                if ( ack < socket[sck].snd.una )
                     ' ACK to old (already acknowledged) segment; drop
+                    DEBUG(" ack old segment; drop")
                     return OK
-                if ( tcp.ack_nr() > socket[sck].snd.nxt )
+                if ( ack > socket[sck].snd.nxt )
                     ' ACK to future (not yet sent) segment
                     ' TCP RFC specifies a challenge ACK here but this doesn't seem like it's
                     '   typical behavior nowadays and puts a greater strain on an embedded stack
                     '   like this (not that it's expected to happen often)
+                    DEBUG(" ack future segment; drop")
                     return 
-                if (    (socket[sck].snd.wl1 < tcp.seq_nr() ) or ...
-                        ( (socket[sck].snd.wl1 == tcp.seq_nr() ) and ...
-                        (socket[sck].snd.wl2 <= tcp.ack_nr() ) ) )
+                if (    (socket[sck].snd.wl1 < seq) or ...
+                        ( (socket[sck].snd.wl1 == seq) and (socket[sck].snd.wl2 <= ack) ) )
                     ' update the window sequence and ACK numbers
-                    socket[sck].snd.wnd := tcp.window()
-                    socket[sck].snd.wl1 := tcp.seq_nr()
-                    socket[sck].snd.wl2 := tcp.ack_nr()
+                    socket[sck].snd.wnd := tcp.window(@th)
+                    socket[sck].snd.wl1 := seq
+                    socket[sck].snd.wl2 := ack
                 case socket[sck].state
                     FIN_WAIT_1:
                         set_state(sck, FIN_WAIT_2)
@@ -1246,8 +1440,16 @@ pri process_tcp(): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop
                     TIME_WAIT:
                         ' The only thing that can arrive in this state is a retransmission of the
                         '   remote FIN. Acknowledge it, and restart the 2 MSL timeout.
-                        if ( tcp.seq_nr() == socket[sck].rcv.nxt )
-                            tcp_send_socket(sck, tcp.FIN | tcp.ACK)
+                        if ( seq == socket[sck].rcv.nxt )
+                            pbuf := pbuf_allocate()
+                            if ( pbuf >= 0 )
+                                tl := write_tcp_socket(pbuf, sck, tcp.FIN | tcp.ACK)
+                                write_ipv4( pbuf, ...
+                                            socket[sck].local_ip, ...
+                                            socket[sck].remote_ip, ...
+                                            ip.TCP, ...
+                                            tl)
+                                pb_head := (pb_head + 1) & PKTBUFF_MASK
                         ' TODO: restart timeout
                 quit
 
@@ -1257,6 +1459,7 @@ pri process_tcp(): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop
     ' --
 
     ' process segment text
+    DEBUG(" process segment text: ", udec_(seg_len), "bytes")
     if ( seg_len )                              ' process only if there's actually a payload
         case socket[sck].state
             ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2:
@@ -1264,27 +1467,39 @@ pri process_tcp(): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop
                 socket[sck].rcv.nxt += xrxget(sck, seg_len)
                 socket[sck].rcv.wnd := rx_bytes_free(sck)
                 long[socket[sck].p_signal] |= DATA_READY
-                if ( tcp.flags() & tcp.PSH )
+                if ( tcp.flags(@th) & tcp.PSH )
+                    DEBUG(" PSH")
                     ' signal to the application protocol the PUSH flag was set
                     long[socket[sck].p_signal+4] := sck
                     long[socket[sck].p_signal] |= PUSH_RECEIVED
-                tcp_send_socket(sck, tcp.ACK)
+                pbuf := pbuf_allocate()
+                if ( pbuf >= 0 )
+                    tl := write_tcp_socket(pbuf, sck, tcp.ACK)
+                    write_ipv4( pbuf, ...
+                                socket[sck].local_ip, ...
+                                socket[sck].remote_ip, ...
+                                ip.TCP, ...
+                                tl)
+                    pb_head := (pb_head + 1) & PKTBUFF_MASK
             CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT:
                 return OK
 
-
+    DEBUG(" check FIN bit: ")
     ' check the FIN bit
-    ifnot ( tcp.flags() & tcp.FIN )             ' not set; ignore
+    ifnot ( tcp.flags(@th) & tcp.FIN )             ' not set; ignore
+        DEBUG(" not set")
         return OK
 
     if ( lookdown(socket[sck].state: CLOSED, LISTENING, SYN_SENT) )
         ' sequence number can't be verified in these states; ignore FIN, drop the segment
+        DEBUG("set, but seg.seq can't be verified in this state")
         return OK
 
+    DEBUG(" set")
     ' signal to the app the remote wants to disconnect
     long[socket[sck].p_signal+4] := sck
     long[socket[sck].p_signal] := CONN_CLOSED_REMOTE | PUSH_RECEIVED
-'    dbg.printf(@"socket %d disconnect by remote host\n\r", sck)
+    DEBUG(" socket ", udec_(sck), " disconnect by remote host")
 
     flags := tcp.ACK
     case socket[sck].state
@@ -1300,422 +1515,422 @@ pri process_tcp(): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop
             ' Remain in the TIME-WAIT state.
             ' TODO: Restart the 2 MSL time-wait timeout.
 
-    socket[sck].rcv.nxt++
-    tcp_send_socket(sck, flags)
+    pbuf := pbuf_allocate()
+    if ( pbuf >= 0 )
+        socket[sck].rcv.nxt++
+        tl := write_tcp_socket(pbuf, sck, flags)
+        write_ipv4( pbuf, ...
+                    socket[s].local_ip, ...
+                    socket[s].remote_ip, ...
+                    ip.TCP, ...
+                    tl)
+        pb_head := (pb_head + 1) & PKTBUFF_MASK
+
     return OK
 
 
-pri process_udp(): s | udp_msg_s uh, skn, l
+pri receive_udp(^ipv4_hdr_s ih): s | udp_msg_s uh, sck, l, h, t, pbuf, il
 ' Process received UDP headers
-#ifdef EXT_DBG
-'    dbg.strln(@"process_udp()")
-#endif
+    DEBUG("process_udp()")
     udp.set_header(@uh)
     udp.rd_udp_header()
 
-    repeat MAX_SOCKETS with skn
-        if ( (udp.dest_port() == socket[skn].local_port) and (socket[skn].protocol == L4_UDP) )
-#ifdef EXT_DBG
-'            dbg.printf(@"sck %d port match\n\r", skn)
-#endif
+    repeat MAX_SOCKETS with sck
+        if ( (udp.dest_port() == socket[sck].local_port) and (socket[sck].protocol == L4_UDP) )
+            DEBUG("sck ", udec_(sck), " port match")
             l := udp.payload_len()
-            recv_datagram(  skn, ...
-                            ip.src_addr(), udp.src_port(), ...
-                            l)
-            if ( socket[skn].p_signal )         ' notify the service/protcol handler, if defined
-                long[socket[skn].p_signal+4] := skn
-                long[socket[skn].p_signal] := DATA_READY
+            h := socket[sck].rxbuff.datagram.head
+            t := socket[sck].rxbuff.datagram.tail
+            if ( ( (t-h - 1) & DG_MASK) > 0 )
+                s := xrxget(sck, l)
+                if ( s > 0 )
+                    socket[sck].rxbuff.datagram.descr[h].remote.address := ip.src_addr(@ih)
+                    socket[sck].rxbuff.datagram.descr[h].remote.port := udp.src_port()
+                    socket[sck].rxbuff.datagram.descr[h].len := l
+                    socket[sck].rxbuff.datagram.head := (h + 1) & DG_MASK
+                    return
+            if ( socket[sck].p_signal )         ' notify the service/protcol handler, if defined
+                long[socket[sck].p_signal+4] := sck
+                long[socket[sck].p_signal] := DATA_READY
             return
 
-#ifdef EXT_DBG
-'    dbg.strln(@"no matching socket")
-#endif
-    ifnot ( ip.is_multicast_addr(ip.dest_addr() ) )
+    DEBUG("no matching socket")
+    'todo: verify this logic: should we bounce the message regardless, assuming that multicast messages
+    '   would've made it this far only if they passed prior filtering? (hardware-based)
+    ifnot ( ip.is_multicast_addr(ip.dest_addr(@ih) ) )
         ' no socket exists with that port; bounce message
-        send_icmp(icmp.DEST_UNREACH, icmp.PORT_UNREACH, ip.start_pos() )
+        pbuf := pbuf_allocate()
+        if ( pbuf >= 0 )
+            'todo: incomplete
+            'write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l
+            'write_ipv4(pbuf, lip, rip, pro, len=0, ident=0, dscp=0, ttl=0): l
+            il := write_icmp(pbuf, icmp.DEST_UNREACH, icmp.PORT_UNREACH)
+            write_ipv4(pbuf, interface[0].ipv4_addr, ip.src_addr(@ih), ip.UDP, il)
+            pb_head := (pb_head + 1) & PKTBUFF_MASK
+            return
 
     return
 
 
-pri resolve_ip(rip): s | ethii_t eh, arp_msg_s ah
-' Request resolution of an IP address to a MAC address
-'   sck:        socket number
-'   rip:        IP to resolve
-
-'   Returns:    0 on success
-'               -1 on failure
-
-    ethii.set_header(@eh)
-    arp.set_header(@ah)
+pri send_pbuf(pbuf): l
+' Write packet buffer to network device
+    DEBUG( "send_pbuf(", uhex_(pbuf), ") pbuf len=", udec_(pktbuff[pbuf].len) )
 
     net.start_frame()
-        ethii.new(@interface.mac_addr, @_mac_bcast, ETYP_ARP)
-        arp.who_has(swap_long(interface.ipv4_addr), rip)
-    net.send_frame( net.fifo_wr_ptr() )
+        l := net.wr_block(pktbuff[pbuf].p_data, pktbuff[pbuf].len)
+    net.send_frame()
+    pb_tail := (pb_tail + 1) & PKTBUFF_MASK
 
-    return OK
-
-
-pri send_datagram(sck, p_src, rip, rp, len): s | h, t
-' Send a datagram
-'   sck:    socket number
-'   p_src:  datagram data (pointer to buffer)
-'   rip:    remote IP to send datagram to
-'   rp:     remote port
-'   len:    length of datagram
-    h := socket[sck].txbuff.datagram.head
-    t := socket[sck].txbuff.datagram.tail
-
-    if ( ( (t-h - 1) & DG_MASK) > 0 )           ' check for free descriptor
-        s := txput(sck, p_src, len)             ' (try to) copy the datagram to the socket buffer
-        if ( s > 0 )                            ' upon success, write the descriptor
-            socket[sck].txbuff.datagram.descr[h].remote.address := rip
-            socket[sck].txbuff.datagram.descr[h].remote.port := rp
-            socket[sck].txbuff.datagram.descr[h].len := len
-            socket[sck].txbuff.datagram.head := (h + 1) & DG_MASK
-            return
-
-    return -1                                   ' error: socket buffer or descriptor table full
-
-
-
-var byte bad_dgram[4+20+8]    ' icmp unused field + original ip header + first 8 bytes of layer 4
-pri send_icmp(t, c, ips) | icmp_msg_s ich, ip_header_s iph, tmp
-' Send ICMP messages
-'   t:      message type
-'   c:      message code
-'   ips:    FIFO position of IP header start
-    icmp.set_header(@ich)
-    icmp.set_msg_type(t)
-    icmp.set_code(c)
-
-    ip.set_header(@iph)
-
-    ' read in the offending IP datagram
-    tmp := net.fifo_rd_ptr()                    ' remember the current fifo position
-    net.fifo_set_rd_ptr(ips)                    ' rewind to the start of the 'bad' IP datagram
-    bytefill(@bad_dgram, 0, 4+20+8)
-    net.rd_block(@bad_dgram+4, 20+8)
-    net.fifo_set_rd_ptr(tmp)                    ' restore it
-    ip.rd_ip_header(@bad_dgram+4)               ' use the bad header as a template for the new
-    ip.set_layer4_proto(ip.ICMP)                '   ip header, but change the protocol type to ICMP
-
-    net.start_frame()
-        ethii.reply()
-        ip.reply()
-        icmp.wr_icmp_msg()
-        net.wr_block(@bad_dgram, 4+20+8)        ' append the original 'bad' datagram
-        icmp.update_chksum(@bad_dgram, 4+20+8)
-        ip.update_chksum(20+8+4+4)
-    net.send_frame( net.fifo_wr_ptr() )
+    pbuf_free()
 
 
 pri set_state(sck, new_state)
 ' Change the connection state of the socket
-'    dbg.printf(@"set_state(%d, %s)\n\r", sck, state_str(new_state))
+    DEBUG("set_state(", udec_(sck), zstr_(netstr.state_str(new_state) ), ")")
+
     socket[sck].prev_state := socket[sck].state ' record the previous state
     socket[sck].state := new_state
     long[socket[sck].p_signal+4] := sck
     long[socket[sck].p_signal] |= STATE_CHANGED ' signal state change to the application
-'    dbg.printf(@"sent signal to %08x\n\r", socket[sck].p_signal)
 
 
-pri socket_add_group(sck, mc_addr): s | g
-' Add membership of a multicast group/address to a socket
-'   sck:        socket number
-'   mc_addr:    multicast group/address
-'   Returns:
-'               index within socket's multicast group list on success
-'               negative numbers on failure
-    ifnot ( ip.is_multicast_addr(mc_addr) )
-#ifdef EXT_DBG
-        dbg.printf(@"socket_add_group(): error, %s isn't a multicast address\n\r", ...
-                    str.iptostr(mc_addr))
-#endif
-        return -1                               ' error: invalid multicast address
-
-    if ( socket_is_member_of(sck, mc_addr) )    ' error: already subscribed to this group
-#ifdef EXT_DBG
-        dbg.printf(@"sck %d already subscribed to %s\n\r", sck, str.iptostr(mc_addr))
-#endif
-        return -2
-
-    repeat MAX_MC_GROUPS_SOCKET with g
-        ifnot ( socket[sck].mc_group[g].addr )  ' empty entry found - add the group address
-            socket[sck].mc_group[g].addr := mc_addr
-            socket[sck].mc_group[g].filt_mode := igmp.CHANGE_TO_EXCLUDE
-            iface_add_group(0, mc_addr)         ' add it to the interface list, too
-#ifdef EXT_DBG
-            dbg.printf(@"sck %d subscribed to %s\n\r", sck, str.iptostr(mc_addr))
-#endif
-            return g
-
-    return -3                                   ' error: socket's group membership table is full
+pri tcp_tx_pending_free(): a
+' Get the number of free pending TCP segment slots
+    return (tcp_tx_pend.tail-tcp_tx_pend.head-1) & MAX_TCP_TX_PEND_MASK
 
 
-pri socket_group_index(sck, mc_addr): i | g
-' Get a multicast group/address's index within a socket's group list
-'   sck:        socket number
-'   mc_addr:    multicast group/address
-'   Returns:
-'               index within socket's multicast group list on success
-'               negative numbers on failure
-    repeat MAX_MC_GROUPS_SOCKET with g
-        if ( socket[sck].mc_group[g].addr == mc_addr )
-            return g
+pri write_arp(pbuf, opc, tha, tpa): l | arp_msg_s ah
+' Write ARP header
+    DEBUG("write_arp(", udec(pbuf), udec(opc), zstr_(str.mactostr(tha)), zstr_(str.iptostr(tpa) ), ")")
+    ah~
+    pktbuff[pbuf].p_data := pktbuff[pbuf].p_end := @pktbuff[pbuf].buffer+FRAME_HEADROOM_SZ
+    pktbuff[pbuf].len := 0
 
-    return -1
+    ' set up the ARP header
+    arp.set_hw_addr_len(@ah,        MACADDR_LEN)
+    arp.set_hwtype(@ah,             HRD_ETH)
+    arp.set_opcode(@ah,             opc)
+    arp.set_proto_addr_len(@ah,     IPV4ADDR_LEN)
+    arp.set_proto_type(@ah,         arp.PROTO_TYPE_IP)
 
+    ' who has d.d.d.d?
+    ifnot ( tha )
+        tha := @_mac_zero
+    arp.set_target_hw_addr(@ah,     tha)
+    arp.set_target_proto_addr(@ah,  tpa)
 
-pri socket_is_member_of(sck, mc_addr): f | g
-' Check if a socket is subscribed to a multicast group
-'   sck:        socket number
-'   mc_addr:    multicast group/address
-'   Returns:    true (-1) or false
-    return ( socket_group_index(sck, mc_addr) >= 0 )
+    ' tell d.d.d.d (xx:xx:xx:xx:xx:xx)
+    arp.set_sender_hw_addr(@ah,     @interface[0].mac_addr)
+    arp.set_sender_proto_addr(@ah,  interface[0].ipv4_addr)
 
+    ' write header to pbuf
+    pktbuff[pbuf].p_data -= arp.ARP_MSG_SZ      ' rewind to fit ARP header
+    pktbuff[pbuf].len += arp.ARP_MSG_SZ
+'    DEBUG(" len is now ", udec_(pktbuff[pbuf].len) )
+    arp.wr_arp_msg_to(pktbuff[pbuf].p_data, @ah)
 
-pri socket_leave_group(sck, mc_addr): s | g, i
-' Remove a socket's membership from a multicast group
-'   sck:        socket number
-'   mc_addr:    multicast group/address
-'   Returns:
-'               index within socket's multicast group list on success
-'               negative numbers on failure
-    g := socket_group_index(sck, mc_addr)
-    if ( g >= 0 )
-        socket[sck].mc_group[g]~                ' remove group record from the socket
-        iface_mcast_dec_ref(0, mc_addr)         ' decrease interface's reference count to group
-        return g
+    pktbuff[pbuf].layer_written := 3
 
-    return -1                                   ' error: not a member of this group
+    return arp.ARP_MSG_SZ
 
 
-pri recv_datagram(sck, rip, rp, len): s | h, t
-' Receive a datagram into the socket and create a corresponding descriptor for it
-'   sck:    socket number
-'   rip:    sender IP
-'   rp:     sender port
-'   len:    datagram length
+pri write_ethii(pbuf, dest, src, etyp): l | ethii_t eh
+' Encapsulate an IP payload with Ethernet-II
+'   dest:   destination MAC address
+'   src:    source MAC address
+'   etyp:   Ethertype
+    DEBUG("write_ethii(pbuf=", udec_(pbuf), ")")
 
-    ' check for space in the datagram descriptor queue
-    h := socket[sck].rxbuff.datagram.head
-    t := socket[sck].rxbuff.datagram.tail
-    if ( ( (t-h - 1) & DG_MASK) > 0 )
-        s := xrxget(sck, len)
-        if ( s > 0 )
-            socket[sck].rxbuff.datagram.descr[h].remote.address := rip
-            socket[sck].rxbuff.datagram.descr[h].remote.port := rp
-            socket[sck].rxbuff.datagram.descr[h].len := s
-            socket[sck].rxbuff.datagram.head := (h + 1) & DG_MASK
-            return
+    eh~
 
-    return -1                                   ' error: socket buffer or descriptor table full
+    ethii.set_dest_addr(@eh, dest)
+    ethii.set_src_addr(@eh, src)
+    ethii.set_ethertype(@eh, etyp)
 
+    pktbuff[pbuf].p_data -= ethii.ETH_FRM_SZ
+    pktbuff[pbuf].len += ethii.ETH_FRM_SZ
+    'DEBUG(" len is now ", udec_(pktbuff[pbuf].len) )
 
-pri tcp_send(lmac, rmac, lip, rip, lp, rp, seqnr, acknr, flags, rwin, ip_ttl=0): s | ethii_t eh, ip_header_s ih, tcp_msg_s th
-' Send a TCP segment with arbitrary parameters
-'   lmac:       local MAC address
-'   rmac:       remote MAC address
-'   lip:        local IP address
-'   rip:        remote IP address
-'   lp:         local port
-'   rp:         remote port
-'   seqnr:      sequence number
-'   acknr:      ACK number
-'   flags:      control flags
-'   rwin:       receive window
-#ifdef EXT_DBG
-    dbg.strln(@"tcp_send()")
-#endif
-    ifnot ( arp.hw_addr_of(rip) )               ' if the remote's MAC address isn't known,
-        arp.cache_entry(@_mac_zero, rip)        '   queue it for resolution by ARP
-#ifdef EXT_DBG
-        dbg.printf(@"tcp_send(): caching entry %s in ARP\n\r", str.iptostr(rip) )
-#endif
-        return -1                               '   and return
+    ethii.wr_ethii_frame_to(@eh, pktbuff[pbuf].p_data)
 
-    ethii.set_header(@eh)
-    ip.set_header(@ih)
-    tcp.set_header(@th)                         ' use local struct for the TCP header
-    tcp.reset()
-    net.start_frame()
-        ethii.new(lmac, rmac, ETYP_IPV4)
-        ip.new(ip.TCP, lip, rip, 0, ip_ttl)
-        tcp.set_source_port(lp)                 ' set up TCP header with called parameters
-        tcp.set_dest_port(rp)
-        tcp.set_seq_nr(seqnr)
-        tcp.set_ack_nr(acknr)
-        tcp.set_header_len(20)
-        tcp.set_flags(flags)
-        tcp.set_window(rwin)
-        tcp.set_checksum(0)
-        tcp.set_urgent_ptr(0)
-        tcp.wr_tcp_header()
-        tcp.update_checksum(lip, rip)           ' update checksums
-        ip.update_chksum( tcp.header_len() )    '
-    net.send_frame( net.fifo_wr_ptr() )
+    pktbuff[pbuf].layer_written := 2
+
+    return ethii.ETH_FRM_SZ
 
 
-pri tcp_send_socket(sck, flags, sl=0): s | ethii_t eh, ip_header_s ih, tcp_msg_s th, tsl
+pri write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l | icmp_msg_s ich, ^echo_msg_s ehdr
+' Write ICMP header, message
+    DEBUG("write_icmp()")
+
+    ich~
+
+    ' init buffer pointer to the end of the headroom (the first 128 bytes)
+    pktbuff[pbuf].p_data := pktbuff[pbuf].p_end := @pktbuff[pbuf].buffer+FRAME_HEADROOM_SZ
+    pktbuff[pbuf].len := 0
+
+    ' set up ICMP header
+    icmp.set_msg_type(@ich, typ)
+    icmp.set_code(@ich, cd)
+    icmp.set_chksum(@ich, 0)
+
+    ' write extra message data depending on the ICMP message type
+    case icmp.msg_type(@ich)
+        icmp.DEST_UNREACH:
+            case icmp.code(@ich)
+                icmp.PORT_UNREACH:
+                    'todo
+        icmp.ECHO_REPL:
+            ehdr~
+            icmp.set_ident(@ehdr, ident)
+            icmp.set_seq_nr(@ehdr, seq_nr)
+            'todo
+        icmp.ECHO_REQ:
+            'todo
+
+    ' rewind pbuf pointer to fit ICMP header, and write it
+    pktbuff[pbuf].p_data -= icmp.ICMP_MSG_SZ
+    pktbuff[pbuf].len += icmp.ICMP_MSG_SZ
+    icmp.wr_icmp_msg_to(@ich, pktbuff[pbuf].p_data)
+
+
+    pktbuff[pbuf].layer_written := 4
+
+    return icmp.ICMP_MSG_SZ
+
+
+pri write_ipv4(pbuf, lip, rip, pro, len=0, ident=0, dscp=0, ttl=0): l | ipv4_hdr_s ih, tmp, ol, t
+' Encapsulate data with IPv4 header
+'   Returns:    length of IPv4 header
+
+    DEBUG("write_ipv4(", udec(pbuf), " rip=", zstr_(str.iptostr(rip)), zstr_(netstr.prostr(pro) ), ")")
+
+    ' point to local instance of IPv4 header struct and initialize/clear it out
+    ih~
+
+    ' configure IPv4 header
+    ip.set_dscp(@ih,            dscp)
+    ip.set_msg_ident(@ih,       ident)
+    ip.set_flags(@ih,           0)                             'xxx for future use, if frag is ever supported
+
+    ' write options (as applicable) and set TTL
+    ol := 0
+    if ( ip.dscp(@ih) == ip.CS6 )
+        tmp := ip.ROUTER_ALERT_EXAMINE_PKT
+        ol += ip.add_option(ip.TYPE_ROUTER_ALERT | ip.COF_COPY, 4, @tmp)
+    if ( ip.is_multicast_link_local_addr(rip) )
+        ' ttl _must_ be 1 when datagrams are sent to
+        '   link-local (224.0.0.0 to .255) multicast addr
+        ip.set_ttl(@ih, 1)
+    else
+        ifnot ( ttl )                           ' use default TTL (64) if it's unspecified
+            ip.set_ttl(@ih, ip.TTL_DEFAULT)
+        else
+            ip.set_ttl(@ih, ttl)
+
+    ip.set_layer4_proto(@ih,    pro)
+    ip.set_hdr_chk(@ih,         0)
+    ip.set_src_addr(@ih,        lip)
+    ip.set_dest_addr(@ih,       rip)
+    ip.set_hdr_len(@ih,         ip.IP_HDR_SZ + ol)
+    ip.set_dgram_len(@ih,       len)                       ' this depends on the IP header length
+    ip.set_frag_offset(@ih,     0)                       'xxx for future use, if frag is ever supported
+
+    pktbuff[pbuf].p_data -= ip.hdr_len(@ih)              ' prepend IP header to transport
+    pktbuff[pbuf].len += ip.hdr_len(@ih)
+
+    ip.wr_ip_header_to(@ih, pktbuff[pbuf].p_data)
+    ip.wr_chksum_to(@ih, pktbuff[pbuf].p_data+IP_CKSUM)
+
+    arp_queue_ip(pbuf, rip)                           ' queue the dest IP for ARP resolution
+'    l := pktbuff[pbuf].p_data-pktbuff[pbuf].p_buff
+
+    pktbuff[pbuf].layer_written := 3
+
+    return ip.hdr_len(@ih)
+
+
+pri write_ipv4_socket(pbuf, sck, len=0, ident=0, dscp=0, ttl=0): l
+' Encapsulate data with IPv4 header, using socket parameters to set up (some of) the header
+'   Returns:    length of IPv4 header
+    DEBUG("write_ipv4_socket() ", udec(pbuf), " rip=", zstr_(str.iptostr(socket[sck].remote_ip) ) )
+    l := write_ipv4(pbuf, ...
+                    socket[sck].local_ip, ...
+                    socket[sck].remote_ip, ...
+                    socket[sck].protocol, ...
+                    len, ...
+                    ident, ...
+                    dscp, ...
+                    ttl )
+    return
+
+
+pri write_tcp(pbuf, lip, rip, sp, dp, seqn, ackn, fl, p_ts=0, wnd=0, up=0, slen=0): l | tcp_msg_s th, ck, hl
+' Write a TCP segment to the packet buffer
+'   lip:    local IP (used for pseudo-header checksum calculation)
+'   rip:    remote IP (used for pseudo-header checksum calculation)
+'   sp:     source port
+'   dp:     destination port
+'   seqn:   sequence number
+'   ackn:   acknowledgement number
+'   fl:     flags/TCP control bits
+'   ts:     pointer to timestamps (2 longs, TSval, TSecr)
+'   wnd:    TCP window
+'   up:     urgent pointer
+'   Returns:    length of assembled TCP header
+
+    DEBUG("write_tcp(", udec(pbuf), zstr_(netstr.tcp_flags_str(fl) ), ")")
+
+    ' init buffer pointer to the end of the headroom (the first 128 bytes)
+    pktbuff[pbuf].p_data := @pktbuff[pbuf].buffer+FRAME_HEADROOM_SZ
+
+    ' set up local structure for use in building the frame
+    th~                                         ' init/fill it with 0
+
+    ' set up the TCP header with socket parameters
+    tcp.set_source_port(@th, sp)
+    tcp.set_dest_port(@th, dp)
+    tcp.set_seq_nr(@th, seqn)
+    tcp.set_ack_nr(@th, ackn)
+    tcp.set_flags(@th, fl)
+    tcp.set_window(@th, wnd)
+    tcp.set_urgent_ptr(@th, up)
+
+    ' Check TCP options. The basic TCP header length is initialized to 20.
+    '   The value returned by tcp.header_len() is increased for every option set
+    tcp.clear_options()
+    if ( tcp.flags(@th) & tcp.SYN )                ' new connection?
+        DEBUG(" SYN is set")
+        tcp.set_option(@th, tcp.MSS,       tcp.MSS_LEN,          net.MTU_MAX-40)
+        tcp.set_option(@th, tcp.WIN_SCALE, tcp.WIN_SCALE_LEN,    0)
+
+    ' set timestamps option (sent during connection establishment and in segments thereafter)
+    if ( p_ts )
+        tcp.set_option(@th, tcp.TMSTAMPS,  tcp.TMSTAMPS_LEN, p_ts)
+
+    hl := tcp.header_len(@th)
+
+    ' rewind the buffer pointer enough to fit the TCP header that was just set up
+    pktbuff[pbuf].p_data -= hl
+    pktbuff[pbuf].len += hl
+
+    tcp.wr_tcp_header_to(@th, pktbuff[pbuf].p_data)' write the TCP header+options to the buffer
+
+    ' calc the pseudo-header checksum (lip, rip, length, complement output)
+    ck := tcp.pseudo_header_cksum(  lip, ...
+                                    rip, ...
+                                    hl+slen, ...
+                                    false)      ' don't complement the output just yet
+    ck := crc.inet_chksum(pktbuff[pbuf].p_data, hl+slen, ck, true)
+
+    word[pktbuff[pbuf].p_data+TCPH_CKSUM] := swap_word(ck)
+
+    pktbuff[pbuf].layer_written := 4
+    long[p_ts][0] := _timestamp_base+getms()    ' update local TCP segment timestamp
+
+    return hl
+
+
+pri write_tcp_ip(pbuf, lip, rip, sp, dp, seqn, ackn, fl, ts, wnd=0, up=0, ident=0, dscp=0, ttl=0): l | tl
+' Write IPv4-encapsulated TCP segment to the packet buffer
+    tl := write_tcp(pbuf, lip, rip, sp, dp, seqn, ackn, fl, ts, wnd, up)
+    write_ipv4(pbuf, lip, rip, ip.TCP, tl, ident, dscp, ttl)
+
+
+pri write_tcp_socket(pbuf, sck, flags, sl=0): s | l
 ' Send a TCP segment using parameters from a socket
 '   sck:    socket number
 '   flags:  TCP segment flags
 '   sl:     segment length (optional; default=0)
-#ifdef EXT_DBG
-    dbg.printf(@"tcp_send_socket(%08x, %08b, %d)\n\r", [sck], flags, sl)
-#endif
-    ifnot ( arp.hw_addr_of(socket[sck].remote_ip) )' if the remote's MAC address isn't known,
-        arp.cache_entry(@_mac_zero, socket[sck].remote_ip)        '   queue it for resolution by ARP
-#ifdef EXT_DBG
-        dbg.strln(@"tcp_send_socket(): caching entry in ARP")
-#endif
-        return -1                               '   and return
+    pktbuff[pbuf].p_end := @pktbuff[pbuf].buffer+FRAME_HEADROOM_SZ
+
+    l := 0
+    if ( sl )                                   ' write segment text (payload) if there is one
+        l := txget(sck, pktbuff[pbuf].p_end, sl)
+        pktbuff[pbuf].p_end += l                ' adjust end pointer to end of payload
+        pktbuff[pbuf].len += l
+
+    s := write_tcp( pbuf, ...
+                    socket[sck].local_ip, ...
+                    socket[sck].remote_ip, ...
+                    socket[sck].local_port, ...
+                    socket[sck].remote_port, ...
+                    socket[sck].snd.nxt, ...
+                    socket[sck].rcv.nxt, ...
+                    flags, ...
+                    @socket[sck].tsval, ...
+                    socket[sck].rcv.wnd, ...
+                    socket[sck].snd.up, ...
+                    l)
+    socket[sck].snd.nxt += l
+    return s+l
+
+
+pri write_udp_socket(pbuf, sck): s | udp_msg_s uh, dt, l, pl
+' Send UDP socket data
+'   sck:    socket number
+    DEBUG("write_udp_socket(", udec(pbuf), udec(sck), ")")
+
+    ' init buffer pointer to the end of the headroom (the first 128 bytes)
+    pktbuff[pbuf].p_data := pktbuff[pbuf].p_end := @pktbuff[pbuf].buffer+FRAME_HEADROOM_SZ
 
     ' set up local structures for use in building the frame
-    ethii.set_header(@eh)
-    ip.set_header(@ih)
-    tcp.set_header(@th)
+    dt := socket[sck].txbuff.datagram.tail
+    udp.set_header(@uh)
+    udp.set_src_port(socket[sck].local_port)
+    udp.set_dest_port(socket[sck].txbuff.datagram.descr[dt].remote.port)
+    udp.set_dgram_len(socket[sck].txbuff.datagram.descr[dt].len)
+    udp.set_chksum(0)
 
-    net.start_frame()
-        ethii.new(@interface.mac_addr, arp.hw_addr_of(socket[sck].remote_ip), ETYP_IPV4)
-        ip.new(ip.TCP, socket[sck].local_ip, socket[sck].remote_ip, 0, socket[sck].ttl)
-        ' set up TCP header with socket parameters
-        tcp.set_source_port(socket[sck].local_port)
-        tcp.set_dest_port(socket[sck].remote_port)
-        tcp.set_seq_nr(socket[sck].snd.nxt)
-        tcp.set_ack_nr(socket[sck].rcv.nxt)
-        tcp.set_header_len(20)
-        tcp.set_urgent_ptr(socket[sck].snd.up)
-        tsl := tcp.header_len() + sl
-        tcp.set_flags(flags)                    ' pass through the TCP flags
-        tcp.set_window(socket[sck].rcv.wnd)
-        tcp.set_checksum(0)
-        tcp.wr_tcp_header()                     ' write the so-far-assembled TCP header
-        if ( sl > 0 )                           ' if there's a payload to attach,
-            'dbg.printf(@"socket %08x copied segment data len %d\n\r", [sck], sl)
-            xtxput(sck, sl)                     '   write it from the socket's ring buffer
+    ' rewind the buffer pointer enough to fit the UDP header that was just set up
+    pktbuff[pbuf].p_data -= udp.UDP_MSG_SZ 
+    udp.wr_udp_header_to(pktbuff[pbuf].p_data)
+    pktbuff[pbuf].p_data += udp.UDP_MSG_SZ
 
-        ' update the TCP checksum, incorporating the payload, if applicable
-        tcp.update_checksum(    socket[sck].local_ip, ...
-                                socket[sck].remote_ip, ...
-                                sl, ...
-                                @socket[sck].txbuff.buffer)
-        ip.update_chksum(tsl)                   ' update IP checksum: total TCP segment length
-        socket[sck].snd.nxt += sl
-    net.send_frame( net.fifo_wr_ptr() )
+    ' copy the payload data, if there is any
+    if ( udp.payload_len() > 0 )
+        pktbuff[pbuf].p_data += txget(sck, ...
+                            pktbuff[pbuf].p_data, ...
+                            socket[sck].txbuff.datagram.descr[dt].len)
+        pktbuff[pbuf].p_end := pktbuff[pbuf].p_data
+        pktbuff[pbuf].len += udp.payload_len()
 
-    return
+    ' rewind the pointer to the beginning of the UDP header
+    pktbuff[pbuf].p_data -= socket[sck].txbuff.datagram.descr[dt].len + ...
+                    udp.hdr_len()
 
+    ' write the UDP checksum
+    udp.wr_checksum_to( pktbuff[pbuf].p_data+UDP_CKSUM, ...
+                        socket[sck].local_ip, ...
+                        socket[sck].txbuff.datagram.descr[dt].remote.address, ...
+                        udp.payload_len(), ...
+                        pktbuff[pbuf].p_data+8)
 
-pri udp_send(sck): s | ethii_t eh, ip_header_s ih, udp_msg_s uh, h, t, len, rip, rp
-' Send a UDP socket's pending data to its recipient
-'   sck:    socket number
-    h := socket[sck].txbuff.datagram.head       ' cache descriptor pointers
-    t := socket[sck].txbuff.datagram.tail
-    rip := socket[sck].txbuff.datagram.descr[t].remote.address
-#ifdef EXT_DBG
-    dbg.printf(@"udp_send(%d): rip=%s\n\r", sck, str.iptostr(rip) )
-#endif
-    ifnot ( arp.hw_addr_of(rip) )               ' if the remote's MAC address isn't known,
-        arp.cache_entry(@_mac_zero, rip)        '   queue it for resolution by ARP
-#ifdef EXT_DBG
-        dbg.strln(@"udp_send(): caching entry in ARP")
-#endif
-        return -1                               '   and return
+    pktbuff[pbuf].layer_written := 4
 
-    if ( ( (h-t) & DG_MASK) > 0 )
-        rp := socket[sck].txbuff.datagram.descr[t].remote.port
-        len := socket[sck].txbuff.datagram.descr[t].len
-
-        ethii.set_header(@eh)
-        ip.set_header(@ih)
-        udp.set_header(@uh)
-
-        net.start_frame()
-            ethii.new(  @interface.mac_addr, ...
-                        arp.hw_addr_of(rip), ...
-                        ETYP_IPV4)
-            ip.new( L4_UDP, ...                 ' UDP layer-4 protocol
-                    socket[sck].local_ip, ...   ' socket local IP
-                    rip, ...                    ' remote IP from descriptor
-                    0, ...                      ' codepoint CP0
-                    socket[sck].ttl)            ' socket time-to-live
-            udp.new(socket[sck].local_port, ... ' socket local port
-                    rp)                         ' remote port from descriptor
-            udp.set_payload_checksum( ...
-                    crc.inet_chksum(@socket[sck].txbuff.buffer+socket[sck].txbuff.tail, ...
-                                    len, ...
-                                    0, ...
-                                    false) )
-            xtxput(sck, len)                    ' write datagram data to the NIC
-            udp.update_len_chksum(len)
-            udp.update_checksum(socket[sck].local_ip, rip, len)
-            ip.update_chksum( udp.dgram_len() )
-        net.send_frame( net.fifo_wr_ptr() )
-
-        socket[sck].txbuff.datagram.descr[t]~   ' clear descriptor
-        socket[sck].txbuff.datagram.tail := (t+1) & DG_MASK
+    return udp.dgram_len()
 
 
 '--
-#ifdef EXT_DBG
-pri prostr(p): s
-' Get string representation of layer-4 protocol
-'   p:  protocol number (L4_UDP, L4_TCP)
-    case p
-        L4_UDP: return @"UDP"
-        L4_TCP: return @"TCP"
-
 
 pri show_arp_entry(e)
 ' Show a specific entry in the ARP table
-    dbg.printf(@"%d\t%04.4x\t%s\t%s\t%d\n\r", ...
-                e, ...
-                arp.cached_proto_type(e), ...
-                str.iptostr( arp.cached_proto_addr(e) ), ...
-                str.mactostr( arp.cached_hw_addr(e) ), ...
-                arp.entry[e].resolved )
+    DEBUG(  udec_(e), uhex_(arp.cached_proto_type(e) ), zstr_(str.iptostr( arp.cached_proto_addr(e) ) ), zstr_(str.mactostr( arp.cached_hw_addr(e) ) ), udec_(arp.entry[e].resolved) )
 
 
 pri show_arp_table() | e
 ' Show the ARP table
-    repeat e from 0 to arp.ENTRIES-1
+    repeat arp.ENTRIES with e
         if ( arp.entry[e].proto_t )
             show_arp_entry(e)
 
 
 pri show_socket_table() | s
 
-    dbg.strln(@"#    local remote (protocol) state")
+    DEBUG("#    local remote (protocol) state")
     repeat MAX_SOCKETS with s
         if ( socket[s].state > CLOSED )
-            dbg.printf(@"%d/%08x  ", s, @socket[s])
-            dbg.printf(@"%s:%d  ",  str.iptostr( socket[s].local_ip ), ...
-                                    socket[s].local_port)
-            dbg.printf(@"%s:%d  ",  str.iptostr( socket[s].remote_ip ), ...
-                                    socket[s].remote_port)
-            dbg.printf(@"(%s) %s\n\r",  prostr(socket[s].protocol), ...
-                                        state_str(socket[s].state) )
+            DEBUG(  udec_(s), zstr_(str.iptostr( socket[s].local_ip )), ":", udec_(socket[s].local_port), zstr_(str.iptostr( socket[s].remote_ip )), ":", udec_(socket[s].remote_port), "(", zstr_(netstr.prostr(socket[s].protocol) ), ") ", zstr_(netstr.state_str(socket[s].state) ) )
 
-pri state_str(st): p
-' Get string representation of socket state
-'   st: socket state
-
-    p := @"???"
-    case st
-        CLOSED:         return @"CLOSED"
-        SYN_SENT:       return @"SYN_SENT"
-        SYN_RECEIVED:   return @"SYN_RECEIVED"
-        ESTABLISHED:    return @"ESTABLISHED"
-        FIN_WAIT_1:     return @"FIN_WAIT_1"
-        FIN_WAIT_2:     return @"FIN_WAIT_2"
-        CLOSE_WAIT:     return @"CLOSE_WAIT"
-        CLOSING:        return @"CLOSING"
-        LAST_ACK:       return @"LAST_ACK"
-        TIME_WAIT:      return @"TIME_WAIT"
-        LISTENING:      return @"LISTEN"
-#endif
 
 DAT
 {

@@ -158,12 +158,12 @@ PUB set_source_port(^tcp_msg_s hdr, p)
 
 PUB set_local_timestamp(tm)
 ' Set timestamp (TCP option)
-    _tmstamps[0] := tm
+    _tmstamps[0] := swap_long(tm)
 
 
 PUB set_timestamp_echo(tm)
 ' Set timestamp echo (TCP option)
-    _tmstamps[1] := tm
+    _tmstamps[1] := swap_long(tm)
 
 
 PUB set_urgent_ptr(^tcp_msg_s hdr, uptr)
@@ -233,14 +233,14 @@ PUB swap_seq_nrs(^tcp_msg_s hdr)  'xxx review
     hdr.seq_nr, hdr.ack_nr := hdr.ack_nr, hdr.seq_nr
 
 
-PUB timest(): tm    'xxx review
+PUB timestamp_val(): tm    'xxx review
 ' Get timestamp (TCP option)
-    return _tmstamps[0]
+    return swap_long(_tmstamps[0])
 
 
-PUB timest_echo(): tm   'xxx review
+PUB timestamp_echo(): tm   'xxx review
 ' Get timestamp echo (TCP option)
-    return _tmstamps[1]
+    return swap_long(_tmstamps[1])
 
 
 PUB timest_ptr(): ptr   'xxx review

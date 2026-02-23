@@ -20,8 +20,8 @@
 #define NETIF_DRIVER "net.eth.enc28j60"
 #pragma exportdef(NETIF_DRIVER)
 
-'#define EXT_DBG
-'#pragma exportdef(EXT_DBG)
+#define EXT_DBG
+#pragma exportdef(EXT_DBG)
 
 con
 
@@ -52,8 +52,8 @@ con
     NET_SPI_FREQ= 10_000_000
 
     ' LED for webpage control
-    LED1        = 56
-    LED2        = 57
+    LED1        = 38'56
+    LED2        = 39'57
 
     MAX_CLIENTS = 5
 
@@ -71,7 +71,7 @@ con
 obj
 
     ser:    "com.serial.terminal.ansi" | SER_BAUD=2_000_000
-    sck:    "socket-manager"
+    sck:    "socket-manager-2" | MAX_SOCKETS=8
     str:    "string"
     libc:   "libc"
 
@@ -92,8 +92,8 @@ var
 
 dat
 
-    _mac_local  byte $02, $98, $0c, $01, $02, $03
-    _my_ip      byte "192.168.1.10", 0
+    _mac_local  byte $02, $98, $0c, $06, $01, $c9'$01, $02, $03
+    _my_ip      byte "10.42.0.216", 0'"192.168.1.10", 0
     _webpg_file byte "/sd/INDEX.HTM", 0         ' place this file in the root of your SD card
 
 
@@ -121,17 +121,13 @@ pub main() | s, ls, skn, cl, tmp, m
     repeat MAX_CLIENTS with cl
         _client_sck[cl] := -1
 
-    sck.set_mac_addr(0, @_mac_local)
-    sck.set_ip(0, str.strtoip(@_my_ip))
+    sck.set_if_addr(0, @_mac_local, str.strtoip(@_my_ip) )
 
     ifnot ( sck.start(NET_CS, NET_SCK, NET_MOSI, NET_MISO, NET_SPI_FREQ) )
         ser.strln(@"ENC28J60 driver failed to start - halting")
         repeat
 
     waitms(20)
-
-    ' register a service running on port 80
-    sck.register_service(80, L4_TCP, @mailbox)
 
     s := sck.new_socket(L4_TCP)
     if ( sck.bind(s, str.strtoip(@_my_ip) ) < 0 )
@@ -232,10 +228,13 @@ pub parse_request(cl) | s, lsw, vol, ch, b, p, rl
     ser.printf(@"client %d socket %d (len %d)\n\r", cl, s, sck.recvq(s) )
 
     rl := sck.recv(s, @_req_tmp)
+    ser.printf(@"recv(): %d\n\r", rl)
+    ser.hexdump(@_req_tmp, 0, 3, rl, 16)
     if ( rl >= 5 )
         p := str.find(@_req_tmp, @_request_base)' look for "GET /" in the request
         p += strsize(@_request_base)
         if ( byte[p] == " " )                   ' serve root/main page
+            ser.strln(@"GET /")
             send_page(cl)
         else                                    ' process commands
             if ( str.find(p, @_light_cmd) )     ' LED on/off command
@@ -418,4 +417,3 @@ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FO
 DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 }
-

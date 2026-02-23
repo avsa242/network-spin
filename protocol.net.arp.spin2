@@ -407,6 +407,34 @@ PUB wr_arp_msg(^arp_msg_s hdr): p
     return net[p_ndev].fifo_wr_ptr()
 
 
+PUB wr_arp_msg_to(p_dest, ^arp_msg_s hdr): p
+' Write ARP message
+    p := p_dest
+    word[p] := hdr.hw_t
+    p += 2
+    word[p] := hdr.proto_t
+    p += 2
+
+    byte[p++] := hdr.hw_addr_len
+    byte[p++] := hdr.proto_addr_len
+    word[p] := hdr.opcode
+    p += 2
+
+    bytemove(p, @hdr.sender_hw_addr, MACADDR_LEN)
+    p += MACADDR_LEN
+
+    long[p] := hdr.sender_proto_addr
+    p += 4
+
+    bytemove(p, @hdr.target_hw_addr, MACADDR_LEN)
+    p += MACADDR_LEN
+
+    long[p] := hdr.target_proto_addr
+    p += 4
+
+    return p-p_dest
+
+
 DAT
 {
 Copyright 2026 Jesse Burt

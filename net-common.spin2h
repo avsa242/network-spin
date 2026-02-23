@@ -4,7 +4,7 @@
     Description:    Constants common to multiple networking objects
     Author:         Jesse Burt
     Started:        Mar 12, 2022
-    Updated:        Jan 31, 2026
+    Updated:        Feb 23, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -52,7 +52,7 @@ CON
         long        target_proto_addr)
 
     ' IPv4 header
-    struct ip_header_s(...
+    struct ipv4_hdr_s(...
         byte    version, ...
         byte    dscp_ecn, ...
         word    dgram_len, ...

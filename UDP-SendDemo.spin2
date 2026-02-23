@@ -19,8 +19,8 @@
 #define NETIF_DRIVER "net.eth.enc28j60"
 #pragma exportdef(NETIF_DRIVER)
 
-'#define EXT_DBG
-'#pragma exportdef(EXT_DBG)
+#define EXT_DBG
+#pragma exportdef(EXT_DBG)
 
 con
 
@@ -61,8 +61,7 @@ pub main() | sck, s, t, len, rem_ip, rem_port, ch
     ser.clear()
     ser.strln(@"serial started")
 
-    net.set_mac_addr(0, @_mac_local)
-    net.set_ip(0, str.strtoip(@_my_ip))
+    net.set_if_addr(0, @_mac_local, str.strtoip(@_my_ip) )
 
     net.start(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN)
 
@@ -92,7 +91,7 @@ pub main() | sck, s, t, len, rem_ip, rem_port, ch
         '   datagrams will be sent much more quickly (until the next reload).
         rem_ip := str.strtoip(@"10.42.0.1")
         rem_port := 1234
-        net.sendto(sck, @_testdata, len, rem_ip, rem_port)
+        net.sendto(sck, @_testdata, len, 0, rem_ip, rem_port)
         ser.printf(@"Sent '%s' to %s\n\r", @_testdata, str.iptostr(rem_ip))
         ch := ser.getchar()
     until ( ch == "q" )
@@ -123,4 +122,3 @@ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FO
 DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 }
-
