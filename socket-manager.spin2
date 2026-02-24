@@ -447,7 +447,7 @@ pub sendto(sck, p_src, len, flags, addr, port, al=4): s
     ifnot ( addr or port )
         return -1                               ' error: invalid argument (bad remote socket)
 
-    if ( socket[sck].protocol == ip.UDP )
+    if ( socket[sck].protocol == L4_UDP )
         ' allow re-assigning the socket's remote IP if the address in this call differs
         socket[sck].remote_ip := addr
 
@@ -673,7 +673,7 @@ pri flush_udp() | sck, pbuf, ul
                 pbuf := pbuf_allocate()
                 if ( pbuf >= 0 )
                     ul := write_udp_socket(pbuf, sck)
-                    write_ipv4(pbuf, socket[sck].local_ip, socket[sck].remote_ip, ip.UDP, ul)
+                    write_ipv4(pbuf, socket[sck].local_ip, socket[sck].remote_ip, L4_UDP, ul)
                     pb_head := (pb_head + 1) & PKTBUFF_MASK
                 socket[sck].txbuff.datagram.tail := (socket[sck].txbuff.datagram.tail+1) & DG_MASK
 
@@ -907,7 +907,7 @@ pri open(sck, rip, rp): s | tl, pbuf
         socket[sck].remote_ip := rip            ' fill in remote socket
         socket[sck].remote_port := rp
         DEBUG(" lip=", zstr_(str.iptostr(socket[sck].local_ip)), " rip=", zstr_(str.iptostr(rip)), " rp=", udec_(rp) )
-        if ( socket[sck].protocol == ip.TCP )
+        if ( socket[sck].protocol == L4_TCP )
             if ( tcp_tx_pending_free() )
                 socket[sck].snd.una := socket[sck].snd.iss := math.rndi(posx)
                 socket[sck].snd.nxt := socket[sck].snd.iss
@@ -917,7 +917,7 @@ pri open(sck, rip, rp): s | tl, pbuf
                 pbuf := pbuf_allocate()
                 if ( pbuf >= 0 )
                     tl := write_tcp_socket(pbuf, sck, tcp.SYN) 
-                    write_ipv4(pbuf, socket[sck].local_ip, socket[sck].remote_ip, ip.TCP, tl)
+                    write_ipv4(pbuf, socket[sck].local_ip, socket[sck].remote_ip, L4_TCP, tl)
                     socket[sck].state := SYN_SENT
                     pb_head := (pb_head + 1) & PKTBUFF_MASK
                     socket[sck].snd.nxt := socket[sck].snd.iss+1
@@ -926,7 +926,7 @@ pri open(sck, rip, rp): s | tl, pbuf
                     return -1                   ' error: no pbufs free
             else
                 return -1                       ' error: descriptor TX queue full
-        elseif ( socket[sck].protocol == ip.UDP )
+        elseif ( socket[sck].protocol == L4_UDP )
             ' UDP is stateless, so if we've gotten this far,
             '   consider the connection established
             set_state(sck, ESTABLISHED)
@@ -1140,7 +1140,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                             write_ipv4( pbuf, ...
                                         interface.ipv4_addr, ...
                                         ip.src_addr(@ih), ...
-                                        ip.TCP, ...
+                                        L4_TCP, ...
                                         tl)
                             pb_head := (pb_head + 1) & PKTBUFF_MASK
                         return -1           ' error: no sockets available; drop
@@ -1162,7 +1162,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                         write_ipv4( pbuf, ...
                                     socket[sck].local_ip, ...
                                     ip.src_addr(@ih), ...
-                                    ip.TCP, ...
+                                    L4_TCP, ...
                                     tl)
                         pb_head := (pb_head + 1) & PKTBUFF_MASK
                         socket[sck].snd.una := socket[sck].snd.iss
@@ -1186,7 +1186,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                         write_ipv4( pbuf, ...
                                     interface.ipv4_addr, ...
                                     ip.src_addr(@ih), ...
-                                    ip.TCP, ...
+                                    L4_TCP, ...
                                     tl)
                         pb_head := (pb_head + 1) & PKTBUFF_MASK
                     return
@@ -1222,7 +1222,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                 write_ipv4(  pbuf, ...
                             interface.ipv4_addr, ...    'xxx same
                             ip.src_addr(@ih), ...
-                            ip.TCP, ...
+                            L4_TCP, ...
                             tl)
                 pb_head := (pb_head + 1) & PKTBUFF_MASK
             return 0
@@ -1244,7 +1244,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                                 write_ipv4( pbuf, ...
                                             interface.ipv4_addr, ...
                                             ip.src_addr(@ih), ...
-                                            ip.TCP, ...
+                                            L4_TCP, ...
                                             tl)
                                 pb_head := (pb_head + 1) & PKTBUFF_MASK
                             return 0            ' bad ACK; drop
@@ -1274,7 +1274,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                             write_ipv4( pbuf, ...
                                         socket[sck].local_ip, ...
                                         socket[sck].remote_ip, ...
-                                        ip.TCP, ...
+                                        L4_TCP, ...
                                         tl)
                             pb_head := (pb_head + 1) & PKTBUFF_MASK
                         return
@@ -1321,7 +1321,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                 write_ipv4( pbuf, ...
                             socket[sck].local_ip, ...
                             socket[sck].remote_ip, ...
-                            ip.TCP, ...
+                            L4_TCP, ...
                             tl)
                 pb_head := (pb_head + 1) & PKTBUFF_MASK
                 DEBUG(" check seq nr ret")
@@ -1366,7 +1366,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                     write_ipv4( pbuf, ...
                                 socket[sck].local_ip, ...
                                 socket[sck].remote_ip, ...
-                                ip.TCP, ...
+                                L4_TCP, ...
                                 tl)
                     pb_head := (pb_head + 1) & PKTBUFF_MASK
                 return OK
@@ -1445,7 +1445,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                                 write_ipv4( pbuf, ...
                                             socket[sck].local_ip, ...
                                             socket[sck].remote_ip, ...
-                                            ip.TCP, ...
+                                            L4_TCP, ...
                                             tl)
                                 pb_head := (pb_head + 1) & PKTBUFF_MASK
                         ' TODO: restart timeout
@@ -1476,7 +1476,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                     write_ipv4( pbuf, ...
                                 socket[sck].local_ip, ...
                                 socket[sck].remote_ip, ...
-                                ip.TCP, ...
+                                L4_TCP, ...
                                 tl)
                     pb_head := (pb_head + 1) & PKTBUFF_MASK
             CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT:
@@ -1520,7 +1520,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
         write_ipv4( pbuf, ...
                     socket[s].local_ip, ...
                     socket[s].remote_ip, ...
-                    ip.TCP, ...
+                    L4_TCP, ...
                     tl)
         pb_head := (pb_head + 1) & PKTBUFF_MASK
 
@@ -1563,7 +1563,7 @@ pri receive_udp(^ipv4_hdr_s ih): s | udp_hdr_s uh, sck, l, h, t, pbuf, il
             'write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l
             'write_ipv4(pbuf, lip, rip, pro, len=0, ident=0, dscp=0, ttl=0): l
             il := write_icmp(pbuf, icmp.DEST_UNREACH, icmp.PORT_UNREACH)
-            write_ipv4(pbuf, interface[0].ipv4_addr, ip.src_addr(@ih), ip.UDP, il)
+            write_ipv4(pbuf, interface[0].ipv4_addr, ip.src_addr(@ih), L4_UDP, il)
             pb_head := (pb_head + 1) & PKTBUFF_MASK
             return
 
@@ -1645,15 +1645,15 @@ pri write_ethii(pbuf, dest, src, etyp): l | ethii_hdr_s eh
     ethii.set_src_addr(@eh, src)
     ethii.set_ethertype(@eh, etyp)
 
-    pktbuff[pbuf].p_data -= ethii.ETH_FRM_SZ
-    pktbuff[pbuf].len += ethii.ETH_FRM_SZ
+    pktbuff[pbuf].p_data -= ethii.ETHII_HDR_SZ
+    pktbuff[pbuf].len += ethii.ETHII_HDR_SZ
     'DEBUG(" len is now ", udec_(pktbuff[pbuf].len) )
 
     ethii.wr_ethii_frame_to(@eh, pktbuff[pbuf].p_data)
 
     pktbuff[pbuf].layer_written := 2
 
-    return ethii.ETH_FRM_SZ
+    return ethii.ETHII_HDR_SZ
 
 
 pri write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l | icmp4_hdr_s ich, ^echo_msg_s ehdr
@@ -1686,14 +1686,14 @@ pri write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l | icmp4_hdr_
             'todo
 
     ' rewind pbuf pointer to fit ICMP header, and write it
-    pktbuff[pbuf].p_data -= icmp.ICMP_MSG_SZ
-    pktbuff[pbuf].len += icmp.ICMP_MSG_SZ
+    pktbuff[pbuf].p_data -= icmp.ICMP_HDR_SZ
+    pktbuff[pbuf].len += icmp.ICMP_HDR_SZ
     icmp.wr_icmp_msg_to(@ich, pktbuff[pbuf].p_data)
 
 
     pktbuff[pbuf].layer_written := 4
 
-    return icmp.ICMP_MSG_SZ
+    return icmp.ICMP_HDR_SZ
 
 
 pri write_ipv4(pbuf, lip, rip, pro, len=0, ident=0, dscp=0, ttl=0): l | ipv4_hdr_s ih, tmp, ol, t
@@ -1831,7 +1831,7 @@ pri write_tcp(pbuf, lip, rip, sp, dp, seqn, ackn, fl, p_ts=0, wnd=0, up=0, slen=
 pri write_tcp_ip(pbuf, lip, rip, sp, dp, seqn, ackn, fl, ts, wnd=0, up=0, ident=0, dscp=0, ttl=0): l | tl
 ' Write IPv4-encapsulated TCP segment to the packet buffer
     tl := write_tcp(pbuf, lip, rip, sp, dp, seqn, ackn, fl, ts, wnd, up)
-    write_ipv4(pbuf, lip, rip, ip.TCP, tl, ident, dscp, ttl)
+    write_ipv4(pbuf, lip, rip, L4_TCP, tl, ident, dscp, ttl)
 
 
 pri write_tcp_socket(pbuf, sck, flags, sl=0): s | l
@@ -1882,7 +1882,7 @@ pri write_udp_socket(pbuf, sck): s | udp_hdr_s uh, dt, l, pl
     udp.set_chksum(@uh, 0)
 
     ' rewind the buffer pointer enough to fit the UDP header that was just set up
-    pktbuff[pbuf].p_data -= udp.UDP_MSG_SZ 
+    pktbuff[pbuf].p_data -= udp.UDP_HDR_SZ
     udp.wr_udp_header_to(@uh, pktbuff[pbuf].p_data)
 
     ' copy the payload data, if there is any
@@ -1891,7 +1891,7 @@ pri write_udp_socket(pbuf, sck): s | udp_hdr_s uh, dt, l, pl
                     pktbuff[pbuf].p_end, ...
                     socket[sck].txbuff.datagram.descr[dt].len)
         pktbuff[pbuf].p_end += pl
-        pktbuff[pbuf].len += udp.UDP_MSG_SZ+pl
+        pktbuff[pbuf].len += udp.UDP_HDR_SZ+pl
         DEBUG(" append ", udec_(pl), " bytes payload")
 
     ' write the UDP checksum
@@ -1900,7 +1900,7 @@ pri write_udp_socket(pbuf, sck): s | udp_hdr_s uh, dt, l, pl
                         socket[sck].local_ip, ...
                         socket[sck].txbuff.datagram.descr[dt].remote.address, ...
                         pl, ...
-                        pktbuff[pbuf].p_data+udp.UDP_MSG_SZ)
+                        pktbuff[pbuf].p_data+udp.UDP_HDR_SZ)
 
     pktbuff[pbuf].layer_written := 4
 

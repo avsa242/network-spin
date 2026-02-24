@@ -17,7 +17,7 @@
 CON
 
     ' limits
-    ETH_FRM_SZ      = 14
+    ETHII_HDR_SZ      = 14
 
 
 OBJ
@@ -119,7 +119,7 @@ PUB rd_ethii_frame(^ethii_hdr_s eh): p
 ' Read ethernet-II header
 '   eh:         pointer to ethernet-II structure
 '   Returns:    network device FIFO write pointer after reading
-    net[p_ndev].rd_block(@eh, ETH_FRM_SZ)
+    net[p_ndev].rd_block(@eh, ETHII_HDR_SZ)
     return net[p_ndev].fifo_wr_ptr()
 
 
@@ -139,7 +139,7 @@ pub wr_ethii_frame_to(^ethii_hdr_s eh, p_dest): p
 '   eh:         pointer to ethernet-II structure
 '   p_dest:     RAM location to write ethernet-II header to
 '   Returns:    network device FIFO write pointer after writing
-    bytemove(p_dest, @eh, ETH_FRM_SZ)
+    bytemove(p_dest, @eh, ETHII_HDR_SZ)
 
 
 DAT

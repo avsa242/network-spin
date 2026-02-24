@@ -21,7 +21,7 @@
 CON
 
     { limits }
-    UDP_MSG_SZ      = 8                         ' message length
+    UDP_HDR_SZ      = 8                         ' message length
 
 
 OBJ
@@ -65,7 +65,7 @@ PUB set_dest_port(^udp_hdr_s hdr, p)
 PUB set_dgram_len(^udp_hdr_s hdr, len)
 ' Set length of UDP datagram
 '   NOTE: Don't include the 8-bytes of the UDP header itself
-    len += UDP_MSG_SZ
+    len += UDP_HDR_SZ
     hdr.length := swap_word(len)
 
 
@@ -92,13 +92,13 @@ PUB dgram_len(^udp_hdr_s hdr): l
 
 PUB hdr_len(^udp_hdr_s hdr): l
 ' Get current header length
-    return UDP_MSG_SZ
+    return UDP_HDR_SZ
 
 
 PUB payload_len(^udp_hdr_s hdr): l
 ' Get length of datagram
 '   NOTE: This length is of the payload portion of the datagram only
-    return dgram_len(@hdr)-UDP_MSG_SZ
+    return dgram_len(@hdr)-UDP_HDR_SZ
 
 
 PUB pseudo_header_cksum(src, dest, l=0, iv=0, co=true): ck | pseudo_hdr_s phdr
@@ -134,7 +134,7 @@ PUB reset_udp(^udp_hdr_s hdr)
 PUB rd_udp_header(^udp_hdr_s hdr): l
 ' Read/disassemble UDP header
 '   Returns: network device FIFO write position
-    net[p_ndev].rd_block(@hdr, UDP_MSG_SZ)
+    net[p_ndev].rd_block(@hdr, UDP_HDR_SZ)
 
     return net[p_ndev].fifo_wr_ptr()
 
@@ -159,8 +159,8 @@ pub update_checksum(^udp_hdr_s hdr, lip, rip, len=0): ck | tmp, pck
 
     ' calc pseudo-header checksum seeded by the payload data checksum
     ' then feed that into the UDP header checksum
-    pck := pseudo_header_cksum(lip, rip, UDP_MSG_SZ+len, _payload_checksum, false)
-    ck := crc.inet_chksum(@hdr, UDP_MSG_SZ, pck, true)
+    pck := pseudo_header_cksum(lip, rip, UDP_HDR_SZ+len, _payload_checksum, false)
+    ck := crc.inet_chksum(@hdr, UDP_HDR_SZ, pck, true)
 
     ' write the checksum back to the UDP header and restore the FIFO write pointer afterwards
     tmp := net[p_ndev].fifo_wr_ptr()
@@ -185,8 +185,8 @@ pub wr_checksum_to(^udp_hdr_s hdr, p_dest, lip, rip, len=0, p_pld=0): ck | tmp
     ck := 0
     if ( len )
         ck := crc.inet_chksum(p_pld, len, 0, false)
-    ck := pseudo_header_cksum(lip, rip, UDP_MSG_SZ+len, ck, false)
-    ck := crc.inet_chksum(@hdr, UDP_MSG_SZ, ck, true)
+    ck := pseudo_header_cksum(lip, rip, UDP_HDR_SZ+len, ck, false)
+    ck := crc.inet_chksum(@hdr, UDP_HDR_SZ, ck, true)
 
     ' write/return the checksum
     ck := swap_word(ck)                         ' swap to network byte order

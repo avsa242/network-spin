@@ -17,7 +17,7 @@
 CON
 
     { limits }
-    ICMP_MSG_SZ     = 4                         ' message length    xxx this was 8...4 seems right though...verify
+    ICMP_HDR_SZ     = 4                         ' message length    xxx this was 8...4 seems right though...verify
     ICMP_ECHO_MSG_SZ= 12                        ' echo metadata (_not_ echoed data)
 
 
@@ -198,7 +198,7 @@ PUB rd_icmp_msg(^icmp4_hdr_s hdr): p
 ' Read ICMP message from network device
 '   hdr:    ICMP header structure
 '   Returns: network device FIFO write pointer, after reading
-    net[p_ndev].rd_block(@hdr, ICMP_MSG_SZ)
+    net[p_ndev].rd_block(@hdr, ICMP_HDR_SZ)
 
     return net[p_ndev].fifo_wr_ptr()
 
@@ -208,7 +208,7 @@ PUB update_chksum(^icmp4_hdr_s hdr, p_buff=0, len=0) | tmp
 '   hdr:    ICMP header structure
 '   p_buff: pointer to message data (optional; leave unspecified to ignore)
     set_chksum(@hdr, 0)
-    set_chksum(@hdr, crc.inet_chksum(@hdr, ICMP_MSG_SZ, 0, false) )
+    set_chksum(@hdr, crc.inet_chksum(@hdr, ICMP_HDR_SZ, 0, false) )
     if ( p_buff )
         ifnot ( len )
             if ( msg_type(@hdr) == ECHO_REPL )
@@ -228,7 +228,7 @@ PUB wr_icmp_msg(): p | st, nd
 '   Returns: network device FIFO write pointer, after writing
     st := net[p_ndev].fifo_wr_ptr()
     _cksum_pos := st + ICMP_CKSUM     ' record the position of the checksum field
-    net[p_ndev].wr_block(@hdr, ICMP_MSG_SZ)
+    net[p_ndev].wr_block(@hdr, ICMP_HDR_SZ)
     nd := net[p_ndev].fifo_wr_ptr()
 
     _icmp_msg_len := (nd - st)
@@ -238,7 +238,7 @@ PUB wr_icmp_msg(): p | st, nd
 
 pub wr_icmp_msg_to(hdr, p_dest): l
 
-    bytemove(p_dest, @hdr, ICMP_MSG_SZ)
+    bytemove(p_dest, @hdr, ICMP_HDR_SZ)
 
 
 PUB wr_echo_data(p_buff, l=0): p
