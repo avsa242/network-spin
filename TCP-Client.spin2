@@ -1,0 +1,130 @@
+{
+----------------------------------------------------------------------------------------------------
+    Filename:       TCP-Client.spin2
+    Description:    TCP client example
+        * Demonstrate setup, connection to a remote host, and sending data
+    Author:         Jesse Burt
+    Started:        Feb 23, 2026
+    Updated:        Feb 24, 2026
+    Copyright (c) 2026 - See end of file for terms of use.
+----------------------------------------------------------------------------------------------------
+}
+
+{Spin2_v45}
+#include "net-common.spin2h"
+#include "core.con.click.spin2"                 ' uncomment if you use a MikroE Click module
+
+' choose a network driver (defaults to ENC28J60 if none specified)
+'#define NETIF_DRIVER "net.eth.encx24j600"
+#define NETIF_DRIVER "net.eth.enc28j60"
+#pragma exportdef(NETIF_DRIVER)
+
+#define EXT_DBG
+#pragma exportdef(EXT_DBG)
+
+con
+
+    _clkfreq    = 250_000_000
+    _xtlfreq    = 20_000_000
+
+' -- User-modifiable constants
+
+    ' SD card
+    SD_CLK      = 61
+    SD_CS       = 60
+    SD_DI       = 59
+    SD_DO       = 58
+
+    ' ENC28J60
+    CLICK_BASE  = 0                             ' base I/O pin for MikroE Click module
+#ifdef MIKROE_CLICK
+    NET_CS      = CLICK_BASE+8
+    NET_SCK     = CLICK_BASE+9
+    NET_MOSI    = CLICK_BASE+11
+    NET_MISO    = CLICK_BASE+10
+#else
+    NET_CS      = 0
+    NET_SCK     = 1
+    NET_MOSI    = 2
+    NET_MISO    = 3
+#endif
+    NET_SPI_FREQ= 10_000_000
+
+' --
+
+obj
+
+    ser:    "com.serial.terminal.ansi" | SER_BAUD=2_000_000
+    sck:    "socket-manager"
+    str:    "string"
+
+
+dat
+
+    _mac_local  byte $02, $98, $0c, $06, $01, $c9
+    _my_ip      byte "10.42.0.216", 0
+
+var
+
+	byte linebuff[80]
+
+
+pub main() | s, c, cmd
+
+	ser.startrxtx(63, 62, 0, 2_000_000)
+	ser.clear()
+	ser.strln(@"serial started")
+
+	sck.set_if_addr(0, @_mac_local, str.strtoip(@_my_ip))
+
+	ifnot ( sck.start(NET_CS, NET_SCK, NET_MOSI, NET_MISO, NET_SPI_FREQ) )
+		ser.strln(@"ENC28J60 driver failed to start - halting")
+		repeat
+
+	s := sck.new_socket(L4_TCP)
+	if ( sck.bind(s, str.strtoip(@_my_ip) ) < 0 )
+		' make sure you're binding the socket to an address that's defined in one of the interfaces
+		ser.strln(@"error: no such interface with specified IP address")
+		repeat
+
+	ser.str(@"connecting...")
+	c := sck.connect(s, str.strtoip(@"10.42.0.1"), 1234)
+	if ( c < 0 )
+		ser.printf(@"failed (error %d)\n\r", c)
+	else
+		ser.strln(@"connected")
+	ser.set_attrs(ser.ECHO)
+	repeat
+		cmd := ser.getchar()
+		case cmd
+			"d":
+				ser.strln(@"disconnecting...")
+				sck.disconnect(c)
+			"o":
+				ser.str(@"Type up to 80 characters (then ENTER) to send to the remote host> ")
+				bytefill(@linebuff, 0, 80)
+				ser.gets_max(@linebuff, 80)
+				ser.printf(@"\n\rsending '%s'\n\r", @linebuff)
+				sck.send(c, @linebuff, strsize(@linebuff), 1)
+					
+
+
+DAT
+{
+Copyright 2026 Jesse Burt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+}

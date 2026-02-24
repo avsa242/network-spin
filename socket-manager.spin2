@@ -209,9 +209,7 @@ pub bind(sck, lip, lp=0): s | i
             ifnot ( lp )                        ' choose a random ephemeral port number if
                 lp := 49152+math.rndi(16383)    '   one wasn't specified
             socket[sck].local_port := lp
-            DEBUG(  "socket ", udec_(sck), ...
-                    "ip: ", zstr_(str.iptostr(socket[sck].local_ip)), ...
-                    "mac: ", zstr_(str.mactostr( arp.hw_addr_of(socket[sck].local_ip) ) ) )
+            DEBUG(  "socket ", udec_(sck), "ip: ", zstr_(str.iptostr(socket[sck].local_ip)), "mac: ", zstr_(str.mactostr( arp.hw_addr_of(socket[sck].local_ip) ) ) )
             return OK
         DEBUG(" error: no such interface")
         return -1

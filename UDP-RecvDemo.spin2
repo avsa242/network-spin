@@ -64,15 +64,13 @@ pub main() | sck, rd[net.MAX_SOCKETS], ls, rl, rs, s, port, sockaddr_s sockaddr,
     ser.clear()
     ser.strln(@"serial started")
 
-    net.set_mac_addr(0, @_mac_local)
-    net.set_ip(0, str.strtoip(@_my_ip))
+	net.set_if_addr(0, @_mac_local, str.strtoip(@_my_ip) )
 
     net.start(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN)
     waitms(20)
 
     ' 1. Register the port as a service, protocol UDP
     port := 1235
-    net.register_service(port, L4_UDP, @mailbox)
 
     ' 2. Check out a new socket
     sck := net.new_socket(L4_UDP)
@@ -122,4 +120,3 @@ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FO
 DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 }
-
