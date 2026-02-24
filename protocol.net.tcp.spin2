@@ -4,11 +4,11 @@
     Description:    Transmission Control Protocol
     Author:         Jesse Burt
     Started:        Apr 5, 2022
-    Updated:        Feb 14, 2026
+    Updated:        Feb 24, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
-{Spin2_v51}
+{Spin2_v45}
 
 #ifndef NET_COMMON
 #include "net-common.spin2h"
@@ -97,7 +97,7 @@ PUB pseudo_header_cksum(src, dest, l=0, co=true): ck | pseudo_hdr_s phdr
         return crc.inet_chksum(@phdr, 12, 0, false)
 
 
-PUB reply(^tcp_msg_s hdr, ack_inc)
+PUB reply(tcp_hdr_s hdr, ack_inc)
 ' Set up the TCP segment to "reply" to the last received segment
 '   ack_inc: value to increase the outgoing acknowledgement number by
     swap_ports(@hdr)
@@ -105,32 +105,32 @@ PUB reply(^tcp_msg_s hdr, ack_inc)
     set_checksum(@hdr, 0)
 
 
-PUB reset(^tcp_msg_s hdr)
+PUB reset(^tcp_hdr_s hdr)
 ' Reset/initialize all stored data to 0
     hdr~
 
 
-PUB set_ack_nr(^tcp_msg_s hdr, n)
+PUB set_ack_nr(^tcp_hdr_s hdr, n)
 ' Set TCP acknowledgement number
     hdr.ack_nr := swap_long(n)
 
 
-PUB set_checksum(^tcp_msg_s hdr, ck)
+PUB set_checksum(^tcp_hdr_s hdr, ck)
 ' Set checksum
     hdr.checksum := swap_word(ck)
 
 
-PUB set_dest_port(^tcp_msg_s hdr, p)
+PUB set_dest_port(^tcp_hdr_s hdr, p)
 ' Set destination port field
     hdr.dest_port := swap_word(p)
 
 
-PUB set_flags(^tcp_msg_s hdr, f)
+PUB set_flags(^tcp_hdr_s hdr, f)
 ' Set TCP header flags
     hdr.flags := (f & $ff)
 
 
-PUB set_header_len(^tcp_msg_s hdr, l)
+PUB set_header_len(^tcp_hdr_s hdr, l)
 ' Set TCP header length, in bytes
     hdr.header_len := ( (l / 4) << 4)
 
@@ -146,12 +146,12 @@ PUB set_sack_perm(sp)
     _tcp_sack_perm := (sp <> 0)
 
 
-PUB set_seq_nr(^tcp_msg_s hdr, n)
+PUB set_seq_nr(^tcp_hdr_s hdr, n)
 ' Set TCP sequence number
     hdr.seq_nr := swap_long(n)
 
 
-PUB set_source_port(^tcp_msg_s hdr, p)
+PUB set_source_port(^tcp_hdr_s hdr, p)
 ' Set source port field
     hdr.src_port := swap_word(p)
 
@@ -166,37 +166,37 @@ PUB set_timestamp_echo(tm)
     _tmstamps[1] := swap_long(tm)
 
 
-PUB set_urgent_ptr(^tcp_msg_s hdr, uptr)
+PUB set_urgent_ptr(^tcp_hdr_s hdr, uptr)
 ' Set TCP urgent pointer
     hdr.urg_ptr := swap_word(uptr)
 
 
-PUB set_window(^tcp_msg_s hdr, w)
+PUB set_window(^tcp_hdr_s hdr, w)
 ' Set TCP window
     hdr.window := swap_word(w)
 
 
-PUB ack_nr(^tcp_msg_s hdr): n
+PUB ack_nr(^tcp_hdr_s hdr): n
 ' Get TCP acknowledgement number
     return swap_long(hdr.ack_nr)
 
 
-PUB chksum(^tcp_msg_s hdr): ck
+PUB chksum(^tcp_hdr_s hdr): ck
 ' Get TCP header checksum
     return swap_word(hdr.checksum)
 
 
-PUB dest_port(^tcp_msg_s hdr): p
+PUB dest_port(^tcp_hdr_s hdr): p
 ' Get destination port field
     return swap_word(hdr.dest_port)
 
 
-PUB flags(^tcp_msg_s hdr): f
+PUB flags(^tcp_hdr_s hdr): f
 ' Get TCP header flags
     return hdr.flags
 
 
-PUB header_len(^tcp_msg_s hdr): len
+PUB header_len(^tcp_hdr_s hdr): len
 ' Get current header length, in bytes
     return (hdr.header_len >> 4) * 4
 
@@ -212,23 +212,23 @@ PUB sack_perm(): sp 'xxx review
     return (_tcp_sack_perm == 2)
 
 
-PUB seq_nr(^tcp_msg_s hdr): n
+PUB seq_nr(^tcp_hdr_s hdr): n
 ' Get TCP sequence number
     return swap_long(hdr.seq_nr)
 
 
-PUB source_port(^tcp_msg_s hdr): p
+PUB source_port(^tcp_hdr_s hdr): p
 ' Get source port field
     return swap_word(hdr.src_port)
 
 
-PUB swap_ports(^tcp_msg_s hdr)    'xxx review
+PUB swap_ports(^tcp_hdr_s hdr)    'xxx review
 ' Swap source and destination ports, for use when sending a response
     '_tcp_port ror= 16
     hdr.src_port, hdr.dest_port := hdr.dest_port, hdr.src_port
 
 
-PUB swap_seq_nrs(^tcp_msg_s hdr)  'xxx review
+PUB swap_seq_nrs(^tcp_hdr_s hdr)  'xxx review
 ' Swap sequence and acknowledgement numbers, for use when sending a response
     hdr.seq_nr, hdr.ack_nr := hdr.ack_nr, hdr.seq_nr
 
@@ -248,7 +248,7 @@ PUB timest_ptr(): ptr   'xxx review
     return @_tmstamps
 
 
-pub update_checksum(^tcp_msg_s hdr, lip, rip, sl=0, p_seg=0): ck | tmp
+pub update_checksum(^tcp_hdr_s hdr, lip, rip, sl=0, p_seg=0): ck | tmp
 ' Update the checksum in the TCP header
 '   lip:        local/source IP for pseudo-header checksum
 '   rip:        remote/destination IP for pseudo-header checksum
@@ -277,7 +277,7 @@ pub update_checksum(^tcp_msg_s hdr, lip, rip, sl=0, p_seg=0): ck | tmp
     net[p_ndev].fifo_set_wr_ptr(tmp)
 
 
-pub wr_checksum_to(^tcp_msg_s hdr, p_dest, lip, rip, sl=0, p_seg=0): ck
+pub wr_checksum_to(^tcp_hdr_s hdr, p_dest, lip, rip, sl=0, p_seg=0): ck
 
     set_checksum(@hdr, 0)                             ' init checksum field to 0
 
@@ -299,24 +299,24 @@ pub wr_checksum_to(^tcp_msg_s hdr, p_dest, lip, rip, sl=0, p_seg=0): ck
     word[p_dest] := ck
 
 
-PUB urgent_ptr(^tcp_msg_s hdr): p
+PUB urgent_ptr(^tcp_hdr_s hdr): p
 ' Get TCP urgent pointer
     return swap_word(hdr.urg_ptr)
 
 
-PUB window(^tcp_msg_s hdr): win
+PUB window(^tcp_hdr_s hdr): win
 ' Get TCP header window
     return swap_word(hdr.window)
 
 
-PUB rd_tcp_header(^tcp_msg_s hdr): l  'xxx review; other protocols return the FIFO position, this returns header length
+PUB rd_tcp_header(^tcp_hdr_s hdr): l  'xxx review; other protocols return the FIFO position, this returns header length
 ' Read/disassemble TCP header
 '   Returns: length of read header, in bytes
     net[p_ndev].rd_block(@hdr, TCP_HDR_SZ)
     return TCP_HDR_SZ
 
 
-PUB rd_tcp_opts(^tcp_msg_s hdr): p | kind, st, opts_len
+PUB rd_tcp_opts(^tcp_hdr_s hdr): p | kind, st, opts_len
 ' Read TCP options
     st := net[p_ndev].fifo_wr_ptr()
 
@@ -351,7 +351,7 @@ PUB rd_tcp_opts(^tcp_msg_s hdr): p | kind, st, opts_len
     return net[p_ndev].fifo_wr_ptr()
 
 
-PUB wr_tcp_header(^tcp_msg_s hdr): p  'xxx review; other protocols return FIFO position after writing; this returns TCP msg len
+PUB wr_tcp_header(^tcp_hdr_s hdr): p  'xxx review; other protocols return FIFO position after writing; this returns TCP msg len
 ' Write/assemble TCP header
 '   Returns: length of assembled header, in bytes
     _tcp_start := net[p_ndev].fifo_wr_ptr()
@@ -360,7 +360,7 @@ PUB wr_tcp_header(^tcp_msg_s hdr): p  'xxx review; other protocols return FIFO p
     return _tcp_msglen
 
 
-pub wr_tcp_header_to(^tcp_msg_s hdr, p_dest): p | d, r
+pub wr_tcp_header_to(^tcp_hdr_s hdr, p_dest): p | d, r
 
 '    r := 4-( (TCP_HDR_SZ+_options_len) // 4)
 
@@ -404,7 +404,7 @@ pub clear_options()
     _options_len := 0
 
 
-PUB set_option(^tcp_msg_s hdr, kind, len=0, v=0): l | p_dest, r
+PUB set_option(^tcp_hdr_s hdr, kind, len=0, v=0): l | p_dest, r
 ' Write KLV to options buffer
 '   kind:   option kind
 '   len:    length of KLV, 1..255 (if unspecified or 0, the length field will not be emitted)

@@ -4,7 +4,7 @@
     Description:    Universal Datagram Protocol
     Author:         Jesse Burt
     Started:        Feb 28, 2022
-    Updated:        Feb 14, 2026
+    Updated:        Feb 24, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -34,8 +34,6 @@ VAR
 
     long p_ndev                                 ' network driver object pointer
 
-    ^udp_msg_s   hdr
-
     long _fifo_start                            ' start of the datagram in the FIFO
 
     long _payload_checksum
@@ -46,65 +44,61 @@ pub init(optr)
     p_ndev := optr
 
 
-pub set_header(p_hdr)
-
-    [hdr] := p_hdr
-
-PUB new(src_port, dest_port)
+PUB new(^udp_hdr_s hdr, src_port, dest_port)
 ' Construct new UDP datagram
-    set_src_port(src_port)
-    set_dest_port(dest_port)
-    set_chksum(0)
-    wr_udp_header()
+    set_src_port(@hdr, src_port)
+    set_dest_port(@hdr, dest_port)
+    set_chksum(@hdr, 0)
+    wr_udp_header(@hdr)
 
 
-PUB set_chksum(ck)
+PUB set_chksum(^udp_hdr_s hdr, ck)
 ' Set checksum (optional; set to 0 to ignore)
     hdr.checksum := swap_word(ck)
 
 
-PUB set_dest_port(p)
+PUB set_dest_port(^udp_hdr_s hdr, p)
 ' Set destination port field
     hdr.dest_port := swap_word(p)
 
 
-PUB set_dgram_len(len)
+PUB set_dgram_len(^udp_hdr_s hdr, len)
 ' Set length of UDP datagram
 '   NOTE: Don't include the 8-bytes of the UDP header itself
     len += UDP_MSG_SZ
     hdr.length := swap_word(len)
 
 
-PUB set_src_port(p)
+PUB set_src_port(^udp_hdr_s hdr, p)
 ' Set source port field
     hdr.src_port := swap_word(p)
 
 
-PUB chksum(): c
+PUB chksum(^udp_hdr_s hdr): c
 ' Get checksum
     return swap_word(hdr.checksum)
 
 
-PUB dest_port(): p
+PUB dest_port(^udp_hdr_s hdr): p
 ' Get destination port field
     return swap_word(hdr.dest_port)
 
 
-PUB dgram_len(): l
+PUB dgram_len(^udp_hdr_s hdr): l
 ' Get length of UDP datagram
 '   NOTE: This length includes the 8-bytes UDP header itself
     return swap_word(hdr.length)
 
 
-PUB hdr_len(): l
+PUB hdr_len(^udp_hdr_s hdr): l
 ' Get current header length
     return UDP_MSG_SZ
 
 
-PUB payload_len(): l
+PUB payload_len(^udp_hdr_s hdr): l
 ' Get length of datagram
 '   NOTE: This length is of the payload portion of the datagram only
-    return dgram_len()-UDP_MSG_SZ
+    return dgram_len(@hdr)-UDP_MSG_SZ
 
 
 PUB pseudo_header_cksum(src, dest, l=0, iv=0, co=true): ck | pseudo_hdr_s phdr
@@ -127,17 +121,17 @@ PUB pseudo_header_cksum(src, dest, l=0, iv=0, co=true): ck | pseudo_hdr_s phdr
         return crc.inet_chksum(@phdr, 12, iv, false)
 
 
-PUB src_port(): p
+PUB src_port(^udp_hdr_s hdr): p
 ' Get source port field
     return swap_word(hdr.src_port)
 
 
-PUB reset_udp()
+PUB reset_udp(^udp_hdr_s hdr)
 ' Reset all values to defaults
     hdr~
 
 
-PUB rd_udp_header(): l
+PUB rd_udp_header(^udp_hdr_s hdr): l
 ' Read/disassemble UDP header
 '   Returns: network device FIFO write position
     net[p_ndev].rd_block(@hdr, UDP_MSG_SZ)
@@ -155,13 +149,13 @@ pub start_pos(): p
     return _fifo_start
 
 
-pub update_checksum(lip, rip, len=0): ck | tmp, pck
+pub update_checksum(^udp_hdr_s hdr, lip, rip, len=0): ck | tmp, pck
 ' Update the checksum in the TCP header
 '   lip:        local/source IP for pseudo-header checksum
 '   rip:        remote/destination IP for pseudo-header checksum
 '   len:        payload length (optional; default is 0)
 '   Returns:    UDP checksum
-    set_chksum(0)                             ' init checksum field to 0
+    set_chksum(@hdr, 0)                             ' init checksum field to 0
 
     ' calc pseudo-header checksum seeded by the payload data checksum
     ' then feed that into the UDP header checksum
@@ -175,7 +169,7 @@ pub update_checksum(lip, rip, len=0): ck | tmp, pck
     net[p_ndev].fifo_set_wr_ptr(tmp)
 
 
-pub wr_checksum_to(p_dest, lip, rip, len=0, p_pld=0): ck | tmp
+pub wr_checksum_to(^udp_hdr_s hdr, p_dest, lip, rip, len=0, p_pld=0): ck | tmp
 ' Calculate and write UDP checksum
 '   p_dest:     location to write checksum (pointer)
 '   lip:        local IP
@@ -184,7 +178,7 @@ pub wr_checksum_to(p_dest, lip, rip, len=0, p_pld=0): ck | tmp
 '   p_pld:      payload data (pointer; optional; ignored if len == 0)
 '   Returns:    checksum in network byte order
 
-    set_chksum(0)                               ' init checksum field to 0
+    set_chksum(@hdr, 0)                               ' init checksum field to 0
 
     ' calc pseudo-header checksum seeded by the payload data checksum
     ' then feed that into the UDP header checksum
@@ -199,17 +193,17 @@ pub wr_checksum_to(p_dest, lip, rip, len=0, p_pld=0): ck | tmp
     word[p_dest] := ck
 
 
-PUB update_len_chksum(len) | tmp, c
+PUB update_len_chksum(^udp_hdr_s hdr, len) | tmp, c
 ' Update the UDP header length and checksum
 '   len:    datagram length
-    set_dgram_len(len)
+    set_dgram_len(@hdr, len)
     tmp := net[p_ndev].fifo_wr_ptr()            ' remember the current fifo pointer
     net[p_ndev].fifo_set_wr_ptr(start_pos()+UDP_DGRAMLEN)
     net[p_ndev].wr_word(hdr.length)             ' write the new length
     net[p_ndev].fifo_set_wr_ptr(tmp)            ' restore the write pointer
 
 
-PUB wr_udp_header(): ptr
+PUB wr_udp_header(^udp_hdr_s hdr): ptr
 ' Write/assemble UDP header
 '   Returns: length of assembled header, in bytes
     _fifo_start := net[p_ndev].fifo_wr_ptr()    ' save this FIFO position as the start of UDP
@@ -218,7 +212,7 @@ PUB wr_udp_header(): ptr
     return net[p_ndev].fifo_wr_ptr()
 
 
-PUB wr_udp_header_to(p_dest): ptr
+PUB wr_udp_header_to(^udp_hdr_s hdr, p_dest): ptr
 ' Write/assemble UDP header
 '   Returns: length of assembled header, in bytes
     bytemove(p_dest, @hdr, sizeof(hdr))

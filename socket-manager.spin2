@@ -457,7 +457,7 @@ pub sendto(sck, p_src, len, flags, addr, port, al=4): s
         if ( tx_datagrams_free(sck) > 0 )       ' check for free descriptor
             s := txput(sck, p_src, len)         ' (try to) copy the datagram to the socket buffer
             if ( s > 0 )                        ' upon success, write the descriptor
-                tx_queue_datagram(sck, addr, port, len)
+                tx_queue_datagram(sck, addr, port, s)
                 DEBUG(" OK")
                 return
             DEBUG(" error: socket buffer or descriptor table full")
@@ -980,7 +980,7 @@ pri pending_tcp_tx(): s
     return ( (tcp_tx_pend.head-tcp_tx_pend.tail) & MAX_TCP_TX_PEND_MASK)
 
 
-pri receive_arp(^ethii_t eh): s | e, mf, arp_msg_s ah
+pri receive_arp(^ethii_hdr_s eh): s | e, mf, arp_hdr_s ah
 ' Process received ARP messages
 '   eh: ethernet-II header (pointer to structure)
     DEBUG("receive_arp")
@@ -1011,7 +1011,7 @@ pri receive_arp(^ethii_t eh): s | e, mf, arp_msg_s ah
             arp_reply(@ah)
 
 
-pri arp_reply(^arp_msg_s ah) | pbuf
+pri arp_reply(^arp_hdr_s ah) | pbuf
 ' Write an ARP reply message
     pbuf := pbuf_allocate()
     if ( pbuf >= 0 )
@@ -1022,7 +1022,7 @@ pri arp_reply(^arp_msg_s ah) | pbuf
         arp_reply_q.head := (arp_reply_q.head + 1) & ARP_REPLQ_MASK
 
 
-pri receive_ethii(): s | ethii_t eh
+pri receive_ethii(): s | ethii_hdr_s eh
 ' Process received Ethernet-II headers
     eh~
     ethii.rd_ethii_frame(@eh)                      ' read in the Ethernet-II header
@@ -1036,7 +1036,7 @@ pri receive_ethii(): s | ethii_t eh
 
 
 var byte _icmp_echo_data[48]
-pri receive_icmp() | icmp_msg_s ich
+pri receive_icmp() | icmp4_hdr_s ich
 ' Process received ICMP headers
     DEBUG("receive_icmp()")
     icmp.rd_icmp_msg(@ich)
@@ -1055,7 +1055,7 @@ pri receive_icmp() | icmp_msg_s ich
             'todo
 
 
-pri receive_ipv4(^ethii_t eh) | ipv4_hdr_s ih, sck
+pri receive_ipv4(^ethii_hdr_s eh) | ipv4_hdr_s ih, sck
 ' Process received IPv4 headers
     DEBUG("receive_ipv4()")
     ih~
@@ -1084,7 +1084,7 @@ pri receive_ipv4(^ethii_t eh) | ipv4_hdr_s ih, sck
                 return
 
 
-pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_msg_s th, ack, seq, flags, seg_len, seg_accept, loop_nr, reset, ls, s, sck, tl, pbuf
+pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, seg_accept, loop_nr, reset, ls, s, sck, tl, pbuf
 ' Process incoming TCP segment (reference TCP RFC 9293, s. 3.10.7 "Segment arrives")
     th~
     tcp.rd_tcp_header(@th)
@@ -1529,23 +1529,23 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_msg_s th, ack, seq, flags, seg_len, se
     return OK
 
 
-pri receive_udp(^ipv4_hdr_s ih): s | udp_msg_s uh, sck, l, h, t, pbuf, il
+pri receive_udp(^ipv4_hdr_s ih): s | udp_hdr_s uh, sck, l, h, t, pbuf, il
 ' Process received UDP headers
     DEBUG("process_udp()")
-    udp.set_header(@uh)
-    udp.rd_udp_header()
+    uh~
+    udp.rd_udp_header(@uh)
 
     repeat MAX_SOCKETS with sck
-        if ( (udp.dest_port() == socket[sck].local_port) and (socket[sck].protocol == L4_UDP) )
+        if ( (udp.dest_port(@uh) == socket[sck].local_port) and (socket[sck].protocol == L4_UDP) )
             DEBUG("sck ", udec_(sck), " port match")
-            l := udp.payload_len()
+            l := udp.payload_len(@uh)
             h := socket[sck].rxbuff.datagram.head
             t := socket[sck].rxbuff.datagram.tail
             if ( ( (t-h - 1) & DG_MASK) > 0 )
                 s := xrxget(sck, l)
                 if ( s > 0 )
                     socket[sck].rxbuff.datagram.descr[h].remote.address := ip.src_addr(@ih)
-                    socket[sck].rxbuff.datagram.descr[h].remote.port := udp.src_port()
+                    socket[sck].rxbuff.datagram.descr[h].remote.port := udp.src_port(@uh)
                     socket[sck].rxbuff.datagram.descr[h].len := l
                     socket[sck].rxbuff.datagram.head := (h + 1) & DG_MASK
                     return
@@ -1599,7 +1599,7 @@ pri tcp_tx_pending_free(): a
     return (tcp_tx_pend.tail-tcp_tx_pend.head-1) & MAX_TCP_TX_PEND_MASK
 
 
-pri write_arp(pbuf, opc, tha, tpa): l | arp_msg_s ah
+pri write_arp(pbuf, opc, tha, tpa): l | arp_hdr_s ah
 ' Write ARP header
     DEBUG("write_arp(", udec(pbuf), udec(opc), zstr_(str.mactostr(tha)), zstr_(str.iptostr(tpa) ), ")")
     ah~
@@ -1634,7 +1634,7 @@ pri write_arp(pbuf, opc, tha, tpa): l | arp_msg_s ah
     return arp.ARP_MSG_SZ
 
 
-pri write_ethii(pbuf, dest, src, etyp): l | ethii_t eh
+pri write_ethii(pbuf, dest, src, etyp): l | ethii_hdr_s eh
 ' Encapsulate an IP payload with Ethernet-II
 '   dest:   destination MAC address
 '   src:    source MAC address
@@ -1658,7 +1658,7 @@ pri write_ethii(pbuf, dest, src, etyp): l | ethii_t eh
     return ethii.ETH_FRM_SZ
 
 
-pri write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l | icmp_msg_s ich, ^echo_msg_s ehdr
+pri write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l | icmp4_hdr_s ich, ^echo_msg_s ehdr
 ' Write ICMP header, message
     DEBUG("write_icmp()")
 
@@ -1710,7 +1710,7 @@ pri write_ipv4(pbuf, lip, rip, pro, len=0, ident=0, dscp=0, ttl=0): l | ipv4_hdr
     ' configure IPv4 header
     ip.set_dscp(@ih,            dscp)
     ip.set_msg_ident(@ih,       ident)
-    ip.set_flags(@ih,           0)                             'xxx for future use, if frag is ever supported
+    ip.set_flags(@ih,           ip.IP_DONT_FRAGMENT)'xxx for future use, if frag is ever supported
 
     ' write options (as applicable) and set TTL
     ol := 0
@@ -1764,7 +1764,7 @@ pri write_ipv4_socket(pbuf, sck, len=0, ident=0, dscp=0, ttl=0): l
     return
 
 
-pri write_tcp(pbuf, lip, rip, sp, dp, seqn, ackn, fl, p_ts=0, wnd=0, up=0, slen=0): l | tcp_msg_s th, ck, hl
+pri write_tcp(pbuf, lip, rip, sp, dp, seqn, ackn, fl, p_ts=0, wnd=0, up=0, slen=0): l | tcp_hdr_s th, ck, hl
 ' Write a TCP segment to the packet buffer
 '   lip:    local IP (used for pseudo-header checksum calculation)
 '   rip:    remote IP (used for pseudo-header checksum calculation)
@@ -1865,7 +1865,7 @@ pri write_tcp_socket(pbuf, sck, flags, sl=0): s | l
     return s+l
 
 
-pri write_udp_socket(pbuf, sck): s | udp_msg_s uh, dt, l, pl
+pri write_udp_socket(pbuf, sck): s | udp_hdr_s uh, dt, l, pl
 ' Send UDP socket data
 '   sck:    socket number
     DEBUG("write_udp_socket(", udec(pbuf), udec(sck), ")")
@@ -1875,39 +1875,39 @@ pri write_udp_socket(pbuf, sck): s | udp_msg_s uh, dt, l, pl
 
     ' set up local structures for use in building the frame
     dt := socket[sck].txbuff.datagram.tail
-    udp.set_header(@uh)
-    udp.set_src_port(socket[sck].local_port)
-    udp.set_dest_port(socket[sck].txbuff.datagram.descr[dt].remote.port)
-    udp.set_dgram_len(socket[sck].txbuff.datagram.descr[dt].len)
-    udp.set_chksum(0)
+
+    uh~
+    udp.set_src_port(@uh, socket[sck].local_port)
+    udp.set_dest_port(@uh, socket[sck].txbuff.datagram.descr[dt].remote.port)
+    udp.set_dgram_len(@uh, socket[sck].txbuff.datagram.descr[dt].len)
+    DEBUG(" descr len=", udec_(socket[sck].txbuff.datagram.descr[dt].len) )
+    udp.set_chksum(@uh, 0)
 
     ' rewind the buffer pointer enough to fit the UDP header that was just set up
     pktbuff[pbuf].p_data -= udp.UDP_MSG_SZ 
-    udp.wr_udp_header_to(pktbuff[pbuf].p_data)
-    pktbuff[pbuf].p_data += udp.UDP_MSG_SZ
+    udp.wr_udp_header_to(@uh, pktbuff[pbuf].p_data)
 
     ' copy the payload data, if there is any
-    if ( udp.payload_len() > 0 )
-        pktbuff[pbuf].p_data += txget(sck, ...
-                            pktbuff[pbuf].p_data, ...
-                            socket[sck].txbuff.datagram.descr[dt].len)
-        pktbuff[pbuf].p_end := pktbuff[pbuf].p_data
-        pktbuff[pbuf].len += udp.payload_len()
-
-    ' rewind the pointer to the beginning of the UDP header
-    pktbuff[pbuf].p_data -= socket[sck].txbuff.datagram.descr[dt].len + ...
-                    udp.hdr_len()
+    if ( socket[sck].txbuff.datagram.descr[dt].len > 0 )
+        pl := txget(sck, ...
+                    pktbuff[pbuf].p_end, ...
+                    socket[sck].txbuff.datagram.descr[dt].len)
+        pktbuff[pbuf].p_end += pl
+        pktbuff[pbuf].len += udp.UDP_MSG_SZ+pl
+        DEBUG(" append ", udec_(pl), " bytes payload")
 
     ' write the UDP checksum
-    udp.wr_checksum_to( pktbuff[pbuf].p_data+UDP_CKSUM, ...
+    udp.wr_checksum_to( @uh, ...
+                        pktbuff[pbuf].p_data+UDP_CKSUM, ...
                         socket[sck].local_ip, ...
                         socket[sck].txbuff.datagram.descr[dt].remote.address, ...
-                        udp.payload_len(), ...
-                        pktbuff[pbuf].p_data+8)
+                        pl, ...
+                        pktbuff[pbuf].p_data+udp.UDP_MSG_SZ)
 
     pktbuff[pbuf].layer_written := 4
 
-    return udp.dgram_len()
+    DEBUG("udp.dgram_len()=", udec_(udp.dgram_len(@uh)))
+    return udp.dgram_len(@uh)
 
 
 '--

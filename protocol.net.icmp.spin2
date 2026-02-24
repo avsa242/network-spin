@@ -88,7 +88,7 @@ pub init(optr)
     p_ndev := optr
 
 
-PUB echo_reply(^icmp_msg_s hdr)
+PUB echo_reply(^icmp4_hdr_s hdr)
 ' Set up for an echo reply message
 '   hdr:    ICMP header structure
     set_chksum(@hdr, 0)
@@ -96,13 +96,13 @@ PUB echo_reply(^icmp_msg_s hdr)
     wr_icmp_msg()
 
 
-PUB set_chksum(^icmp_msg_s hdr, ck)
+PUB set_chksum(^icmp4_hdr_s hdr, ck)
 ' Set checksum (optional; set to 0 to ignore)
 '   hdr:    ICMP header structure
     hdr.checksum := swap_word(ck)
 
 
-PUB set_code(^icmp_msg_s hdr, c)
+PUB set_code(^icmp4_hdr_s hdr, c)
 ' Set ICMP subtype
 '   hdr:    ICMP header structure
     hdr.code := c
@@ -118,7 +118,7 @@ PUB set_ident(^echo_msg_s msg, i)
     msg.ident := swap_word(i)
 
 
-PUB set_msg_type(^icmp_msg_s hdr, t)
+PUB set_msg_type(^icmp4_hdr_s hdr, t)
 ' Set ICMP message type
 '   hdr:    ICMP header structure
     hdr.type := t
@@ -134,13 +134,13 @@ PUB set_timestamp(^timestamp_msg_s msg, tm)
     msg.time_origin := swap_long(tm)
 
 
-PUB chksum(^icmp_msg_s hdr): ck
+PUB chksum(^icmp4_hdr_s hdr): ck
 ' Get checksum
 '   hdr:    ICMP header structure
     return hdr.checksum
 
 
-PUB code(^icmp_msg_s hdr): c
+PUB code(^icmp4_hdr_s hdr): c
 ' Get ICMP subtype/code
 '   hdr:    ICMP header structure
     return hdr.code
@@ -161,7 +161,7 @@ PUB msg_len(): l
     return _icmp_msg_len
 
 
-PUB msg_type(^icmp_msg_s hdr): t
+PUB msg_type(^icmp4_hdr_s hdr): t
 ' Get ICMP message type
 '   hdr:    ICMP header structure
     return hdr.type
@@ -194,7 +194,7 @@ PUB rd_echo_data(p_buff, l=0): p
         net[p_ndev].rd_block(p_buff, _echo_data_len)
 
 
-PUB rd_icmp_msg(^icmp_msg_s hdr): p
+PUB rd_icmp_msg(^icmp4_hdr_s hdr): p
 ' Read ICMP message from network device
 '   hdr:    ICMP header structure
 '   Returns: network device FIFO write pointer, after reading
@@ -203,7 +203,7 @@ PUB rd_icmp_msg(^icmp_msg_s hdr): p
     return net[p_ndev].fifo_wr_ptr()
 
 
-PUB update_chksum(^icmp_msg_s hdr, p_buff=0, len=0) | tmp
+PUB update_chksum(^icmp4_hdr_s hdr, p_buff=0, len=0) | tmp
 ' Update the checksum field of the header
 '   hdr:    ICMP header structure
 '   p_buff: pointer to message data (optional; leave unspecified to ignore)
