@@ -970,6 +970,13 @@ pri pbuf_next(): p
         return -1                               ' error: no packet buffers queued
 
 
+pri pbuf_prepend_write(pbuf, len, p_src)
+' Prepend some data to the packet buffer
+    pktbuff[pbuf].p_data -= len                 ' rewind pointer
+    bytemove(pktbuff[pbuf].p_data, p_src, len)  ' copy the data
+    pktbuff[pbuf].len += len                    ' account for data just copied
+
+
 pri pbuf_queued(): p
 ' Get the number of pktbuffs queued
 '    DEBUG("pbuf_queued() ", udec(pb_head), udec(pb_tail) )
@@ -1622,8 +1629,6 @@ pri write_arp(pbuf, opc, tha, tpa): l | arp_hdr_s ah
 ' Write ARP header
     DEBUG("write_arp(", udec(pbuf), udec(opc), zstr_(str.mactostr(tha)), zstr_(str.iptostr(tpa) ), ")")
     ah~
-    pktbuff[pbuf].p_data := pktbuff[pbuf].p_end := @pktbuff[pbuf].buffer+FRAME_HEADROOM_SZ
-    pktbuff[pbuf].len := 0
 
     ' set up the ARP header
     arp.set_hw_addr_len(@ah,        MACADDR_LEN)
@@ -1666,11 +1671,7 @@ pri write_ethii(pbuf, dest, src, etyp): l | ethii_hdr_s eh
     ethii.set_src_addr(@eh, src)
     ethii.set_ethertype(@eh, etyp)
 
-    pktbuff[pbuf].p_data -= ethii.ETHII_HDR_SZ
-    pktbuff[pbuf].len += ethii.ETHII_HDR_SZ
-    'DEBUG(" len is now ", udec_(pktbuff[pbuf].len) )
-
-    ethii.wr_ethii_frame_to(@eh, pktbuff[pbuf].p_data)
+    pbuf_prepend_write(pbuf, ethii.ETHII_HDR_SZ, @eh)
 
     pktbuff[pbuf].layer_written := 2
 
@@ -1700,8 +1701,7 @@ pri write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l | icmp4_hdr_
             ehdr~
             icmp.set_ident(@ehdr, ident)
             icmp.set_seq_nr(@ehdr, seq_nr)
-            pktbuff[pbuf].p_data -= 4
-            bytemove(pktbuff[pbuf].p_data, @ehdr, 4)
+            pbuf_prepend_write(pbuf, 4, @ehdr)
             ol += 4
             bytemove(pktbuff[pbuf].p_end, p_src, len)
             ol += len
@@ -1711,10 +1711,8 @@ pri write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l | icmp4_hdr_
             'todo
 
 
-    ' rewind pbuf pointer to fit ICMP header, and write it
-    pktbuff[pbuf].p_data -= icmp.ICMP_HDR_SZ
-    pktbuff[pbuf].len += icmp.ICMP_HDR_SZ
-    bytemove(pktbuff[pbuf].p_data, @ich, icmp.ICMP_HDR_SZ)
+    pbuf_prepend_write(pbuf, icmp.ICMP_HDR_SZ, @ich)
+
     ck := crc.inet_chksum(pktbuff[pbuf].p_data, icmp.ICMP_HDR_SZ+ol, 0, true)
     word[pktbuff[pbuf].p_data + ICMP_CKSUM] := swap_word(ck)
 
@@ -1760,14 +1758,11 @@ pri write_ipv4(pbuf, lip, rip, pro, len=0, ident=0, dscp=0, ttl=0): l | ipv4_hdr
     ip.set_dgram_len(@ih,       len)                       ' this depends on the IP header length
     ip.set_frag_offset(@ih,     0)                       'xxx for future use, if frag is ever supported
 
-    pktbuff[pbuf].p_data -= ip.hdr_len(@ih)              ' prepend IP header to transport
-    pktbuff[pbuf].len += ip.hdr_len(@ih)
+    pbuf_prepend_write(pbuf, ip.hdr_len(@ih), @ih)
 
-    ip.wr_ip_header_to(@ih, pktbuff[pbuf].p_data)
     ip.wr_chksum_to(@ih, pktbuff[pbuf].p_data+IP_CKSUM)
 
     arp_queue_ip(pbuf, rip)                           ' queue the dest IP for ARP resolution
-'    l := pktbuff[pbuf].p_data-pktbuff[pbuf].p_buff
 
     pktbuff[pbuf].layer_written := 3
 
@@ -1834,7 +1829,6 @@ pri write_tcp(pbuf, lip, rip, sp, dp, seqn, ackn, fl, p_ts=0, wnd=0, up=0, slen=
     ' rewind the buffer pointer enough to fit the TCP header that was just set up
     pktbuff[pbuf].p_data -= hl
     pktbuff[pbuf].len += hl
-
     tcp.wr_tcp_header_to(@th, pktbuff[pbuf].p_data)' write the TCP header+options to the buffer
 
     ' calc the pseudo-header checksum (lip, rip, length, complement output)
@@ -1902,9 +1896,7 @@ pri write_udp_socket(pbuf, sck): s | udp_hdr_s uh, dt, l, pl
     DEBUG(" descr len=", udec_(socket[sck].txbuff.datagram.descr[dt].len) )
     udp.set_chksum(@uh, 0)
 
-    ' rewind the buffer pointer enough to fit the UDP header that was just set up
-    pktbuff[pbuf].p_data -= udp.UDP_HDR_SZ
-    udp.wr_udp_header_to(@uh, pktbuff[pbuf].p_data)
+    pbuf_prepend_write(pbuf, udp.UDP_HDR_SZ, @uh)
 
     ' copy the payload data, if there is any
     if ( socket[sck].txbuff.datagram.descr[dt].len > 0 )
@@ -1912,7 +1904,7 @@ pri write_udp_socket(pbuf, sck): s | udp_hdr_s uh, dt, l, pl
                     pktbuff[pbuf].p_end, ...
                     socket[sck].txbuff.datagram.descr[dt].len)
         pktbuff[pbuf].p_end += pl
-        pktbuff[pbuf].len += udp.UDP_HDR_SZ+pl
+        pktbuff[pbuf].len += pl
         DEBUG(" append ", udec_(pl), " bytes payload")
 
     ' write the UDP checksum
