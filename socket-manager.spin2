@@ -942,6 +942,10 @@ pri pbuf_allocate(): p
 '               -1 on failure
     DEBUG("pbuf_allocate() ", udec(pb_head), udec(pb_tail) )
     if ( pbuf_free() )
+        ' init buffer pointer to the end of the headroom (the first 128 bytes)
+        pktbuff[pb_head].p_data :=  pktbuff[pb_head].p_end := ...
+                                    @pktbuff[pb_head].buffer+FRAME_HEADROOM_SZ
+        pktbuff[pb_head].len := 0
         return pb_head
     else
         DEBUG("pbuf_allocate(): error: no pbufs free")
@@ -1680,10 +1684,6 @@ pri write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l | icmp4_hdr_
     ich~
     ol := 0
 
-    ' init buffer pointer to the end of the headroom (the first 128 bytes)
-    pktbuff[pbuf].p_data := pktbuff[pbuf].p_end := @pktbuff[pbuf].buffer+FRAME_HEADROOM_SZ
-    pktbuff[pbuf].len := 0
-
     ' set up ICMP header
     icmp.set_msg_type(@ich, typ)
     icmp.set_code(@ich, cd)
@@ -1805,10 +1805,6 @@ pri write_tcp(pbuf, lip, rip, sp, dp, seqn, ackn, fl, p_ts=0, wnd=0, up=0, slen=
 
     DEBUG("write_tcp(", udec(pbuf), zstr_(netstr.tcp_flags_str(fl) ), ")")
 
-    ' init buffer pointer to the end of the headroom (the first 128 bytes)
-    pktbuff[pbuf].p_data := @pktbuff[pbuf].buffer+FRAME_HEADROOM_SZ
-    pktbuff[pbuf].len := 0
-
     ' set up local structure for use in building the frame
     th~                                         ' init/fill it with 0
 
@@ -1895,10 +1891,6 @@ pri write_udp_socket(pbuf, sck): s | udp_hdr_s uh, dt, l, pl
 ' Send UDP socket data
 '   sck:    socket number
     DEBUG("write_udp_socket(", udec(pbuf), udec(sck), ")")
-
-    ' init buffer pointer to the end of the headroom (the first 128 bytes)
-    pktbuff[pbuf].p_data := pktbuff[pbuf].p_end := @pktbuff[pbuf].buffer+FRAME_HEADROOM_SZ
-    pktbuff[pbuf].len := 0
 
     ' set up local structures for use in building the frame
     dt := socket[sck].txbuff.datagram.tail
