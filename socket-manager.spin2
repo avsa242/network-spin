@@ -1807,6 +1807,7 @@ pri write_tcp(pbuf, lip, rip, sp, dp, seqn, ackn, fl, p_ts=0, wnd=0, up=0, slen=
 
     ' init buffer pointer to the end of the headroom (the first 128 bytes)
     pktbuff[pbuf].p_data := @pktbuff[pbuf].buffer+FRAME_HEADROOM_SZ
+    pktbuff[pbuf].len := 0
 
     ' set up local structure for use in building the frame
     th~                                         ' init/fill it with 0
@@ -1897,6 +1898,7 @@ pri write_udp_socket(pbuf, sck): s | udp_hdr_s uh, dt, l, pl
 
     ' init buffer pointer to the end of the headroom (the first 128 bytes)
     pktbuff[pbuf].p_data := pktbuff[pbuf].p_end := @pktbuff[pbuf].buffer+FRAME_HEADROOM_SZ
+    pktbuff[pbuf].len := 0
 
     ' set up local structures for use in building the frame
     dt := socket[sck].txbuff.datagram.tail
