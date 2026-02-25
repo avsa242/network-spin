@@ -4,8 +4,8 @@
     Description:    Internet Control Message Protocol
     Author:         Jesse Burt
     Started:        Mar 31, 2022
-    Updated:        Jul 8, 2025
-    Copyright (c) 2025 - See end of file for terms of use.
+    Updated:        Feb 25, 2026
+    Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
 {Spin2_v46}
@@ -18,7 +18,7 @@ CON
 
     { limits }
     ICMP_HDR_SZ     = 4                         ' message length    xxx this was 8...4 seems right though...verify
-    ICMP_ECHO_MSG_SZ= 12                        ' echo metadata (_not_ echoed data)
+    ICMP_ECHO_HDR_SZ= 12                        ' echo metadata (_not_ echoed data)
 
 
     { ECHO: offsets within metadata }
@@ -153,7 +153,7 @@ PUB echo_data_len(): l
 
 PUB ident(^echo_msg_s msg): i
 ' Get ICMP identifier
-    return msg.ident
+    return swap_word(msg.ident)
 
 
 PUB msg_len(): l
@@ -169,7 +169,7 @@ PUB msg_type(^icmp4_hdr_s hdr): t
 
 PUB echo_seq_nr(^echo_msg_s msg): n
 ' Get ICMP echo message sequence number
-    return msg.seq_nr
+    return swap_word(msg.seq_nr)
 
 
 PUB timestamp_seq_nr(^timestamp_msg_s msg): n
@@ -192,6 +192,11 @@ PUB rd_echo_data(p_buff, l=0): p
         _echo_data_len := l
     else
         net[p_ndev].rd_block(p_buff, _echo_data_len)
+
+
+pub rd_echo_header(^echo_msg_s hdr): p
+' Read an ECHO type message header
+    net[p_ndev].rd_block(@hdr, 4)
 
 
 PUB rd_icmp_msg(^icmp4_hdr_s hdr): p
@@ -236,9 +241,10 @@ PUB wr_icmp_msg(): p | st, nd
     return nd
 
 
-pub wr_icmp_msg_to(hdr, p_dest): l
+pub wr_icmp_msg_to(^icmp4_hdr_s hdr, p_dest): l
 
     bytemove(p_dest, @hdr, ICMP_HDR_SZ)
+    return ICMP_HDR_SZ
 
 
 PUB wr_echo_data(p_buff, l=0): p
@@ -257,7 +263,7 @@ PUB wr_echo_data(p_buff, l=0): p
 
 DAT
 {
-Copyright 2025 Jesse Burt
+Copyright 2026 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

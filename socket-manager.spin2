@@ -7,7 +7,7 @@
         * Multiple sockets
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Feb 23, 2026
+    Updated:        Feb 25, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -1033,24 +1033,41 @@ pri receive_ethii(): s | ethii_hdr_s eh
             receive_ipv4(@eh)
 
 
-var byte _icmp_echo_data[48]
-pri receive_icmp() | icmp4_hdr_s ich
+var byte _icmp_echo_data[60]
+pri receive_icmp(^ipv4_hdr_s ih) | icmp4_hdr_s ich, echo_msg_s ieh, pbuf, icl, el
 ' Process received ICMP headers
     DEBUG("receive_icmp()")
     icmp.rd_icmp_msg(@ich)
 
     case_fast icmp.msg_type(@ich)
         icmp.DEST_UNREACH:                      ' destination unreachable
-            DEBUG("destination unreachable: ")
+            DEBUG(" destination unreachable: ")
             'todo: these need to be forwarded to the application or the socket somehow so they know
             ' there was a problem
             if ( icmp.code(@ich) == icmp.PORT_UNREACH )
-                DEBUG(" port")
+                DEBUG("  port")
             elseif ( icmp.code(@ich) == icmp.DEST_UNREACH )
-                DEBUG(" host")
+                DEBUG("  host")
                 return
         icmp.ECHO_REQ:                          ' echo request (ping)
+            DEBUG(" echo")
             'todo
+            el := ip.payload_length(@ih) - icmp.ICMP_HDR_SZ-4
+            DEBUG(" length=", udec_(el))
+            ieh~
+            icmp.rd_echo_header(@ieh)
+            icmp.rd_echo_data(@_icmp_echo_data, el)
+            pbuf := pbuf_allocate()
+            if ( pbuf >= 0 )
+                icl := write_icmp(  pbuf, ...
+                                    icmp.ECHO_REPL, ...
+                                    0, ...
+                                    el, ...
+                                    @_icmp_echo_data, ...
+                                    icmp.ident(@ieh), ...
+                                    icmp.echo_seq_nr(@ieh) )
+                write_ipv4(pbuf, ip.dest_addr(@ih), ip.src_addr(@ih), L4_ICMP, icl)
+                pb_head := (pb_head+1) & PKTBUFF_MASK
 
 
 pri receive_ipv4(^ethii_hdr_s eh) | ipv4_hdr_s ih, sck
@@ -1068,7 +1085,7 @@ pri receive_ipv4(^ethii_hdr_s eh) | ipv4_hdr_s ih, sck
         if ( (ip.dest_addr(@ih) == socket[sck].local_ip) )
             case ip.layer4_proto(@ih)
                 L4_ICMP:
-                    receive_icmp()
+                    receive_icmp(@ih)
                     return
                 L4_UDP:
                     receive_udp(@ih)
@@ -1656,11 +1673,12 @@ pri write_ethii(pbuf, dest, src, etyp): l | ethii_hdr_s eh
     return ethii.ETHII_HDR_SZ
 
 
-pri write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l | icmp4_hdr_s ich, ^echo_msg_s ehdr
+pri write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l | icmp4_hdr_s ich, echo_msg_s ehdr, ol, ck
 ' Write ICMP header, message
     DEBUG("write_icmp()")
 
     ich~
+    ol := 0
 
     ' init buffer pointer to the end of the headroom (the first 128 bytes)
     pktbuff[pbuf].p_data := pktbuff[pbuf].p_end := @pktbuff[pbuf].buffer+FRAME_HEADROOM_SZ
@@ -1678,22 +1696,31 @@ pri write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l | icmp4_hdr_
                 icmp.PORT_UNREACH:
                     'todo
         icmp.ECHO_REPL:
+            DEBUG(" type=ECHO_REPL")
             ehdr~
             icmp.set_ident(@ehdr, ident)
             icmp.set_seq_nr(@ehdr, seq_nr)
+            pktbuff[pbuf].p_data -= 4
+            bytemove(pktbuff[pbuf].p_data, @ehdr, 4)
+            ol += 4
+            bytemove(pktbuff[pbuf].p_end, p_src, len)
+            ol += len
+            pktbuff[pbuf].len += ol
             'todo
         icmp.ECHO_REQ:
             'todo
 
+
     ' rewind pbuf pointer to fit ICMP header, and write it
     pktbuff[pbuf].p_data -= icmp.ICMP_HDR_SZ
     pktbuff[pbuf].len += icmp.ICMP_HDR_SZ
-    icmp.wr_icmp_msg_to(@ich, pktbuff[pbuf].p_data)
-
+    bytemove(pktbuff[pbuf].p_data, @ich, icmp.ICMP_HDR_SZ)
+    ck := crc.inet_chksum(pktbuff[pbuf].p_data, icmp.ICMP_HDR_SZ+ol, 0, true)
+    word[pktbuff[pbuf].p_data + ICMP_CKSUM] := swap_word(ck)
 
     pktbuff[pbuf].layer_written := 4
 
-    return icmp.ICMP_HDR_SZ
+    return icmp.ICMP_HDR_SZ+ol
 
 
 pri write_ipv4(pbuf, lip, rip, pro, len=0, ident=0, dscp=0, ttl=0): l | ipv4_hdr_s ih, tmp, ol, t

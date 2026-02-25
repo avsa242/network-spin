@@ -71,7 +71,7 @@ con
 obj
 
     ser:    "com.serial.terminal.ansi" | SER_BAUD=2_000_000
-    sck:    "socket-manager-2" | MAX_SOCKETS=8
+    sck:    "socket-manager" | MAX_SOCKETS=8
     str:    "string"
     libc:   "libc"
 
