@@ -588,7 +588,7 @@ pri cog_stack(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, SPI_FREQ) | st, s, tl, ul, pb
         flush_arp_replies()                     ' replies to ARP requests
 
 
-pub flush_arp_replies()
+pri flush_arp_replies()
 ' Send pending ARP replies to the network device
     if ( (arp_reply_q.head-arp_reply_q.tail) & ARP_REPLQ_MASK )
         send_pbuf( arp_reply_q.entry[arp_reply_q.tail] )
@@ -1627,6 +1627,10 @@ pri tcp_tx_pending_free(): a
 
 pri write_arp(pbuf, opc, tha, tpa): l | arp_hdr_s ah
 ' Write ARP header
+'   pbuf:   packet buffer index
+'   opc:    ARP opcode
+'   tha:    target hardware address (pointer to 6-byte array)
+'   tpa:    target protocol address (IPv4)
     DEBUG("write_arp(", udec(pbuf), udec(opc), zstr_(str.mactostr(tha)), zstr_(str.iptostr(tpa) ), ")")
     ah~
 
@@ -1660,9 +1664,11 @@ pri write_arp(pbuf, opc, tha, tpa): l | arp_hdr_s ah
 
 pri write_ethii(pbuf, dest, src, etyp): l | ethii_hdr_s eh
 ' Encapsulate an IP payload with Ethernet-II
-'   dest:   destination MAC address
-'   src:    source MAC address
-'   etyp:   Ethertype
+'   pbuf:       packet buffer index
+'   dest:       destination MAC address
+'   src:        source MAC address
+'   etyp:       Ethertype
+'   Returns:    total length
     DEBUG("write_ethii(pbuf=", udec_(pbuf), ")")
 
     eh~
@@ -1680,6 +1686,14 @@ pri write_ethii(pbuf, dest, src, etyp): l | ethii_hdr_s eh
 
 pri write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l | icmp4_hdr_s ich, echo_msg_s ehdr, ol, ck
 ' Write ICMP header, message
+'   pbuf:       packet buffer index
+'   typ:        ICMP type
+'   cd:         ICMP code
+'   len:        length of payload data (optional; default is none)
+'   p_src:      payload data to append (optional)
+'   ident:      ICMP ECHO_REPLY ident
+'   seq_nr:     ICMP ECHO_REPLY sequence number
+'   Returns:    total length
     DEBUG("write_icmp()")
 
     ich~
@@ -1723,6 +1737,14 @@ pri write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l | icmp4_hdr_
 
 pri write_ipv4(pbuf, lip, rip, pro, len=0, ident=0, dscp=0, ttl=0): l | ipv4_hdr_s ih, tmp, ol, t
 ' Encapsulate data with IPv4 header
+'   pbuf:       packet buffer index
+'   lip:        local IP
+'   rip:        remote IP
+'   pro:        layer-4 protocol
+'   len:        IPv4 total length
+'   ident:      IPv4 identification
+'   dscp:       IPv4 distributed services code-point
+'   ttl:        IPv4 time-to-live
 '   Returns:    length of IPv4 header
 
     DEBUG("write_ipv4(", udec(pbuf), " rip=", zstr_(str.iptostr(rip)), zstr_(netstr.prostr(pro) ), ")")
@@ -1771,6 +1793,12 @@ pri write_ipv4(pbuf, lip, rip, pro, len=0, ident=0, dscp=0, ttl=0): l | ipv4_hdr
 
 pri write_ipv4_socket(pbuf, sck, len=0, ident=0, dscp=0, ttl=0): l
 ' Encapsulate data with IPv4 header, using socket parameters to set up (some of) the header
+'   pbuf:       packet buffer index
+'   sck:        socket number
+'   len:        IPv4 total length
+'   ident:      IPv4 identification
+'   dscp:       IPv4 distributed services code-point
+'   ttl:        IPv4 time-to-live
 '   Returns:    length of IPv4 header
     DEBUG("write_ipv4_socket() ", udec(pbuf), " rip=", zstr_(str.iptostr(socket[sck].remote_ip) ) )
     l := write_ipv4(pbuf, ...
@@ -1786,16 +1814,17 @@ pri write_ipv4_socket(pbuf, sck, len=0, ident=0, dscp=0, ttl=0): l
 
 pri write_tcp(pbuf, lip, rip, sp, dp, seqn, ackn, fl, p_ts=0, wnd=0, up=0, slen=0): l | tcp_hdr_s th, ck, hl
 ' Write a TCP segment to the packet buffer
-'   lip:    local IP (used for pseudo-header checksum calculation)
-'   rip:    remote IP (used for pseudo-header checksum calculation)
-'   sp:     source port
-'   dp:     destination port
-'   seqn:   sequence number
-'   ackn:   acknowledgement number
-'   fl:     flags/TCP control bits
-'   ts:     pointer to timestamps (2 longs, TSval, TSecr)
-'   wnd:    TCP window
-'   up:     urgent pointer
+'   pbuf:       packet buffer index
+'   lip:        local IP (used for pseudo-header checksum calculation)
+'   rip:        remote IP (used for pseudo-header checksum calculation)
+'   sp:         source port
+'   dp:         destination port
+'   seqn:       sequence number
+'   ackn:       acknowledgement number
+'   fl:         flags/TCP control bits
+'   ts:         pointer to timestamps (2 longs, TSval, TSecr)
+'   wnd:        TCP window
+'   up:         urgent pointer
 '   Returns:    length of assembled TCP header
 
     DEBUG("write_tcp(", udec(pbuf), zstr_(netstr.tcp_flags_str(fl) ), ")")
@@ -1854,9 +1883,11 @@ pri write_tcp_ip(pbuf, lip, rip, sp, dp, seqn, ackn, fl, ts, wnd=0, up=0, ident=
 
 pri write_tcp_socket(pbuf, sck, flags, sl=0): s | l
 ' Send a TCP segment using parameters from a socket
-'   sck:    socket number
-'   flags:  TCP segment flags
-'   sl:     segment length (optional; default=0)
+'   pbuf:       packet buffer index
+'   sck:        socket number
+'   flags:      TCP segment flags
+'   sl:         segment length (optional; default=0)
+'   Returns:    total length
     pktbuff[pbuf].p_end := @pktbuff[pbuf].buffer+FRAME_HEADROOM_SZ
 
     l := 0
@@ -1883,7 +1914,9 @@ pri write_tcp_socket(pbuf, sck, flags, sl=0): s | l
 
 pri write_udp_socket(pbuf, sck): s | udp_hdr_s uh, dt, l, pl
 ' Send UDP socket data
-'   sck:    socket number
+'   pbuf:       packet buffer index
+'   sck:        socket number
+'   Returns:    total length
     DEBUG("write_udp_socket(", udec(pbuf), udec(sck), ")")
 
     ' set up local structures for use in building the frame
@@ -1893,9 +1926,9 @@ pri write_udp_socket(pbuf, sck): s | udp_hdr_s uh, dt, l, pl
     udp.set_src_port(@uh, socket[sck].local_port)
     udp.set_dest_port(@uh, socket[sck].txbuff.datagram.descr[dt].remote.port)
     udp.set_dgram_len(@uh, socket[sck].txbuff.datagram.descr[dt].len)
-    DEBUG(" descr len=", udec_(socket[sck].txbuff.datagram.descr[dt].len) )
     udp.set_chksum(@uh, 0)
 
+    ' prepend the UDP header to the packet buffer
     pbuf_prepend_write(pbuf, udp.UDP_HDR_SZ, @uh)
 
     ' copy the payload data, if there is any
