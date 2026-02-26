@@ -55,7 +55,7 @@ var
     byte _testdata[100]
 
 
-pub main() | sck, s, t, len, rem_ip, rem_port, ch
+pub main() | sck, s, t, len, rem_ip, rem_port, ch, err
 
     ser.startrxtx(63, 62, 0, 2_000_000)
     ser.clear()
@@ -91,8 +91,11 @@ pub main() | sck, s, t, len, rem_ip, rem_port, ch
         '   datagrams will be sent much more quickly (until the next reload).
         rem_ip := str.strtoip(@"10.42.0.1")
         rem_port := 1234
-        net.sendto(sck, @_testdata, len, 0, rem_ip, rem_port)
-        ser.printf(@"Sent '%s' to %s\n\r", @_testdata, str.iptostr(rem_ip))
+        err := net.sendto(sck, @_testdata, len, 0, rem_ip, rem_port)
+		if ( err >= 0 )
+	        ser.printf(@"Sent '%s' to %s\n\r", @_testdata, str.iptostr(rem_ip))
+		else
+			ser.strln(@"error: destination unreachable")
         ch := ser.getchar()
     until ( ch == "q" )
     ser.strln(@"quit - closing socket")

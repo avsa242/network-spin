@@ -450,6 +450,7 @@ pub sendto(sck, p_src, len, flags, addr, port, al=4): s
     if ( socket[sck].protocol == L4_UDP )
         ' allow re-assigning the socket's remote IP if the address in this call differs
         socket[sck].remote_ip := addr
+        socket[sck].remote_port := port
 
         ' queue the datagram
         if ( tx_datagrams_free(sck) > 0 )       ' check for free descriptor
@@ -457,6 +458,8 @@ pub sendto(sck, p_src, len, flags, addr, port, al=4): s
             if ( s > 0 )                        ' upon success, write the descriptor
                 tx_queue_datagram(sck, addr, port, s)
                 DEBUG(" OK")
+                s := socket[sck].error
+                socket[sck].error := 0  'xxx temporary POC
                 return
             DEBUG(" error: socket buffer or descriptor table full")
         return -1                               ' error: socket buffer or descriptor table full
@@ -1044,8 +1047,8 @@ pri receive_ethii(): s | ethii_hdr_s eh
             receive_ipv4(@eh)
 
 
-var byte _icmp_echo_data[60]
-pri receive_icmp(^ipv4_hdr_s ih) | icmp4_hdr_s ich, echo_msg_s ieh, pbuf, icl, el
+var byte _icmp_echo_data[60], _icmp_bad_datagram[4+20+8]
+pri receive_icmp(^ipv4_hdr_s ih) | icmp4_hdr_s ich, echo_msg_s ieh, pbuf, icl, el, ipv4_hdr_s bih, bsp, bdp, sck
 ' Process received ICMP headers
     DEBUG("receive_icmp()")
     icmp.rd_icmp_msg(@ich)
@@ -1057,6 +1060,19 @@ pri receive_icmp(^ipv4_hdr_s ih) | icmp4_hdr_s ich, echo_msg_s ieh, pbuf, icl, e
             ' there was a problem
             if ( icmp.code(@ich) == icmp.PORT_UNREACH )
                 DEBUG("  port")
+                bytefill(@_icmp_bad_datagram, 0, 4+20+8)
+                net.rd_block(@_icmp_bad_datagram, 4+20+8)
+                ip.rd_ip_header(@bih, @_icmp_bad_datagram+4)
+                bsp := swap_word(word[@_icmp_bad_datagram+24])
+                bdp := swap_word(word[@_icmp_bad_datagram+26])
+                DEBUG("  src=", zstr_(str.iptostr(ip.src_addr(@bih))), " dest=", zstr_(str.iptostr(ip.dest_addr(@bih))), udec(bsp), udec(bdp) )
+                repeat MAX_SOCKETS with sck
+                    if ((socket[sck].remote_ip == ip.dest_addr(@bih)) and ...
+                        (socket[sck].local_ip == ip.src_addr(@bih)) and ...
+                        (socket[sck].remote_port == bdp) and ...
+                        (socket[sck].local_port == bsp) )
+                        socket[sck].error := -icmp.PORT_UNREACH
+                        quit
             elseif ( icmp.code(@ich) == icmp.DEST_UNREACH )
                 DEBUG("  host")
                 return
