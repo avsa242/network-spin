@@ -54,7 +54,7 @@ con
     ' error codes
     OK                  = 0
     EHOSTUNREACH        = -65536
-
+    ECONNREFUSED        = -65537
 
     ' structure definitions
     struct netcmd_s(...
@@ -251,6 +251,10 @@ pub connect(sck, rip, rp): s | st, tmo
     repeat                                      ' wait for connection to succeed (up to 30sec)
         if ( socket[sck].state == ESTABLISHED )
             return 0                            ' connection established
+        if ( socket[sck].error )
+            s := socket[sck].error
+            socket[sck].error := 0
+            return
     until ( (getms() - st) > tmo )
 
     return -2                                   ' error: timeout connecting
@@ -1301,6 +1305,8 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                 if ( tcp.flags(@th) & tcp.RST )
                     'xxx possible blind reset attack vector here; see RFC 5961
                     ' signal to user: error: connection reset
+                    ifnot ( socket[sck].error )
+                        socket[sck].error := ECONNREFUSED
                     set_state(sck, CLOSED)
                     return
                 if ( tcp.flags(@th) & tcp.SYN )

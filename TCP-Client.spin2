@@ -5,7 +5,7 @@
         * Demonstrate setup, connection to a remote host, and sending data
     Author:         Jesse Burt
     Started:        Feb 23, 2026
-    Updated:        Feb 24, 2026
+    Updated:        Feb 27, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -28,13 +28,6 @@ con
     _xtlfreq    = 20_000_000
 
 ' -- User-modifiable constants
-
-    ' SD card
-    SD_CLK      = 61
-    SD_CS       = 60
-    SD_DI       = 59
-    SD_DO       = 58
-
     ' ENC28J60
     CLICK_BASE  = 0                             ' base I/O pin for MikroE Click module
 #ifdef MIKROE_CLICK
@@ -90,7 +83,10 @@ pub main() | s, c, cmd
 	ser.str(@"connecting...")
 	c := sck.connect(s, str.strtoip(@"10.42.0.1"), 1234)
 	if ( c < 0 )
-		ser.printf(@"failed (error %d)\n\r", c)
+		if ( c == sck.ECONNREFUSED )
+			ser.strln(@"connection refused")
+		else
+			ser.printf(@"failed (error %d)\n\r", c)
 	else
 		ser.strln(@"connected")
 	ser.set_attrs(ser.ECHO)
