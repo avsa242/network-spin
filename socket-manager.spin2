@@ -35,6 +35,27 @@ con
     MAX_MC_SOURCES_IFACE= 64
     FRAME_HEADROOM_SZ   = 128                   ' 128 should cover any type of frame
 
+    ' messages to netloop
+    CMD_CONNECT         = 1                     ' connect a socket
+    CMD_DISCONNECT      = 2                     ' disconnect a socket
+    CMD_PUSH            = 3                     ' deliver a TCP datagram immediately
+    CMD_SET_IF_FLAGS    = 4
+
+    ' interface flags
+    IF_PROMISCUOUS      = 1 << 0
+    IF_MULTICAST_EN     = 1 << 1
+
+
+    ' socket options
+    #1, IP_TTL, IP_MULTICAST_IF, IP_MULTICAST_TTL, IP_ADD_MEMBERSHIP, IP_DROP_MEMBERSHIP, ...
+    IP_ADD_SOURCE_MEMBERSHIP, IP_DROP_SOURCE_MEMBERSHIP, IP_BLOCK_SOURCE
+
+
+    ' error codes
+    OK                  = 0
+    EHOSTUNREACH        = -65536
+
+
     ' structure definitions
     struct netcmd_s(...
         long command, ...
@@ -94,26 +115,6 @@ con
         byte head, ...
         byte tail, ...
         byte index[MAX_TCP_TX_PENDING])
-
-
-    ' messages to netloop
-    CMD_CONNECT         = 1                     ' connect a socket
-    CMD_DISCONNECT      = 2                     ' disconnect a socket
-    CMD_PUSH            = 3                     ' deliver a TCP datagram immediately
-    CMD_SET_IF_FLAGS    = 4
-
-    ' interface flags
-    IF_PROMISCUOUS      = 1 << 0
-    IF_MULTICAST_EN     = 1 << 1
-
-
-    ' socket options
-    #1, IP_TTL, IP_MULTICAST_IF, IP_MULTICAST_TTL, IP_ADD_MEMBERSHIP, IP_DROP_MEMBERSHIP, ...
-    IP_ADD_SOURCE_MEMBERSHIP, IP_DROP_SOURCE_MEMBERSHIP, IP_BLOCK_SOURCE
-
-
-    ' error codes
-    OK                  = 0
 
 
 obj
@@ -458,8 +459,9 @@ pub sendto(sck, p_src, len, flags, addr, port, al=4): s
             if ( s > 0 )                        ' upon success, write the descriptor
                 tx_queue_datagram(sck, addr, port, s)
                 DEBUG(" OK")
-                s := socket[sck].error
-                socket[sck].error := 0  'xxx temporary POC
+                if ( socket[sck].error )
+                    s := socket[sck].error
+                    socket[sck].error := 0
                 return
             DEBUG(" error: socket buffer or descriptor table full")
         return -1                               ' error: socket buffer or descriptor table full
@@ -1056,8 +1058,6 @@ pri receive_icmp(^ipv4_hdr_s ih) | icmp4_hdr_s ich, echo_msg_s ieh, pbuf, icl, e
     case_fast icmp.msg_type(@ich)
         icmp.DEST_UNREACH:                      ' destination unreachable
             DEBUG(" destination unreachable: ")
-            'todo: these need to be forwarded to the application or the socket somehow so they know
-            ' there was a problem
             if ( icmp.code(@ich) == icmp.PORT_UNREACH )
                 DEBUG("  port")
                 bytefill(@_icmp_bad_datagram, 0, 4+20+8)
@@ -1067,18 +1067,19 @@ pri receive_icmp(^ipv4_hdr_s ih) | icmp4_hdr_s ich, echo_msg_s ieh, pbuf, icl, e
                 bdp := swap_word(word[@_icmp_bad_datagram+26])
                 DEBUG("  src=", zstr_(str.iptostr(ip.src_addr(@bih))), " dest=", zstr_(str.iptostr(ip.dest_addr(@bih))), udec(bsp), udec(bdp) )
                 repeat MAX_SOCKETS with sck
+                    ' check if this message actually matches an existing socket
                     if ((socket[sck].remote_ip == ip.dest_addr(@bih)) and ...
-                        (socket[sck].local_ip == ip.src_addr(@bih)) and ...
                         (socket[sck].remote_port == bdp) and ...
                         (socket[sck].local_port == bsp) )
-                        socket[sck].error := -icmp.PORT_UNREACH
+                        ifnot ( socket[sck].error )
+                            ' only set the socket's error flag if it's clear
+                            socket[sck].error := EHOSTUNREACH
                         quit
             elseif ( icmp.code(@ich) == icmp.DEST_UNREACH )
                 DEBUG("  host")
                 return
         icmp.ECHO_REQ:                          ' echo request (ping)
             DEBUG(" echo")
-            'todo
             el := ip.payload_length(@ih) - icmp.ICMP_HDR_SZ-4
             DEBUG(" length=", udec_(el))
             ieh~
