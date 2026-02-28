@@ -467,7 +467,9 @@ pub sendto(sck, p_src, len, flags, addr, port, al=4): s
                     s := socket[sck].error
                     socket[sck].error := 0
                 return
-            DEBUG(" error: socket buffer or descriptor table full")
+            DEBUG(" error: socket TX buffer full")
+            return -1
+        DEBUG(" error: descriptor table full")
         return -1                               ' error: socket buffer or descriptor table full
 
 
