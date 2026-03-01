@@ -7,7 +7,7 @@
         * Multiple sockets
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Feb 26, 2026
+    Updated:        Mar 1, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -953,6 +953,7 @@ pri pbuf_allocate(): p
 '               -1 on failure
     DEBUG("pbuf_allocate() ", udec(pb_head), udec(pb_tail) )
     if ( pbuf_free() )
+        pktbuff[pb_head]~
         ' init buffer pointer to the end of the headroom (the first 128 bytes)
         pktbuff[pb_head].p_data :=  pktbuff[pb_head].p_end := ...
                                     @pktbuff[pb_head].buffer+FRAME_HEADROOM_SZ
@@ -1133,7 +1134,7 @@ pri receive_ipv4(^ethii_hdr_s eh) | ipv4_hdr_s ih, sck
                 return
 
 
-pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, seg_accept, loop_nr, reset, ls, s, sck, tl, pbuf
+pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, seg_accept, loop_nr, reset, ls, s, sck, tl, pbuf, xrxl
 ' Process incoming TCP segment (reference TCP RFC 9293, s. 3.10.7 "Segment arrives")
     th~
     tcp.rd_tcp_header(@th)
@@ -1163,6 +1164,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
 
     ' if that fails, look for a socket that's listening on that port
     if ( reset )
+        DEBUG(" check for listening socket")
         ls := find_listening_socket(tcp.dest_port(@th), L4_TCP)
         if ( ls >= 0 )
             reset := false
@@ -1178,6 +1180,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                 if ( socket[ls].backlog.pending < socket[ls].backlog.max_depth )
                     sck := new_socket()
                     if ( sck < 0 )
+                        DEBUG(" error: out of sockets")
                         pbuf := pbuf_allocate()'xxx this block doesn't seem to work; no TCP is
                         if ( pbuf >= 0 )        ' written; instead IPv4 with unknown data
                             tl := write_tcp(pbuf, ...
@@ -1196,6 +1199,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                             pb_head := (pb_head + 1) & PKTBUFF_MASK
                         return -1           ' error: no sockets available; drop
                     ' copy the listening socket and incoming packet into the new socket
+                    DEBUG(" cloning listening socket")
                     socket[sck].protocol := L4_TCP
                     socket[sck].rcv.nxt := tcp.seq_nr(@th)+1
                     socket[sck].rcv.irs := tcp.seq_nr(@th)
@@ -1209,6 +1213,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                     socket[sck].tsecr := tcp.timestamp_val()
                     pbuf := pbuf_allocate()
                     if ( pbuf >= 0 )
+                        DEBUG(" RCV.NXT++")
                         tl := write_tcp_socket(pbuf, sck, tcp.SYN | tcp.ACK)
                         write_ipv4( pbuf, ...
                                     socket[sck].local_ip, ...
@@ -1221,9 +1226,11 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                         socket[sck].p_signal := socket[ls].p_signal
                         set_state(sck, SYN_RECEIVED)
                         return sck
+                    else
+                        return -1               ' error: no pbufs free
                 else
                     ' backlog full - too many half-open connections; send reset
-                    DEBUG("error: TCP backlog full")
+                    DEBUG(" error: TCP backlog full")
                     pbuf := pbuf_allocate()
                     if ( pbuf >= 0 )
                         tl := write_tcp( pbuf, ...
@@ -1245,15 +1252,16 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
     seg_len := ( ip.dgram_len(@ih) - ip.IP_HDR_SZ - tcp.header_len(@th) )
 
     if ( reset )
-        DEBUG("no matching socket")        ' 3.10.7.1 (TCB does not exist)
+        DEBUG(" no matching socket")            ' 3.10.7.1 (TCB does not exist)
         if ( tcp.flags(@th) & tcp.RST )
             return 0
         else
-            if ( tcp.flags(@th) & tcp.ACK ) ' ACK bit is on
-                seq := tcp.ack_nr(@th)      ' echo back the sender's ACK #
+            DEBUG(" sending reset")
+            if ( tcp.flags(@th) & tcp.ACK )     ' ACK bit is on
+                seq := tcp.ack_nr(@th)          ' echo back the sender's ACK #
                 ack := 0
                 flags := tcp.RST
-            else                            ' ACK bit is off
+            else                                ' ACK bit is off
                 seq := 0
                 ack := tcp.seq_nr(@th)+seg_len
                 flags := tcp.RST | tcp.ACK
@@ -1285,7 +1293,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                 if ( tcp.flags(@th) & tcp.ACK )
                     if ( (tcp.ack_nr(@th) <= socket[sck].snd.iss) or ...
                         (tcp.ack_nr(@th) > socket[sck].snd.nxt) )
-                        DEBUG(  "SYN_SENT bad ACK: ", udec_(tcp.ack_nr(@th) ), " is =< snd.iss=", udec_(socket[sck].snd.iss), " or > snd.nxt=", udec_(socket[sck].snd.nxt) )
+                        DEBUG(  " SYN_SENT bad ACK: ", udec_(tcp.ack_nr(@th) ), " is =< snd.iss=", udec_(socket[sck].snd.iss), " or > snd.nxt=", udec_(socket[sck].snd.nxt) )
                         ifnot ( tcp.flags(@th) & tcp.RST )
                             'send reset
                             'seq=seg.ack, ctl=RST
@@ -1312,17 +1320,16 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                     set_state(sck, CLOSED)
                     return
                 if ( tcp.flags(@th) & tcp.SYN )
-                    DEBUG("SYN_SENT: rcv SYN|ACK")
-                    socket[sck].rcv.nxt := tcp.seq_nr(@th)+1
+                    DEBUG(" SYN_SENT: rcv SYN|ACK")
                     socket[sck].rcv.irs := tcp.seq_nr(@th)
                     socket[sck].snd.una := tcp.ack_nr(@th)
                     if ( socket[sck].snd.una > socket[sck].snd.iss )    ' = our SYN has been ACKed
-                        'seq=snd.nxt
-                        'ack=rcv.nxt
-                        'ctl=ACK
                         set_state(sck, ESTABLISHED)
                         pbuf := pbuf_allocate()
                         if ( pbuf >= 0 )
+                            ' wait until the pbuf is actually allocated to bump the seq nr
+                            socket[sck].rcv.nxt := tcp.seq_nr(@th)+1
+                            DEBUG(" RCV.NXT++")
                             tl := write_tcp_socket(pbuf, sck, tcp.ACK)
                             write_ipv4( pbuf, ...
                                         socket[sck].local_ip, ...
@@ -1347,29 +1354,26 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
     seq := tcp.seq_nr(@th)
     ack := tcp.ack_nr(@th)
     ' check the sequence number
-    DEBUG(  " rcv.nxt=", udec_(socket[sck].rcv.nxt), " seg.seq=", udec_(tcp.seq_nr(@th) ), " rcv.wnd=", udec_(socket[sck].rcv.wnd), " rcv.nxt+rcv.wnd=", udec_(socket[sck].rcv.nxt+socket[sck].rcv.wnd) )
-
-    ' 1
-    ifnot ( seq == socket[sck].rcv.nxt )        ' not necessarily a failure; dig deeper:
-        ' 2
-        ifnot ( socket[sck].rcv.nxt +<= seq +< (socket[sck].rcv.nxt+socket[sck].rcv.wnd) )
-            DEBUG(" ERR rcv.nxt =< seg.seq < rcv.nxt+rcv.wnd")
+    DEBUG(" rcv.nxt=", udec_(socket[sck].rcv.nxt), " seg.seq=", udec_(tcp.seq_nr(@th) ), " rcv.wnd=", udec_(socket[sck].rcv.wnd), " rcv.nxt+rcv.wnd=", udec_(socket[sck].rcv.nxt+socket[sck].rcv.wnd) )
+    DEBUG(" keepalive? seg_len=", udec_(seg_len), " flags=", uhex_(tcp.flags(@th) ), " (seg.seq+1)==rcv.nxt? ", sdec_( (tcp.seq_nr(@th)+1) == socket[sck].rcv.nxt) )
+    ifnot ( seq == socket[sck].rcv.nxt )
+        ifnot ( seq_in_window(seq, socket[sck].rcv.nxt, socket[sck].rcv.wnd) )
             seg_accept := false
-        ' 3
         if ( (seg_len > 0) and (socket[sck].rcv.wnd == 0) )
-            ' segment contains text but receive window is closed
-            DEBUG(" ERR rcv.wnd closed")
+            ' segment contains data but the receive window is closed; never acceptable
             seg_accept := false
-        ' 4
-        ifnot ( (socket[sck].rcv.nxt +<= seq +< socket[sck].rcv.nxt+socket[sck].rcv.wnd) or ...
-                (socket[sck].rcv.nxt +<= (seq+seg_len-1) +< socket[sck].rcv.nxt+socket[sck].rcv.wnd) )
-            DEBUG(" ERR seq_nr outside rcv window")
-            seg_accept := false                 ' sequence number outside the rcv window
+        ifnot ( seq_in_window(seq, socket[sck].rcv.nxt, socket[sck].rcv.wnd) or ...
+                seq_in_window(seq+seg_len-1, socket[sck].rcv.nxt, socket[sck].rcv.wnd) )
+            seg_accept := false
+
+    ' if the segment length is 0, remote flags are only 'ACK' and the remote's seq is outside
+    '   the window, it could be a keepalive
 
     ifnot ( seg_accept )                        ' ACK unacceptable segment
         ifnot ( tcp.flags(@th) & tcp.RST )      '   unless the RST flag is set
             pbuf := pbuf_allocate()
             if ( pbuf >= 0 )
+                DEBUG(" sending ACK")
                 tl := write_tcp_socket(pbuf, sck, tcp.ACK)
                 write_ipv4( pbuf, ...
                             socket[sck].local_ip, ...
@@ -1394,6 +1398,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                     delete_tcb(sck)
                     return -1
             ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT:
+                DEBUG(" connection reset by peer")
                 set_state(sck, CLOSED)
                 delete_tcb(sck)
                 return -1
@@ -1437,7 +1442,8 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
         case socket[sck].state
             SYN_RECEIVED:
                 DEBUG(" SYN_RECEIVED")
-                if ( (tcp.ack_nr(@th) > socket[sck].snd.una) and (tcp.ack_nr(@th) <= socket[sck].snd.nxt) )
+                if (    (tcp.ack_nr(@th) > socket[sck].snd.una) and ...
+                        (tcp.ack_nr(@th) <= socket[sck].snd.nxt) )
                     ls := find_listening_socket(tcp.dest_port(@th), L4_TCP)
                     if ( ls < 0 )   'xxx this shouldn't happen
                         DEBUG(" error: no listening socket")
@@ -1460,14 +1466,14 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                     socket[sck].snd.una := ack
                 if ( ack < socket[sck].snd.una )
                     ' ACK to old (already acknowledged) segment; drop
-                    DEBUG(" ack old segment; drop")
+                    DEBUG("  ack old segment; drop")
                     return OK
                 if ( ack > socket[sck].snd.nxt )
                     ' ACK to future (not yet sent) segment
                     ' TCP RFC specifies a challenge ACK here but this doesn't seem like it's
                     '   typical behavior nowadays and puts a greater strain on an embedded stack
                     '   like this (not that it's expected to happen often)
-                    DEBUG(" ack future segment; drop")
+                    DEBUG("  ack future segment; drop")
                     return 
                 if (    (socket[sck].snd.wl1 < seq) or ...
                         ( (socket[sck].snd.wl1 == seq) and (socket[sck].snd.wl2 <= ack) ) )
@@ -1492,6 +1498,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
                         ' The only thing that can arrive in this state is a retransmission of the
                         '   remote FIN. Acknowledge it, and restart the 2 MSL timeout.
                         if ( seq == socket[sck].rcv.nxt )
+                            DEBUG("  TIME_WAIT: ACK, restart 2MSL")
                             pbuf := pbuf_allocate()
                             if ( pbuf >= 0 )
                                 tl := write_tcp_socket(pbuf, sck, tcp.FIN | tcp.ACK)
@@ -1515,16 +1522,21 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
         case socket[sck].state
             ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2:
                 ' receive as much data as is allowed by the receive window (and update it)
-                socket[sck].rcv.nxt += xrxget(sck, seg_len)
-                socket[sck].rcv.wnd := rx_bytes_free(sck)
-                long[socket[sck].p_signal] |= DATA_READY
+                xrxl := xrxget(sck, seg_len)
+                if ( xrxl > 0 )
+                    DEBUG("  RCV.NXT += ", udec_(xrxl) )
+                    socket[sck].rcv.nxt += xrxl
+                    socket[sck].rcv.wnd := rx_bytes_free(sck)
+                    long[socket[sck].p_signal] |= DATA_READY
+                'xxx should the below be processed inside this 'if' also?
                 if ( tcp.flags(@th) & tcp.PSH )
-                    DEBUG(" PSH")
+                    DEBUG("  PSH")
                     ' signal to the application protocol the PUSH flag was set
                     long[socket[sck].p_signal+4] := sck
                     long[socket[sck].p_signal] |= PUSH_RECEIVED
                 pbuf := pbuf_allocate()
                 if ( pbuf >= 0 )
+                    DEBUG("  ACK payload")
                     tl := write_tcp_socket(pbuf, sck, tcp.ACK)
                     write_ipv4( pbuf, ...
                                 socket[sck].local_ip, ...
@@ -1538,19 +1550,19 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
     DEBUG(" check FIN bit: ")
     ' check the FIN bit
     ifnot ( tcp.flags(@th) & tcp.FIN )             ' not set; ignore
-        DEBUG(" not set")
+        DEBUG("  not set")
         return OK
 
     if ( lookdown(socket[sck].state: CLOSED, LISTENING, SYN_SENT) )
         ' sequence number can't be verified in these states; ignore FIN, drop the segment
-        DEBUG("set, but seg.seq can't be verified in this state")
+        DEBUG("  set, but seg.seq can't be verified in this state")
         return OK
 
-    DEBUG(" set")
+    DEBUG("  set")
     ' signal to the app the remote wants to disconnect
     long[socket[sck].p_signal+4] := sck
     long[socket[sck].p_signal] := CONN_CLOSED_REMOTE | PUSH_RECEIVED
-    DEBUG(" socket ", udec_(sck), " disconnect by remote host")
+    DEBUG("  socket ", udec_(sck), " disconnect by remote host")
 
     flags := tcp.ACK
     case socket[sck].state
@@ -1569,6 +1581,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
     pbuf := pbuf_allocate()
     if ( pbuf >= 0 )
         socket[sck].rcv.nxt++
+        DEBUG("  RCV.NXT++")
         tl := write_tcp_socket(pbuf, sck, flags)
         write_ipv4( pbuf, ...
                     socket[s].local_ip, ...
@@ -1633,6 +1646,15 @@ pri send_pbuf(pbuf): l
     pb_tail := (pb_tail + 1) & PKTBUFF_MASK
 
     pbuf_free()
+
+
+pri seq_in_window(seq, rcvnxt, rcvwnd): s | hi
+' Check if a sequence number is "in-window"
+'   Returns:    true (-1) or false (0)
+
+    ' check rcvnxt <= seq < rcvnxt+rcvwnd
+    hi := rcvnxt + rcvwnd
+    s := (rcvnxt +<= seq) and (seq +< hi)
 
 
 pri set_state(sck, new_state)
@@ -1865,6 +1887,7 @@ pri write_tcp(pbuf, lip, rip, sp, dp, seqn, ackn, fl, p_ts=0, wnd=0, up=0, slen=
     tcp.set_flags(@th, fl)
     tcp.set_window(@th, wnd)
     tcp.set_urgent_ptr(@th, up)
+    tcp.set_header_len(@th, 20)
 
     ' Check TCP options. The basic TCP header length is initialized to 20.
     '   The value returned by tcp.header_len() is increased for every option set
@@ -1879,6 +1902,7 @@ pri write_tcp(pbuf, lip, rip, sp, dp, seqn, ackn, fl, p_ts=0, wnd=0, up=0, slen=
         tcp.set_option(@th, tcp.TMSTAMPS,  tcp.TMSTAMPS_LEN, p_ts)
 
     hl := tcp.header_len(@th)
+    DEBUG(" header length is ", udec_(hl))
 
     ' rewind the buffer pointer enough to fit the TCP header that was just set up
     pktbuff[pbuf].p_data -= hl

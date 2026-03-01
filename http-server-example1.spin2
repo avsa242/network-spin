@@ -229,12 +229,10 @@ pub parse_request(cl) | s, lsw, vol, ch, b, p, rl
 
     rl := sck.recv(s, @_req_tmp)
     ser.printf(@"recv(): %d\n\r", rl)
-    ser.hexdump(@_req_tmp, 0, 3, rl, 16)
     if ( rl >= 5 )
         p := str.find(@_req_tmp, @_request_base)' look for "GET /" in the request
         p += strsize(@_request_base)
         if ( byte[p] == " " )                   ' serve root/main page
-            ser.strln(@"GET /")
             send_page(cl)
         else                                    ' process commands
             if ( str.find(p, @_light_cmd) )     ' LED on/off command
@@ -297,47 +295,48 @@ pub send_empty_content(cl)
 
 pub show_socket_table() | s
 ' Show the socket table (similar to 'netstat')
-    ser.pos_x(0)
-    ser.str(@"#")
-    ser.pos_x(3)
-    ser.str(@"local")
-    ser.pos_x(26)
-    ser.str(@"remote")
-    ser.pos_x(49)
-    ser.str(@"proto")
-    ser.pos_x(56)
-    ser.str(@"state")
-    ser.pos_x(73)
-    ser.str(@"sendq")
-    ser.pos_x(80)
-    ser.str(@"recvq")
-    ser.newline()
-    repeat sck.MAX_SOCKETS with s
-        ser.pos_x(0)
-        ser.printf(@"%d", s)
-        ser.pos_x(3)
-        ser.printf(@"%s:%d",  str.iptostr( sck.socket[s].local_ip ), ...
-                                sck.socket[s].local_port)
-        ser.pos_x(26)
-        ser.printf(@"%s:%d",  str.iptostr( sck.socket[s].remote_ip ), ...
-                                sck.socket[s].remote_port)
-        ser.pos_x(49)
-        ser.printf(@"%s", prostr(sck.socket[s].protocol) )
+	ser.pos_x(0)
+	ser.str(@"#")
+	ser.pos_x(3)
+	ser.str(@"local")
+	ser.pos_x(26)
+	ser.str(@"remote")
+	ser.pos_x(49)
+	ser.str(@"proto")
+	ser.pos_x(56)
+	ser.str(@"state")
+	ser.pos_x(73)
+	ser.str(@"sendq")
+	ser.pos_x(80)
+	ser.str(@"recvq")
+	ser.newline()
+	repeat sck.MAX_SOCKETS with s
+		if ( sck.socket[s].state >= CLOSED )
+			ser.pos_x(0)
+			ser.printf(@"%d", s)
+			ser.pos_x(3)
+			ser.printf(@"%s:%d",	str.iptostr( sck.socket[s].local_ip ), ...
+									sck.socket[s].local_port)
+			ser.pos_x(26)
+			ser.printf(@"%s:%d",	str.iptostr( sck.socket[s].remote_ip ), ...
+									sck.socket[s].remote_port)
+			ser.pos_x(49)
+			ser.printf(@"%s",		prostr(sck.socket[s].protocol) )
 
-        ser.pos_x(56)
-        ser.printf(@"%s", state_str(sck.socket[s].state) )
+			ser.pos_x(56)
+			ser.printf(@"%s",		state_str(sck.socket[s].state) )
 
-        ser.pos_x(73)
-        ser.printf(@"%d", sck.sendq(s) )
+			ser.pos_x(73)
+			ser.printf(@"%d",		sck.sendq(s) )
 
-        ser.pos_x(80)
-        ser.printf(@"%d", sck.recvq(s) )
-        ser.newline()
+			ser.pos_x(80)
+			ser.printf(@"%d",		sck.recvq(s) )
+			ser.newline()
 
 
 con
    ' socket states
-    #0, CLOSED, SYN_SENT, SYN_RECEIVED, ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, ...
+    #0, UNUSED, CLOSED, SYN_SENT, SYN_RECEIVED, ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, ...
     CLOSING, LAST_ACK, TIME_WAIT, LISTENING
 
 pub state_str(st): p
