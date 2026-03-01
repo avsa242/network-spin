@@ -4,7 +4,7 @@
     Description:    Transmission Control Protocol
     Author:         Jesse Burt
     Started:        Apr 5, 2022
-    Updated:        Feb 24, 2026
+    Updated:        Mar 1, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -132,6 +132,7 @@ PUB set_flags(^tcp_hdr_s hdr, f)
 
 PUB set_header_len(^tcp_hdr_s hdr, l)
 ' Set TCP header length, in bytes
+    l := l #> TCP_HDR_SZ                        ' enforce minimum 20 bytes
     hdr.header_len := ( (l / 4) << 4)
 
 
@@ -402,6 +403,7 @@ pub clear_options()
 ' Clear options buffer
     bytefill(@_options_buff, 0, 20)
     _options_len := 0
+    set_header_len(TCP_HDR_SZ)
 
 
 PUB set_option(^tcp_hdr_s hdr, kind, len=0, v=0): l | p_dest, r
