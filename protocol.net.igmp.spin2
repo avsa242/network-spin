@@ -4,8 +4,8 @@
     Description:    Internet Group Messaging Protocol v3
     Author:         Jesse Burt
     Started:        Aug 9, 2025
-    Updated:        Aug 23, 2025
-    Copyright (c) 2025 - See end of file for terms of use.
+    Updated:        Mar 6, 2026
+    Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
 {Spin2_v51}
@@ -29,9 +29,9 @@ con
     MEMBER_REPORT_V3    = $22
 
     ' header/record lengths
-    IGMPV3_QUERY_HDR_SZ = 1+2+4+1+1+2
-    IGMPV3_REPORT_HDR_SZ= 1+2+2+2
-    IGMPV3_GRP_RECORD_SZ= 1+1+2+4
+    IGMPV3_QUERY_HDR_SZ = 12
+    IGMPV3_REPORT_HDR_SZ= 8
+    IGMPV3_GRP_RECORD_SZ= 8
 
 
     ' membership report record type enums
@@ -56,9 +56,9 @@ var
     long _msg_len
     long _source_addr
 
-    igmpv3_member_query_hdr_s   query_hdr
-    igmpv3_member_report_hdr_s  report_hdr
-    igmpv3_group_record_s       grp_record[MAX_GROUP_RECORDS]
+    igmp_memb_query_hdr_s   query_hdr
+    igmp_memb_rep_hdr_s     report_hdr
+    igmp_grp_rec_s          grp_record[MAX_GROUP_RECORDS]
 
     byte _type
 
@@ -72,12 +72,7 @@ pub sser(ps)
     pser := ps
 
 
-pub set_header(p_hdr)
-' Set pointer to IGMPv3 header structure
-    [hdr] := p_hdr
-
-
-pub add_group_record(t, nr_src, addr): s | r
+pub add_group_record(^igmp_grp_rec_s grp_record, t, nr_src, addr): s | r
 ' Add a MEMBER_REPORT_V3 group record
 '   t:      record type (MODE_IS_INCLUDE, MODE_IS_EXCLUDE, CHANGE_TO_INCLUDE, CHANGE_TO_EXCLUDE,
 '                       ALLOW_NEW, BLOCK_OLD)
@@ -89,27 +84,26 @@ pub add_group_record(t, nr_src, addr): s | r
             grp_record[r].aux_data_len := 0     ' undefined by RFC 9776
             grp_record[r].num_src := swap_word(nr_src)
             grp_record[r].mcast_addr := swap_long(addr)
-            set_report_num_records( report_num_records() + 1 )
             return r
 
     return -1                                   ' error: group records list full
 
 
-pub group_record_aux_data_len(r): l
+pub group_record_aux_data_len(^igmp_grp_rec_s grp_record, r): l
 ' Get length of the auxilliary data
 '   NOTE: RFC 9776 doesn't define any auxilliary data and specifies that implementations must not
 '       include any; this field should return 0.
     return (grp_record[r].aux_data_len * 4)
 
 
-pub group_record_multicast_addr(r): a
+pub group_record_multicast_addr(^igmp_grp_rec_s grp_record, r): a
 ' Get group record multicast IP address
 '   r:          group record number
 '   Returns:    IP address
     return swap_long(grp_record[r].mcast_addr)
 
 
-pub group_record_num(grp_addr): r
+pub group_record_num(^igmp_grp_rec_s grp_record, grp_addr): r
 ' Get the index of the group address within the cache/array
 '   grp_addr:   group/multicast address
 '   Returns:
@@ -122,14 +116,14 @@ pub group_record_num(grp_addr): r
     return -1
 
 
-pub group_record_num_sources(r): l
+pub group_record_num_sources(^igmp_grp_rec_s grp_record, r): l
 ' Get the number of source addresses in a report group record
 '   r:          group record number
 '   Returns:    number of source addresses
     return swap_word(grp_record[r].num_src)
 
 
-pub group_record_type(r): t
+pub group_record_type(^igmp_grp_rec_s grp_record, r): t
 ' Get a report group record's type
 '   r:          group record number
 '   Returns:    report group record type (MODE_IS_INCLUDE, MODE_IS_EXCLUDE, CHANGE_TO_INCLUDE,
@@ -137,37 +131,37 @@ pub group_record_type(r): t
     return grp_record[r].type
 
 
-pub query_checksum(): c
+pub query_checksum(^igmp_memb_query_hdr_s query_hdr): c
 ' Get the membership query header checksum
     return swap_word(query_hdr.checksum)
 
 
-pub query_clear()
+pub query_clear(^igmp_memb_query_hdr_s query_hdr)
 ' Clear the membership query header in RAM
     query_hdr~
 
 
-pub query_flags(): f
+pub query_flags(^igmp_memb_query_hdr_s query_hdr): f
 ' Get the membership query header flags, S-Flag, QRV 
     return query_hdr.flags_qrv
 
 
-pub query_group_address(): a
+pub query_group_address(^igmp_memb_query_hdr_s query_hdr): a
 ' Get the membership query group address
     return swap_long(query_hdr.group_addr)
 
 
-pub query_interval(): t
+pub query_interval(^igmp_memb_query_hdr_s query_hdr): t
 ' Get the membership querier's query interval code
     return query_hdr.qqic
 
 
-pub query_max_response_timeout(): t
+pub query_max_response_timeout(^igmp_memb_query_hdr_s query_hdr): t
 ' Get the max time allowed before sending a membership report responding to this query
     return query_hdr.max_resp_code
 
 
-pub query_num_sources(): n
+pub query_num_sources(^igmp_memb_query_hdr_s query_hdr): n
 ' Get the number of source addresses present in the membership query
     return swap_word(query_hdr.num_src)
 
@@ -182,22 +176,22 @@ pub message_type(): t
     return _type
 
 
-pub report_checksum(): c
+pub report_checksum(^igmp_memb_rep_hdr_s report_hdr): c
 ' Get the membership report's header checksum
     return swap_word(report_hdr.checksum)
 
 
-pub report_clear()
+pub report_clear(^igmp_memb_rep_hdr_s report_hdr)
 ' Clear the membership report header in RAM
     report_hdr~
 
 
-pub report_flags(): f
+pub report_flags(^igmp_memb_rep_hdr_s report_hdr): f
 ' Get the membership report's header flags
     return swap_word(report_hdr.flags)
 
 
-pub report_num_records(): n
+pub report_num_records(^igmp_memb_rep_hdr_s report_hdr): n
 ' Get the number of group records in the membership report message
     return swap_word(report_hdr.num_records)
 
@@ -212,7 +206,7 @@ pub set_message_type(t): s
     _type := t
 
 
-pub set_query_checksum(c)
+pub set_query_checksum(^igmp_memb_query_hdr_s query_hdr, c)
 ' Set the membership query header's checksum
     query_hdr.checksum := swap_word(c)
 
@@ -225,22 +219,35 @@ pub set_record_type(r, t)
     grp_record[r].type := t
 
 
-pub set_report_checksum(c)
+pub set_report_checksum(^igmp_memb_rep_hdr_s report_hdr, c)
 ' Set the membership report header's checksum
     report_hdr.checksum := swap_word(c)
 
 
-pub set_report_flags(f)
+pub set_report_flags(^igmp_memb_rep_hdr_s report_hdr, f)
 ' Set the membership query header's flags
     report_hdr.flags := f
 
 
-pub set_report_num_records(n)
+pub set_report_num_records(^igmp_memb_rep_hdr_s report_hdr, n)
 ' Set the number of group records in the membership report
     report_hdr.num_records := swap_word(n)
 
 
-pub rd_header() | n, rec
+pub rd_query_header(^igmp_memb_query_hdr_s query_hdr)
+' Read IGMPv3 query header
+    net[p_ndev].rd_block(@query_hdr, IGMPV3_QUERY_HDR_SZ)
+
+
+pub rd_report_header(^igmp_memb_rep_hdr_s report_hdr) | n, rec
+' Read IGMPv3 report header
+    net[p_ndev].rd_block(@report_hdr, IGMPV3_REPORT_HDR_SZ)
+    n := swap_word(report_hdr.num_records)
+    repeat n with rec
+        net[p_ndev].rd_block(@grp_record[rec], IGMPV3_GRP_RECORD_SZ)
+
+
+pub rd_header(^igmp_memb_query_hdr_s query_hdr, ^igmp_grp_rec_s grp_record) | n, rec
 ' Read the IGMP header
     _fifo_start := net[p_ndev].fifo_rd_ptr()
     _type := net[p_ndev].rd_byte()
@@ -259,11 +266,40 @@ pub rd_header() | n, rec
                 net[p_ndev].rd_block(@grp_record[rec], IGMPV3_GRP_RECORD_SZ)
 
 
-pub record_type(r): t
+pub record_type(^igmp_grp_rec_s record): t
 ' Get the type field of a group record
 '   r:          record number
 '   Returns:    type
-    return grp_record[r].type
+    return record.type
+
+
+pub wr_member_query_header_to(^igmp_memb_query_hdr_s query_hdr, p_dest): l
+' Write membership query header (RAM)
+'   query_hdr:  query header (pointer to structure)
+'   p_dest:     destination buffer (pointer)
+    bytemove(p_dest, @query_hdr, IGMPV3_QUERY_HDR_SZ)
+    return IGMPV3_QUERY_HDR_SZ
+
+
+pub wr_member_report_header_to(^igmp_memb_rep_hdr_s report_hdr, ^igmp_grp_rec_s grp_record, p_dest): l | p, n, rec
+' Write member report header (RAM)
+'   report_hdr:     report header (pointer to structure)
+'   p_dest:         destination buffer (pointer)
+    p := p_dest
+
+    report_hdr.type := MEMBER_REPORT_V3
+    report_hdr.reserved := 0
+
+    bytemove(p, @report_hdr, IGMPV3_REPORT_HDR_SZ)
+    p += IGMPV3_REPORT_HDR_SZ
+
+
+    n := report_num_records(@report_hdr)
+    repeat n with rec
+        bytemove(p, @grp_record[rec], IGMPV3_GRP_RECORD_SZ)
+        p += IGMPV3_GRP_RECORD_SZ
+
+    return p-p_dest
 
 
 pub wr_header() | n, rec
@@ -274,58 +310,54 @@ pub wr_header() | n, rec
 
     case _type
         MEMBER_QUERY:
-'            ser[pser].strln(@"[IGMP]: WR MEMBER_QUERY")
-            net[p_ndev].wr_block(@query_hdr, IGMPV3_QUERY_HDR_SZ+1)
-            _msg_len += IGMPV3_QUERY_HDR_SZ+1
+            net[p_ndev].wr_block(@query_hdr, IGMPV3_QUERY_HDR_SZ)
+            _msg_len += IGMPV3_QUERY_HDR_SZ
         MEMBER_REPORT_V3:
-'            ser[pser].strln(@"[IGMP]: WR MEMBER_REPORT_V3")
             report_hdr.type := MEMBER_REPORT_V3
             report_hdr.reserved := 0
-            set_report_checksum(0)
-            net[p_ndev].wr_block(@report_hdr, IGMPV3_REPORT_HDR_SZ+1)
-            _msg_len += IGMPV3_REPORT_HDR_SZ+1
-            n := report_num_records()
-'            ser[pser].printf(@"[IGMP]: WR %d records\n\r", n)
+            set_report_checksum(@report_hdr, 0)
+            net[p_ndev].wr_block(@report_hdr, IGMPV3_REPORT_HDR_SZ)
+            _msg_len += IGMPV3_REPORT_HDR_SZ
+            n := report_num_records(@report_hdr)
             repeat n with rec
-'                ser[pser].printf(@"[IGMP]: WR record %d\n\r", rec)
                 net[p_ndev].wr_block(@grp_record[rec], IGMPV3_GRP_RECORD_SZ)
                 _msg_len += IGMPV3_GRP_RECORD_SZ
 
 
-pub update_checksum() | tmp, ck, r
-' Update IGMP checksum field based on currently stored message type
+pub update_query_checksum(^igmp_memb_query_hdr_s query_hdr) | tmp, ck, r
+' Update IGMP checksum field (query header)
+    set_query_checksum(@query_hdr, crc.inet_chksum(@query_hdr, IGMPV3_QUERY_HDR_SZ, 0, false) )
+    tmp := net[p_ndev].fifo_wr_ptr()
+    net[p_ndev].fifo_set_wr_ptr(_fifo_chksum)
+    net[p_ndev].wr_word(query_hdr.checksum)
+    net[p_ndev].fifo_set_wr_ptr(tmp)
 
-    case _type                                  ' which message type is currently stored in RAM?
-        MEMBER_QUERY:
-            set_query_checksum(crc.inet_chksum(@query_hdr, IGMPV3_QUERY_HDR_SZ, 0, false) )
-            tmp := net[p_ndev].fifo_wr_ptr()
-            net[p_ndev].fifo_set_wr_ptr(_fifo_chksum)
-            net[p_ndev].wr_word(query_hdr.checksum)
-            net[p_ndev].fifo_set_wr_ptr(tmp)
-        MEMBER_REPORT_V3:
-            ck := crc.inet_chksum(...
-                    @report_hdr, ...
-                    IGMPV3_REPORT_HDR_SZ+1, ...
-                    0, ...
-                    false)
-            repeat r from 0 to report_num_records()-1
-                ' fold each record into the checksum; only complement if it's the last one
-                ck := crc.inet_chksum(...
-                        @grp_record[r], ...
-                        IGMPV3_GRP_RECORD_SZ, ...
-                        ck, ...
-                        (r == report_num_records()-1) )
-            set_report_checksum(ck)
 
-            tmp := net[p_ndev].fifo_wr_ptr()    ' write checksum and restore write pointer after
-            net[p_ndev].fifo_set_wr_ptr(_fifo_chksum)
-            net[p_ndev].wr_word(report_hdr.checksum)
-            net[p_ndev].fifo_set_wr_ptr(tmp)
+pub update_report_checksum(^igmp_memb_rep_hdr_s report_hdr, ^igmp_grp_rec_s grp_record) | tmp, ck, r
+' Update IGMP checksum field (report header)
+    ck := crc.inet_chksum(...
+            @report_hdr, ...
+            IGMPV3_REPORT_HDR_SZ+1, ...
+            0, ...
+            false)
+    repeat r from 0 to report_num_records(@report_hdr)-1
+        ' fold each record into the checksum; only complement if it's the last one
+        ck := crc.inet_chksum(...
+                @grp_record[r], ...
+                IGMPV3_GRP_RECORD_SZ, ...
+                ck, ...
+                (r == report_num_records(@report_hdr)-1) )
+    set_report_checksum(@report_hdr, ck)
+
+    tmp := net[p_ndev].fifo_wr_ptr()    ' write checksum and restore write pointer after
+    net[p_ndev].fifo_set_wr_ptr(_fifo_chksum)
+    net[p_ndev].wr_word(report_hdr.checksum)
+    net[p_ndev].fifo_set_wr_ptr(tmp)
 
 
 DAT
 {
-Copyright 2025 Jesse Burt
+Copyright 2026 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

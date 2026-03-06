@@ -30,10 +30,16 @@ con
     MAX_INTERFACES      = 1
     MAX_IP_PER_IFACE    = 1
     MAX_IP6_PER_IFACE   = 1
+
     MAX_SOCKETS         = 2                     ' must be at least 1 (or 2 for a server)
+
     MAX_MC_GROUPS_IFACE = 1
     MAX_MC_SOURCES_IFACE= 64
+    MAX_GROUP_RECORDS   = 16                    ' IGMP group records
+
     FRAME_HEADROOM_SZ   = 128                   ' 128 should cover any type of frame
+    MAX_PAYLOAD_SZ      = net.MTU_MAX-FRAME_HEADROOM_SZ
+
 
     ' messages to netloop
     CMD_CONNECT         = 1                     ' connect a socket
@@ -75,7 +81,8 @@ con
         byte        mac_addr[MACADDR_LEN], ...
         ipv6_addr_s ipv6_addr[MAX_IP6_PER_IFACE], ...
         group_s     mc_group[MAX_MC_GROUPS_IFACE], ...
-        byte        link_state)
+        byte        link_state, ...
+        byte        nr_igmp_reports)
 
     PKTBUFF_CNT     = 8
     PKTBUFF_MASK    = PKTBUFF_CNT-1
@@ -84,7 +91,7 @@ con
         long p_end, ...
         long len, ...
         byte layer_written, ...
-        byte buffer[FRAME_HEADROOM_SZ+RINGBUFF_SZ])
+        byte buffer[FRAME_HEADROOM_SZ+MAX_PAYLOAD_SZ])
 
     ARP_REQSQ_SZ     = 4
     ARP_REQSQ_MASK   = ARP_REQSQ_SZ-1
@@ -142,6 +149,8 @@ var
     arp_replyq_s    arp_reply_q                 ' ARP reply queue
     pktbuff_s       pktbuff[PKTBUFF_CNT]        ' transmit packet buffer queue
     tcp_tx_pend_s   tcp_tx_pend                 ' pending TCP transmission queue
+
+    igmp_grp_rec_s  grp_record[MAX_GROUP_RECORDS]
 
     long            _cog
     long            _timestamp_base
@@ -524,6 +533,10 @@ pub setsockopt(sck, opt, val): s
     case opt
         IP_TTL, IP_MULTICAST_TTL:               ' IP time to live (0..255)
             socket[sck].ttl := val
+        IP_ADD_MEMBERSHIP:                      ' add multicast group membership
+            socket_add_group(sck, val)
+        IP_DROP_MEMBERSHIP:                     ' drop multicast group membership
+            socket_leave_group(sck, val)
         other:
             return -1                           ' error: invalid argument
 
@@ -597,6 +610,26 @@ pri cog_stack(CS_PIN, SCK_PIN, MOSI_PIN, MISO_PIN, SPI_FREQ) | st, s, tl, ul, pb
         flush_arp_requests()                    ' ARP resolution requests
         flush_udp()                             ' UDP datagrams
         flush_arp_replies()                     ' replies to ARP requests
+        flush_igmp_reports()
+
+
+pri flush_igmp_reports() | i, g, il, pbuf
+' Send pending IGMP reports to the network device
+    repeat MAX_INTERFACES with i
+        repeat MAX_MC_GROUPS_IFACE with g
+            if ( interface[i].mc_group[g].report_pending )
+                pbuf := pbuf_allocate()
+                if ( pbuf >= 0 )
+                    il := write_igmp3(pbuf, i, interface[i].nr_igmp_reports)
+                    write_ipv4( pbuf, ...
+                                interface[i].ipv4_addr, ...
+                                igmp.IGMPV3_MCAST_IP, ...
+                                L4_IGMP, ...
+                                il, ...
+                                0, ...
+                                ip.CS6)
+                    pb_head := (pb_head + 1) & PKTBUFF_MASK
+                    interface[i].mc_group[g].report_pending := 0
 
 
 pri flush_arp_replies()
@@ -864,6 +897,88 @@ pri find_listening_socket(port, proto): s
 
     DEBUG(" error: no matching listening socket")
     return -1                                   ' no matching socket is listening
+
+
+pri iface_add_group(iface, mc_addr): s | i, g
+' Add interface multicast group record
+'   mc_addr:    multicast group/address
+    DEBUG("iface_add_group(", udec(iface), zstr(str.iptostr(mc_addr)), ")")
+    i := iface_group_index(iface, mc_addr)
+    if ( i >= 0 )                               ' group exists: just increment its reference count
+        interface[iface].mc_group[i].refcnt++
+        return i
+
+    repeat MAX_MC_GROUPS_IFACE with i
+        ifnot ( interface[iface].mc_group[i].grp_addr )          ' new group membership
+            interface[iface].mc_group[i].grp_addr := mc_addr
+            interface[iface].mc_group[i].filt_mode := igmp.CHANGE_TO_EXCLUDE
+            igmp.add_group_record(  @grp_record, ...
+                                    interface[iface].mc_group[i].filt_mode, ...
+                                    interface[iface].mc_group[i].nr_sources, ...
+                                    interface[iface].mc_group[i].grp_addr)
+            interface[iface].mc_group[i].refcnt++
+            interface[iface].mc_group[i].report_pending := 1     ' trigger the net loop to send an updated report
+            interface[iface].nr_igmp_reports++
+            return i
+
+    return -1                                   ' error: interface group membership table full
+
+
+pri iface_group_exists(iface, mc_addr): e | i
+' Check if a multicast group is recorded in RAM
+'   mc_addr:    multicast group/address
+    return ( iface_group_index(iface, mc_addr) >= 0 )  ' valid index? return true, otherwise false
+
+
+pri iface_group_index(iface, mc_addr): i | g
+' Get index of multicast group within array
+'   mc_addr:    multicast address/group
+    'dbg.printf(@"iface_group_index(%s)\n\r", str.iptostr(mc_addr) )
+    repeat MAX_MC_GROUPS_IFACE with g
+        if ( interface[iface].mc_group[g].grp_addr == mc_addr )
+            'dbg.printf(@" mc_group[%d].grp_addr = %s\n\r", ...
+            '    g, ...
+            '    str.iptostr(mc_group[g].grp_addr) )
+            return g
+
+    return -1
+
+
+pri iface_leave_group(iface, mc_addr) | i
+' Leave a multicast group
+'   mc_addr:    multicast group/address
+    i := iface_group_index(iface, mc_addr)
+    if ( i >= 0 )
+        interface[iface].mc_group[i].filt_mode := igmp.CHANGE_TO_INCLUDE
+        igmp.add_group_record(  @grp_record, ...
+                                interface[iface].mc_group[i].filt_mode, ...
+                                interface[iface].mc_group[i].nr_sources, ...
+                                interface[iface].mc_group[i].grp_addr)
+        interface[iface].mc_group[i].refcnt := 0
+        interface[iface].mc_group[i].report_pending := 1     ' trigger the net loop to send an updated report
+
+
+pri iface_mcast_dec_ref(iface, mc_addr): l | i, r
+' Decrease interface's reference count of a multicast group
+'   mc_addr:    multicast address
+'   Returns:
+'               true (-1) if this was the last membership to the group
+'               false (0) if there still exists at least one membership to the group
+'                       or if there are already no memberships
+    i := iface_group_index(iface, mc_addr)
+    if ( i >= 0 )
+        l := interface[iface].mc_group[i].refcnt
+        interface[iface].mc_group[i].refcnt--
+        if ( (interface[iface].mc_group[i].refcnt == 0) and (l > 0) )
+            ' was this the last membership to the group?
+            interface[iface].mc_group[i].filt_mode := igmp.CHANGE_TO_INCLUDE
+            r := igmp.group_record_num(@grp_record, mc_addr)
+            'dbg.printf(@"iface_mcast_dec_ref(): igmp group record num %d\n\r", r)
+            igmp.set_record_type(r, interface[iface].mc_group[i].filt_mode)
+            interface[iface].mc_group[i].report_pending := 1
+            return true
+
+    return false
 
 
 pri iface_set_flags(iface, flags)
@@ -1667,6 +1782,70 @@ pri set_state(sck, new_state)
     long[socket[sck].p_signal] |= STATE_CHANGED ' signal state change to the application
 
 
+pri socket_add_group(sck, mc_addr): s | g
+' Add membership of a multicast group/address to a socket
+'   sck:        socket number
+'   mc_addr:    multicast group/address
+'   Returns:
+'               index within socket's multicast group list on success
+'               negative numbers on failure
+    ifnot ( ip.is_multicast_addr(mc_addr) )
+        DEBUG("socket_add_group(): error, ", zstr_(str.iptostr(mc_addr)), " isn't a multicast address")
+        return -1                               ' error: invalid multicast address
+
+    if ( socket_is_member_of(sck, mc_addr) )    ' error: already subscribed to this group
+        DEBUG("sck ", udec_(sck), " already subscribed to ", zstr_(str.iptostr(mc_addr)) )
+        return -2
+
+    repeat MAX_MC_GROUPS_SOCKET with g
+        ifnot ( socket[sck].mc_group[g].addr )  ' empty entry found - add the group address
+            socket[sck].mc_group[g].addr := mc_addr
+            socket[sck].mc_group[g].filt_mode := igmp.CHANGE_TO_EXCLUDE
+            iface_add_group(0, mc_addr)         ' add it to the interface list, too
+            DEBUG("sck ", udec_(sck), " subscribed to ", zstr_(str.iptostr(mc_addr)) )
+            return g
+
+    return -3                                   ' error: socket's group membership table is full
+
+
+pri socket_group_index(sck, mc_addr): i | g
+' Get a multicast group/address's index within a socket's group list
+'   sck:        socket number
+'   mc_addr:    multicast group/address
+'   Returns:
+'               index within socket's multicast group list on success
+'               negative numbers on failure
+    repeat MAX_MC_GROUPS_SOCKET with g
+        if ( socket[sck].mc_group[g].addr == mc_addr )
+            return g
+
+    return -1
+
+
+pri socket_is_member_of(sck, mc_addr): f | g
+' Check if a socket is subscribed to a multicast group
+'   sck:        socket number
+'   mc_addr:    multicast group/address
+'   Returns:    true (-1) or false
+    return ( socket_group_index(sck, mc_addr) >= 0 )
+
+
+pri socket_leave_group(sck, mc_addr): s | g, i
+' Remove a socket's membership from a multicast group
+'   sck:        socket number
+'   mc_addr:    multicast group/address
+'   Returns:
+'               index within socket's multicast group list on success
+'               negative numbers on failure
+    g := socket_group_index(sck, mc_addr)
+    if ( g >= 0 )
+        socket[sck].mc_group[g]~                ' remove group record from the socket
+        iface_mcast_dec_ref(0, mc_addr)         ' decrease interface's reference count to group
+        return g
+
+    return -1                                   ' error: not a member of this group
+
+
 pri tcp_tx_pending_free(): a
 ' Get the number of free pending TCP segment slots
     return (tcp_tx_pend.tail-tcp_tx_pend.head-1) & MAX_TCP_TX_PEND_MASK
@@ -1782,7 +1961,42 @@ pri write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l | icmp4_hdr_
     return icmp.ICMP_HDR_SZ+ol
 
 
-pri write_ipv4(pbuf, lip, rip, pro, len=0, ident=0, dscp=0, ttl=0): l | ipv4_hdr_s ih, tmp, ol, t
+pri write_igmp3(pbuf, iface, nr_rep): l | igmp_memb_rep_hdr_s igh, n, rec, ck, ol
+' Write IGMPv3 report to packet buffer
+    DEBUG("write_igmp3(", udec(pbuf), udec(iface), ")")
+    igh~
+    ol := igmp.IGMPV3_REPORT_HDR_SZ
+
+    ' set up IGMPv3 header
+    igh.type := igmp.MEMBER_REPORT_V3
+    igmp.set_report_flags(@igh, 0)
+    igmp.set_report_num_records(@igh, nr_rep)  ' get from interface?
+
+    ' write the IGMPv3 (report) header
+    pbuf_prepend_write(pbuf, igmp.IGMPV3_REPORT_HDR_SZ, @igh)
+    n := igmp.report_num_records(@igh)
+
+    ' copy group records to packet buffer
+    DEBUG(" ", udec_(n), " records")
+    repeat n with rec
+        bytemove(pktbuff[pbuf].p_end, @grp_record[rec], igmp.IGMPV3_GRP_RECORD_SZ)
+        pktbuff[pbuf].len += igmp.IGMPV3_GRP_RECORD_SZ
+        ol += igmp.IGMPV3_GRP_RECORD_SZ
+
+    ck := crc.inet_chksum(...
+            pktbuff[pbuf].p_data, ...
+            pktbuff[pbuf].len, ...
+            0, ...
+            true)
+
+    word[pktbuff[pbuf].p_data + 2] := swap_word(ck)
+
+    pktbuff[pbuf].layer_written := 4
+
+    return ol
+
+
+pri write_ipv4(pbuf, lip, rip, pro, len=0, ident=0, dscp=0, ttl=0): l | ipv4_hdr_s ih, tmp, ol, t, ip.ip_option_s option, ihl, ck
 ' Encapsulate data with IPv4 header
 '   pbuf:       packet buffer index
 '   lip:        local IP
@@ -1807,8 +2021,10 @@ pri write_ipv4(pbuf, lip, rip, pro, len=0, ident=0, dscp=0, ttl=0): l | ipv4_hdr
     ' write options (as applicable) and set TTL
     ol := 0
     if ( ip.dscp(@ih) == ip.CS6 )
-        tmp := ip.ROUTER_ALERT_EXAMINE_PKT
-        ol += ip.add_option(ip.TYPE_ROUTER_ALERT | ip.COF_COPY, 4, @tmp)
+        option.type := ip.TYPE_ROUTER_ALERT | ip.COF_COPY
+        option.length := 4
+        option.vals := ip.ROUTER_ALERT_EXAMINE_PKT
+        ol += 4
     if ( ip.is_multicast_link_local_addr(rip) )
         ' ttl _must_ be 1 when datagrams are sent to
         '   link-local (224.0.0.0 to .255) multicast addr
@@ -1827,9 +2043,14 @@ pri write_ipv4(pbuf, lip, rip, pro, len=0, ident=0, dscp=0, ttl=0): l | ipv4_hdr
     ip.set_dgram_len(@ih,       len)                       ' this depends on the IP header length
     ip.set_frag_offset(@ih,     0)                       'xxx for future use, if frag is ever supported
 
-    pbuf_prepend_write(pbuf, ip.hdr_len(@ih), @ih)
+    if ( ol )
+        pbuf_prepend_write(pbuf, ol, @option)
+    pbuf_prepend_write(pbuf, ip.IP_HDR_SZ, @ih)
 
-    ip.wr_chksum_to(@ih, pktbuff[pbuf].p_data+IP_CKSUM)
+    ihl := ip.hdr_len(@ih)-ip.IP_HDR_SZ
+    ck := crc.inet_chksum(pktbuff[pbuf].p_data, ip.IP_HDR_SZ+ol, 0, true)
+
+    word[pktbuff[pbuf].p_data + ip.IP_CKSUM] := swap_word(ck)
 
     arp_queue_ip(pbuf, rip)                           ' queue the dest IP for ARP resolution
 
