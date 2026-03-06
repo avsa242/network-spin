@@ -148,10 +148,10 @@ CON
 
 
     ' ethertypes
-    ETYP_IPV4           = $0008 ' $0800
-    ETYP_ARP            = $0608 ' $0806
-    ETYP_IPV6           = $dd86 ' $86dd
-    ETYP_LLDP           = $cc88 ' $88cc
+    ETYP_IPV4           = $0800
+    ETYP_ARP            = $0806
+    ETYP_IPV6           = $86dd
+    ETYP_LLDP           = $88cc
 
     ' hardware types
     HRD_ETH         = 1                         ' only these first two are
