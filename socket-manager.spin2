@@ -7,7 +7,7 @@
         * Multiple sockets
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Mar 2, 2026
+    Updated:        Mar 7, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -81,8 +81,7 @@ con
         byte        mac_addr[MACADDR_LEN], ...
         ipv6_addr_s ipv6_addr[MAX_IP6_PER_IFACE], ...
         group_s     mc_group[MAX_MC_GROUPS_IFACE], ...
-        byte        link_state, ...
-        byte        nr_igmp_reports)
+        byte        link_state)
 
     PKTBUFF_CNT     = 8
     PKTBUFF_MASK    = PKTBUFF_CNT-1
@@ -620,7 +619,7 @@ pri flush_igmp_reports() | i, g, il, pbuf
             if ( interface[i].mc_group[g].report_pending )
                 pbuf := pbuf_allocate()
                 if ( pbuf >= 0 )
-                    il := write_igmp3(pbuf, i, interface[i].nr_igmp_reports)
+                    il := write_igmp3(pbuf, i, g)
                     write_ipv4( pbuf, ...
                                 interface[i].ipv4_addr, ...
                                 igmp.IGMPV3_MCAST_IP, ...
@@ -905,11 +904,13 @@ pri iface_add_group(iface, mc_addr): s | i, g
     DEBUG("iface_add_group(", udec(iface), zstr(str.iptostr(mc_addr)), ")")
     i := iface_group_index(iface, mc_addr)
     if ( i >= 0 )                               ' group exists: just increment its reference count
+        DEBUG(" group exists; refcnt++")
         interface[iface].mc_group[i].refcnt++
         return i
 
     repeat MAX_MC_GROUPS_IFACE with i
         ifnot ( interface[iface].mc_group[i].grp_addr )          ' new group membership
+            DEBUG(" add group to entry ", udec_(i) )
             interface[iface].mc_group[i].grp_addr := mc_addr
             interface[iface].mc_group[i].filt_mode := igmp.CHANGE_TO_EXCLUDE
             igmp.add_group_record(  @grp_record, ...
@@ -917,10 +918,10 @@ pri iface_add_group(iface, mc_addr): s | i, g
                                     interface[iface].mc_group[i].nr_sources, ...
                                     interface[iface].mc_group[i].grp_addr)
             interface[iface].mc_group[i].refcnt++
-            interface[iface].mc_group[i].report_pending := 1     ' trigger the net loop to send an updated report
-            interface[iface].nr_igmp_reports++
+            interface[iface].mc_group[i].report_pending := 1
             return i
 
+    DEBUG(" error: group membership table full for this interface")
     return -1                                   ' error: interface group membership table full
 
 
@@ -1961,39 +1962,43 @@ pri write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l | icmp4_hdr_
     return icmp.ICMP_HDR_SZ+ol
 
 
-pri write_igmp3(pbuf, iface, nr_rep): l | igmp_memb_rep_hdr_s igh, n, rec, ck, ol
+pri write_igmp3(pbuf, iface, grp_idx): l | igmp_memb_rep_hdr_s igh, igmp_grp_rec_s grp_rec, ck
 ' Write IGMPv3 report to packet buffer
-    DEBUG("write_igmp3(", udec(pbuf), udec(iface), ")")
+'   pbuf:       packet buffer index
+'   iface:      interface to read group membership from
+'   grp_idx:    multicast group index to read
+'   Returns:    length of packet
+    DEBUG("write_igmp3(", udec(pbuf), udec(iface), udec(grp_idx), ")")
     igh~
-    ol := igmp.IGMPV3_REPORT_HDR_SZ
+    grp_rec~
 
     ' set up IGMPv3 header
     igh.type := igmp.MEMBER_REPORT_V3
     igmp.set_report_flags(@igh, 0)
-    igmp.set_report_num_records(@igh, nr_rep)  ' get from interface?
+    igmp.set_report_num_records(@igh, 1)
 
     ' write the IGMPv3 (report) header
     pbuf_prepend_write(pbuf, igmp.IGMPV3_REPORT_HDR_SZ, @igh)
-    n := igmp.report_num_records(@igh)
+    igmp.report_num_records(@igh)
 
-    ' copy group records to packet buffer
-    DEBUG(" ", udec_(n), " records")
-    repeat n with rec
-        bytemove(pktbuff[pbuf].p_end, @grp_record[rec], igmp.IGMPV3_GRP_RECORD_SZ)
-        pktbuff[pbuf].len += igmp.IGMPV3_GRP_RECORD_SZ
-        ol += igmp.IGMPV3_GRP_RECORD_SZ
+    ' copy group record to packet buffer
+    grp_rec.type := interface[iface].mc_group[grp_idx].filt_mode
+    grp_rec.aux_data_len := 0
+    grp_rec.num_src := swap_word(interface[iface].mc_group[grp_idx].nr_sources)
+    grp_rec.mcast_addr := swap_long(interface[iface].mc_group[grp_idx].grp_addr)
+    bytemove(pktbuff[pbuf].p_end, @grp_rec, igmp.IGMPV3_GRP_RECORD_SZ)
+
+    pktbuff[pbuf].len += igmp.IGMPV3_GRP_RECORD_SZ
 
     ck := crc.inet_chksum(...
             pktbuff[pbuf].p_data, ...
-            pktbuff[pbuf].len, ...
-            0, ...
-            true)
+            pktbuff[pbuf].len)
 
     word[pktbuff[pbuf].p_data + 2] := swap_word(ck)
 
     pktbuff[pbuf].layer_written := 4
 
-    return ol
+    return pktbuff[pbuf].len
 
 
 pri write_ipv4(pbuf, lip, rip, pro, len=0, ident=0, dscp=0, ttl=0): l | ipv4_hdr_s ih, tmp, ol, t, ip.ip_option_s option, ihl, ck
