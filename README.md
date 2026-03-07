@@ -13,6 +13,7 @@ This is a P8X32A/Propeller, P2X8C4M64P/Propeller 2 networking stack
 * UDP
 * TCP
 * ICMP
+* IGMP (v3)
 * BOOTP/DHCP
 * Socket manager (P1: TCP, single socket, P2: TCP, UDP, multiple sockets; both currently only support the ENC28J60)
 
@@ -34,8 +35,8 @@ P2/SPIN2:
 |-----------|----------|------------------------|-------------|-----------------------|
 | P1        | SPIN1    | FlexSpin (6.9.4)       | Bytecode    | OK                    |
 | P1        | SPIN1    | FlexSpin (6.9.4)       | Native code | OK                    |
-| P2        | SPIN2    | FlexSpin (7.3.1-beta)  | NuCode      | FTBFS                 |
-| P2        | SPIN2    | FlexSpin (7.3.1-beta)  | Native code | OK                    |
+| P2        | SPIN2    | FlexSpin (7.6.5-beta)  | NuCode      | OK                    |
+| P2        | SPIN2    | FlexSpin (7.6.5-beta)  | Native code | OK                    |
 
 (other versions or toolchains not listed are __not supported__, and _may or may not_ work)
 
@@ -50,6 +51,5 @@ P2/SPIN2:
 * Very early in development - may malfunction, or outright fail to build
 * Some things are currently hardcoded
 * API unstable (only one network device driver currently exists)
-* IP only really supports 20-byte headers
 * spin1: ICMP is currently _very_ primitive - only enough is implemented to store/retrieve metadata and is written with enough to form reply messages to echo requests.
 
