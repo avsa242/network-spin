@@ -4,8 +4,8 @@
     Description:    Internet Protocol version 6
     Author:         Jesse Burt
     Started:        Mar 14, 2025
-    Updated:        Mar 29, 2025
-    Copyright (c) 2025 - See end of file for terms of use.
+    Updated:        Mar 7, 2026
+    Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
 {Spin2_v46}
@@ -42,11 +42,8 @@ obj
 
 var
 
-    long            p_ndev                      ' network driver object pointer
-
-    ipv6_addr_s     _my_ip
-
-    long            _ip_start
+    long    p_ndev                              ' network driver object pointer
+    long    _ip_start
 
 
 pub init(optr)
@@ -56,23 +53,20 @@ pub init(optr)
 
 pub dest_addr(^ipv6_header_s hdr): p
 ' Get destination address of IP datagram
-'   Returns: 4 IPv4 address bytes packed into long
-'    bytemove(p, @hdr.dest_addr, IPV6ADDR_LEN)
+'   Returns: pointer to IPv6 address (16 bytes)
     return @hdr.dest_addr
 
 
 pub dscp(^ipv6_header_s hdr): cp
 ' Differentiated services code point
 '   Returns: 6-bit code point
-    return (hdr.version_trafcl & $0f) | ( (hdr.trafcl_flow_label >> 4) &  $0f)
+    return ( ( (hdr.version_trafch & $0f) << 4) | ( (hdr.trafcl_flow_h >> 4) & $0f) ) & $3f
 
 
 pub flow_label(^ipv6_header_s hdr): l
 ' Get the flow label
 '   Returns: 20-bit flow label
-    return ( (  hdr.trafcl_flow_label & $0f) << 16) | ...
-                (hdr.flow_label[1] << 8) | ...
-                hdr.flow_label[2]
+    return swap_long( ( (hdr.trafcl_flow_h & $0f) << 16) | hdr.flow_label_l )
 
 
 pub hdr_len(): l
@@ -86,15 +80,9 @@ pub is_multicast_addr(p_addr): f
     'xxx
 
 
-pub my_ip(): a
-' Get this node's IP address
-'   Returns: pointer to 128-bit address
-    return @_my_ip
-
-
 pub new(^ipv6_header_s hdr, l4_proto, p_src, p_dest)
 ' Construct an IPV6 header
-'   l4_proto: OSI Layer-4 protocol (L4_TCP, L4_UDP, L4_ICMP)
+'   l4_proto:   OSI Layer-4 protocol (L4_TCP, L4_UDP, L4_ICMP)
 '   p_src:      pointer to 128-bit/16-byte source IPv6 address
 '   p_dest:     pointer to 128-bit/16-byte destination IPv6 address
     _ip_start := net[p_ndev].fifo_wr_ptr()
@@ -117,37 +105,19 @@ pub payload_length(^ipv6_header_s hdr): l
 ' Get the length of the payload (layer 4 and above) only
     return swap_word(hdr.payload_len)
 
-{
-        byte        version_trafcl, ...
-        byte        trafcl_flow_label, ...
-        byte        flow_label[2], ...          ' 20b
-        word        payload_len, ...
-        byte        next_header, ...
-        byte        hop_limit, ...
-        ipv6addr_s  src_addr, ...
-        ipv6addr_s  dest_addr )
-}
+
 pub rd_ip_header(^ipv6_header_s hdr): p
 ' Read IP header from buffer
     _ip_start := net[p_ndev].fifo_rd_ptr()
     net[p_ndev].rd_block(@hdr, sizeof(hdr) )
-{    header.version_trafcl := net[p_ndev].rd_byte()
-    header.trafcl_flow_label := net[p_ndev].rd_byte()
-    header.flow_label[0] := net[p_ndev].rd_byte()
-    header.flow_label[1] := net[p_ndev].rd_byte()
-    header.payload_len := net[p_ndev].rd_word()
-    header.next_header := net[p_ndev].rd_byte()
-    header.hop_limit := net[p_ndev].rd_byte()
-    net[p_ndev].rd_block(@header.src_addr, IPV6ADDR_LEN)
-    net[p_ndev].rd_block(@header.dest_addr, IPV6ADDR_LEN)
-}
     return net[p_ndev].fifo_wr_ptr()
 
 
-pub reply(^ipv6_header_s hdr): p
+pub reply(^ipv6_header_s hdr): p | ipv6_addr_s adr_tmp
 ' Set up/write IPv6 header as a reply to last received header
+    adr_tmp := hdr.dest_addr
     set_dest_addr(hdr, src_addr(hdr) )
-    set_src_addr(hdr, my_ip() )
+    set_src_addr(hdr, @adr_tmp)
     _ip_start := net[p_ndev].fifo_wr_ptr()
     wr_ip_header(hdr)
 
@@ -155,13 +125,23 @@ pub reply(^ipv6_header_s hdr): p
 pub reset_ipv6(^ipv6_header_s hdr)
 ' Reset all values to defaults for an IPV6 header
     hdr~
-    set_version(hdr)
+    hdr.version_trafch := 6 << 4                ' version is _always_ 6
     set_hop_limit(hdr, HOP_LIMIT_DEF)
 
 
 pub set_dest_addr(^ipv6_header_s hdr, p_addr)
 ' Set destination address of IP datagram
     bytemove(@hdr.dest_addr, p_addr, IPV6ADDR_LEN)
+
+
+pub set_flow_label(^ipv6_header_s hdr, fl)
+' Set flow label
+'   hdr:    IPv6 header (pointer to structure)
+'   fl::    flow label
+    fl := swap_long(fl)
+    hdr.trafcl_flow_h &= $f0                    ' preserve traffic class b3..0; clear flow b19..16
+    hdr.trafcl_flow_h |= ( (fl & $f0000) >> 16) ' set flow b19..16
+    hdr.flow_label_l := (fl & $0ffff)           ' set flow b15..0
 
 
 pub set_dgram_len = set_payload_len
@@ -178,12 +158,6 @@ pub set_hop_limit(^ipv6_header_s hdr, h)
     hdr.hop_limit := h
 
 
-pub set_my_ip(p_addr)
-' Set this node's IP address 
-'   p_addr: pointer to 128-bit IP address
-    bytemove(@_my_ip, p_addr, sizeof(_my_ip) )
-
-
 pub set_layer4_proto = set_next_header
 pub set_next_header(^ipv6_header_s hdr, p)
 ' Set next header carried in datagram
@@ -195,49 +169,60 @@ pub set_src_addr(^ipv6_header_s hdr, p_addr)
     bytemove(@hdr.src_addr, p_addr, IPV6ADDR_LEN)
 
 
-pub set_version(^ipv6_header_s hdr, v=6)
-' Set IP version field
-'   v:  version (ignored; temporary, for IPv4 API compatibility only)
-    hdr.version_trafcl := 6 << 4
+pub set_traffic_class(^ipv6_header_s hdr, cls)
+' Set traffic class
+    hdr.version_trafcl &= $f0                   ' preserve header version; clear traffic class b7..4
+    hdr.trafcl_flow_h &= $0f                    ' preserve flow b19..16; clear traffic class b3..0
+    hdr.version_trafcl |= ( (cls & $f0) >> 4)   ' set traffic class b7..4
+    hdr.trafcl_flow_h |= ( (cls & $0f) << 4)    ' set traffic class b3..0
 
 
 pub src_addr(^ipv6_header_s hdr): p
 ' Get source/originator of IP datagram
-'    bytemove(p, @header.src_addr, IPV6ADDR_LEN)
     return @hdr.src_addr
+
 
 pub start_pos(): p
 ' Get pointer to start of IP header in network device FIFO
-'   NOTE: new(), rd_ip_header(), or reply()must be called first to set this value
+'   NOTE: new(), rd_ip_header(), or reply() must be called first to set this value
+'   NOTE: This is only usable when using methods that read from/write directly to the network device
     return _ip_start
 
 
-pub swap_dest_src()
+pub swap_dest_src(^ipv6_header_s hdr) | ipv6_addr_s adr_tmp
 ' Swap the destination and source IP address fields
-    'xxx
+    adr_tmp := hdr.dest_addr
+    set_dest_addr(hdr, src_addr(hdr) )
+    set_src_addr(hdr, @adr_tmp)
 
 
 pub traffic_class(^ipv6_header_s hdr): c
 ' Get the traffic class
-    return ((hdr.version_trafcl & $0f) << 4) | (hdr.trafcl_flow_label >> 4) & $0f
+    return ((hdr.version_trafcl & $0f) << 4) | (hdr.trafcl_flow_h >> 4) & $0f
 
 
 pub version(^ipv6_header_s hdr): v
 ' Get IP version
 '   Returns: byte
-    return ( (hdr.version_trafcl >> 4) & $0f)
+    return ( (hdr.version_trafch >> 4) & $0f)
 
 
 pub wr_ip_header(^ipv6_header_s hdr): p
-' Write IP header to buffer
-'   Returns: length of assembled header, in bytes
-    net[p_ndev].wr_block(@hdr, sizeof(hdr) )
+' Write IP header to network device
+'   Returns: network device FIFO write pointer (after writing header)
+    net[p_ndev].wr_block(@hdr, sizeof(ipv6_hdr_s) )
     return net[p_ndev].fifo_wr_ptr()
 
 
-DAT
+pub wr_ipv6_header_to(^ipv6_header_s hdr, p_dest): l
+' Write IPv6 header to buffer (RAM)
+    bytemove(p_dest, @hdr, sizeof(ipv6_hdr_s) )
+    return IPV6_HDR_SZ
+
+
+dat
 {
-Copyright 2025 Jesse Burt
+Copyright 2026 Jesse Burt
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,
