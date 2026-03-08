@@ -19,9 +19,6 @@
 #define NETIF_DRIVER "net.eth.enc28j60"
 #pragma exportdef(NETIF_DRIVER)
 
-'#define EXT_DBG
-'#pragma exportdef(EXT_DBG)
-
 con
 
     _clkfreq    = 180_000_000
@@ -30,10 +27,11 @@ con
     CLICK_BASE  = 0                             ' base I/O pin for MikroE Click module
 
 #ifndef MIKROE_CLICK
-    CS_PIN      = 24
-    SCK_PIN     = 25
-    MOSI_PIN    = 26
-    MISO_PIN    = 27
+    CS_PIN      = 0
+    SCK_PIN     = 1
+    MOSI_PIN    = 2
+    MISO_PIN    = 3
+    SPI_FREQ    = 10_000_000                    ' for >10MHz, 250MHz _clkfreq is required
 #endif
 
 

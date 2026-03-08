@@ -20,12 +20,9 @@
 #define NETIF_DRIVER "net.eth.enc28j60"
 #pragma exportdef(NETIF_DRIVER)
 
-#define EXT_DBG
-#pragma exportdef(EXT_DBG)
-
 con
 
-    _clkfreq    = 250_000_000
+    _clkfreq    = 180_000_000
     _xtlfreq    = 20_000_000
 
 ' -- User-modifiable constants
@@ -49,11 +46,11 @@ con
     NET_MOSI    = 2
     NET_MISO    = 3
 #endif
-    NET_SPI_FREQ= 10_000_000
+    NET_SPI_FREQ= 10_000_000                    ' for >10MHz, 250MHz _clkfreq is required
 
     ' LED for webpage control
-    LED1        = 38'56
-    LED2        = 39'57
+    LED1        = 56
+    LED2        = 57
 
     MAX_CLIENTS = 5
 

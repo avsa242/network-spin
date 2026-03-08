@@ -8,14 +8,14 @@ This is a P8X32A/Propeller, P2X8C4M64P/Propeller 2 networking stack
 ## Salient Features
 
 * Ethernet II
-* IP
+* IPv4
 * ARP
 * UDP
 * TCP
 * ICMP
 * IGMP (v3)
 * BOOTP/DHCP
-* Socket manager (P1: TCP, single socket, P2: TCP, UDP, multiple sockets; both currently only support the ENC28J60)
+* Socket manager (P1: TCP, single socket; P2: TCP, UDP, multiple sockets)
 
 
 ## Requirements
@@ -43,7 +43,8 @@ P2/SPIN2:
 
 ## Hardware compatibility
 
-* Tested with ENC28J60 (primary development device)
+* Tested with ENC28J60 (P1, P2; primary development device)
+* Tested with [ENC624J600](https://www.digikey.com/en/products/detail/olimex-ltd/MOD-ENC624J600/21662677?s=N4IgTCBcDaIKYDsDGA2MAWAVigDDkAugL5A) (P2 only)
 
 
 ## Limitations
