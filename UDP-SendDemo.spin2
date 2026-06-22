@@ -6,7 +6,7 @@
         * Send datagram
     Author:         Jesse Burt
     Started:        Aug 8, 2025
-    Updated:        Feb 27, 2026
+    Updated:        Jun 22, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -17,7 +17,11 @@
 ' choose a network driver (defaults to ENC28J60 if none specified)
 '#define NETIF_DRIVER "net.eth.encx24j600"
 #define NETIF_DRIVER "net.eth.enc28j60"
+'#define NETIF_DRIVER "net.eth.lan9250"
 #pragma exportdef(NETIF_DRIVER)
+' uncomment these two lines in addition to the NETIF_DRIVER line to use the LAN9250 driver:
+'#define LAN9250
+'#pragma exportdef(LAN9250)
 
 
 con
@@ -92,12 +96,12 @@ pub main() | sck, s, t, len, rem_ip, rem_port, ch, err
         rem_port := 1234
         err := net.sendto(sck, @_testdata, len, 0, rem_ip, rem_port)
 
-		if ( err >= 0 )
+        if ( err >= 0 )
 	        ser.printf(@"Sent '%s' to %s\n\r", @_testdata, str.iptostr(rem_ip))
-		elseif ( err == net.EHOSTUNREACH )
-			' the remote service isn't reachable; port isn't open
-			'	(NOTE: this is for the previous datagram)
-			ser.strln(@"error: destination unreachable")
+        elseif ( err == net.EHOSTUNREACH )
+            ' the remote service isn't reachable; port isn't open
+            '	(NOTE: this is for the previous datagram)
+            ser.strln(@"error: destination unreachable")
 
         ch := ser.getchar()
     until ( ch == "q" )

@@ -18,7 +18,11 @@
 ' choose a network driver (defaults to ENC28J60 if none specified)
 '#define NETIF_DRIVER "net.eth.encx24j600"
 #define NETIF_DRIVER "net.eth.enc28j60"
+'#define NETIF_DRIVER "net.eth.lan9250"
 #pragma exportdef(NETIF_DRIVER)
+' uncomment these two lines in addition to the NETIF_DRIVER line to use the LAN9250 driver:
+'#define LAN9250
+'#pragma exportdef(LAN9250)
 
 con
 

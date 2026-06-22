@@ -7,7 +7,7 @@
         * Multiple sockets
     Author:         Jesse Burt
     Started:        Nov 8, 2023
-    Updated:        Mar 9, 2026
+    Updated:        Jun 22, 2026
     Copyright (c) 2026 - See end of file for terms of use.
 ----------------------------------------------------------------------------------------------------
 }
@@ -1114,7 +1114,7 @@ pri pending_tcp_tx(): s
     return ( (tcp_tx_pend.head-tcp_tx_pend.tail) & MAX_TCP_TX_PEND_MASK)
 
 
-pri receive_arp(^ethii_hdr_s eh): s | e, mf, arp_hdr_s ah
+pri receive_arp(): s | e, mf, arp_hdr_s ah, tmp
 ' Process received ARP messages
 '   eh: ethernet-II header (pointer to structure)
     DEBUG("receive_arp")
@@ -1164,9 +1164,14 @@ pri receive_ethii(): s | ethii_hdr_s eh
 
     case ethii.ethertype(@eh)
         ETYP_ARP:   
-            receive_arp(@eh)
+            receive_arp()
         ETYP_IPV4:
             receive_ipv4(@eh)
+
+#ifdef LAN9250
+    net.rx_skip_padding()
+    net.rx_leftover_flush()
+#endif
 
 
 var byte _icmp_echo_data[60], _icmp_bad_datagram[4+20+8]
@@ -1708,7 +1713,7 @@ pri receive_tcp(^ipv4_hdr_s ih): tf | tcp_hdr_s th, ack, seq, flags, seg_len, se
 
 pri receive_udp(^ipv4_hdr_s ih): s | udp_hdr_s uh, sck, l, h, t, pbuf, il
 ' Process received UDP headers
-    DEBUG("process_udp()")
+    DEBUG("receive_udp()")
     uh~
     udp.rd_udp_header(@uh)
 
@@ -1753,7 +1758,12 @@ pri send_pbuf(pbuf): l
 ' Write packet buffer to network device
     DEBUG( "send_pbuf(", uhex_(pbuf), ") pbuf len=", udec_(pktbuff[pbuf].len) )
 
+'todo: lan9250 needs this param; rewrite other drivers with the same parameter
+#ifdef LAN9250
+    net.start_frame(pktbuff[pbuf].len)
+#else
     net.start_frame()
+#endif
         l := net.wr_block(pktbuff[pbuf].p_data, pktbuff[pbuf].len)
     net.send_frame()
     pb_tail := (pb_tail + 1) & PKTBUFF_MASK
