@@ -1759,13 +1759,8 @@ pri send_pbuf(pbuf): l
 ' Write packet buffer to network device
     DEBUG( "send_pbuf(", uhex_(pbuf), ") pbuf len=", udec_(pktbuff[pbuf].len) )
 
-'todo: lan9250 needs this param; rewrite other drivers with the same parameter
-#ifdef LAN9250
     net.start_frame(pktbuff[pbuf].len)
-#else
-    net.start_frame()
-#endif
-        l := net.wr_block(pktbuff[pbuf].p_data, pktbuff[pbuf].len)
+    l := net.wr_block(pktbuff[pbuf].p_data, pktbuff[pbuf].len)
     net.send_frame()
     pb_tail := (pb_tail + 1) & PKTBUFF_MASK
 
