@@ -1743,11 +1743,12 @@ pri receive_udp(^ipv4_hdr_s ih): s | udp_hdr_s uh, sck, l, h, t, pbuf, il
         ' no socket exists with that port; bounce message
         pbuf := pbuf_allocate()
         if ( pbuf >= 0 )
-            'todo: incomplete
-            'write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l
-            'write_ipv4(pbuf, lip, rip, pro, len=0, ident=0, dscp=0, ttl=0): l
-            il := write_icmp(pbuf, icmp.DEST_UNREACH, icmp.PORT_UNREACH)
-            write_ipv4(pbuf, interface[0].ipv4_addr, ip.src_addr(@ih), L4_UDP, il)
+            ' copy the message to bounce
+            bytefill(@_icmp_bad_datagram, 0, 4+28)
+            bytemove(@_icmp_bad_datagram+4, @ih, ip.IP_HDR_SZ)
+            bytemove(@_icmp_bad_datagram+4+ip.IP_HDR_SZ, @uh, udp.UDP_HDR_SZ)
+            il := write_icmp(pbuf, icmp.DEST_UNREACH, icmp.PORT_UNREACH, 4+28, @_icmp_bad_datagram)
+            write_ipv4(pbuf, interface[0].ipv4_addr, ip.src_addr(@ih), L4_ICMP, il)
             pb_head := (pb_head + 1) & PKTBUFF_MASK
             return
 
@@ -1943,7 +1944,9 @@ pri write_icmp(pbuf, typ, cd, len=0, p_src=0, ident=0, seq_nr=0): l | icmp4_hdr_
         icmp.DEST_UNREACH:
             case icmp.code(@ich)
                 icmp.PORT_UNREACH:
-                    'todo
+                    ' write the offending datagram
+                    pbuf_prepend_write(pbuf, len, p_src)
+                    ol += len
         icmp.ECHO_REPL:
             DEBUG(" type=ECHO_REPL")
             ehdr~
